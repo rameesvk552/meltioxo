@@ -1,0 +1,520 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-family);
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+/* Elegant serif headings */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  color: var(--color-text-primary);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* Scrollbar styling - Apple light style */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-bg-primary);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(28, 28, 30, 0.1);
+  border-radius: var(--radius-full);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(28, 28, 30, 0.2);
+}
+
+/* Antd overrides for ivory white luxury cards */
+.ant-card {
+  background: #ffffff !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: 14px !important;
+  box-shadow: var(--shadow-md) !important;
+  transition: border-color var(--transition-normal);
+}
+
+.ant-card:hover {
+  border-color: var(--color-border-hover) !important;
+}
+
+.ant-table-wrapper {
+  background: transparent !important;
+}
+
+.ant-table {
+  background: transparent !important;
+}
+
+/* Warm, high contrast light table headers */
+.ant-table-thead > tr > th {
+  font-family: var(--font-family);
+  font-weight: 600;
+  color: var(--color-text-secondary) !important;
+  background: var(--color-bg-secondary) !important;
+  border-bottom: 1px solid var(--color-border) !important;
+  text-transform: none;
+  font-size: 13px;
+  letter-spacing: -0.01em;
+}
+
+/* Terracotta solid buttons */
+.ant-btn-primary {
+  background: var(--color-gold) !important;
+  border: none !important;
+  color: #ffffff !important;
+  font-weight: 500 !important;
+  box-shadow: 0 2px 6px rgba(181, 66, 48, 0.15) !important;
+  transition: all var(--transition-fast) !important;
+  border-radius: 6px !important;
+}
+
+.ant-btn-primary:hover {
+  background: #c95442 !important;
+  box-shadow: 0 4px 12px rgba(181, 66, 48, 0.25) !important;
+}
+
+.ant-btn-default {
+  background: #ffffff !important;
+  border: 1px solid var(--color-border) !important;
+  color: var(--color-text-primary) !important;
+  border-radius: 6px !important;
+}
+
+.ant-btn-default:hover {
+  border-color: var(--color-border-hover) !important;
+  color: #000000 !important;
+}
+
+/* Input custom focus */
+.ant-input-affinity-wrapper-focused, 
+.ant-input-focused, 
+.ant-select-focused .ant-select-selector {
+  border-color: var(--color-gold) !important;
+  box-shadow: 0 0 0 2px rgba(181, 66, 48, 0.12) !important;
+}
+
+/* Specific Ant Design component overrides for light-terracotta theme */
+.ant-layout-sider {
+  background: #ffffff !important;
+  border-right: 1px solid var(--color-border) !important;
+}
+
+.ant-layout-header {
+  background: #ffffff !important;
+  border-bottom: 1px solid var(--color-border) !important;
+}
+
+.ant-layout-content {
+  background: var(--color-bg-primary) !important;
+}
+
+.ant-drawer-content-wrapper {
+  box-shadow: var(--shadow-lg) !important;
+}
+
+.ant-drawer-content {
+  background: #ffffff !important;
+}
+
+/* Mobile utils */
+@media (max-width: 767px) {
+  .desktop-only, 
+  .ant-layout-sider.desktop-only {
+    display: none !important;
+  }
+}
+@media (min-width: 768px) {
+  .mobile-only, 
+  .mobile-only.ant-drawer {
+    display: none !important;
+  }
+}
+
+/* Shared application page rhythm. Individual pages retain their desktop layout,
+   while this keeps the mobile experience compact and consistent. */
+.app-content {
+  padding-bottom: calc(var(--mobile-nav-height) + 16px);
+}
+
+@media (min-width: 768px) {
+  .app-content {
+    padding-bottom: var(--space-lg);
+  }
+}
+
+@media (max-width: 767px) {
+  :root {
+    --header-height: 60px;
+    --mobile-nav-height: 66px;
+  }
+
+  body {
+    font-size: 14px;
+  }
+
+  .app-header {
+    height: var(--header-height) !important;
+    line-height: var(--header-height) !important;
+    padding: 0 14px !important;
+  }
+
+  .app-header .header-left {
+    min-width: 0;
+    flex: 1;
+    gap: 4px !important;
+  }
+
+  .app-header .mobile-back-button,
+  .app-header .mobile-header-search .ant-btn {
+    width: 34px;
+    min-width: 34px;
+    padding: 0;
+    color: var(--color-text-primary);
+  }
+
+  .app-header .header-left .ant-typography {
+    flex: 1;
+    min-width: 0;
+    margin-left: 2px !important;
+    max-width: none !important;
+    color: var(--color-text-primary) !important;
+    font-family: var(--font-family) !important;
+    font-size: 16px !important;
+    font-weight: 650;
+  }
+
+  .app-header .header-actions {
+    gap: 4px !important;
+    margin-left: 6px;
+  }
+
+  .app-header .mobile-header-search {
+    width: 34px;
+    transition: width 160ms ease;
+  }
+
+  .app-header .mobile-header-search:has(.ant-input) {
+    width: min(150px, 40vw);
+  }
+
+  .app-header .mobile-header-search .ant-input-affix-wrapper {
+    min-height: 32px;
+    padding-inline: 8px;
+  }
+
+  .app-header .header-actions > .ant-dropdown-trigger .ant-avatar {
+    width: 30px;
+    height: 30px;
+    line-height: 30px;
+  }
+
+  /* The title is now in the reusable mobile app header. Hide only the first
+     page-heading block so section and card headings remain visible. */
+  .app-content > div > .ant-typography.ant-typography-h2:first-child,
+  .app-content > div > div:first-child > .ant-typography.ant-typography-h2:first-child,
+  .app-content > div > div:first-child > div:first-child > .ant-typography.ant-typography-h2:first-child,
+  .app-content > div > div:first-child > h1:first-child,
+  .app-content > div > div:first-child > div:first-child > h1:first-child {
+    display: none;
+  }
+
+  /* Page components use inline desktop padding. Important is deliberate here so
+     they all share one mobile gutter without duplicating page-specific code. */
+  .app-content > div {
+    padding: 20px 16px !important;
+  }
+
+  .app-content > div > div[style*="justify-content: space-between"] {
+    flex-wrap: wrap !important;
+    gap: 8px 12px;
+    margin-bottom: 16px !important;
+  }
+
+  .app-content > div > div[style*="justify-content: space-between"] > div:first-child {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .app-content h1,
+  .app-content .ant-typography.ant-typography-h2,
+  .app-content h2 {
+    font-size: 22px !important;
+    line-height: 1.25 !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .app-content .ant-card {
+    border-radius: 12px !important;
+  }
+
+  .app-content .ant-card .ant-card-body {
+    padding: 16px !important;
+  }
+
+  .app-content .ant-statistic-title,
+  .app-content .ant-statistic-content {
+    line-height: 1.25;
+  }
+
+  .app-content .ant-statistic-content {
+    font-size: 21px !important;
+  }
+
+  /* Filters become a clear vertical control stack instead of wrapping unevenly.
+     :not(.page-filter-inline) prevents this from overriding the hide rule. */
+  .app-content .ant-card > .ant-card-body > .ant-space:first-child:not(.page-filter-inline) {
+    display: flex !important;
+    width: 100%;
+    margin-bottom: 14px !important;
+  }
+
+  .app-content .ant-card > .ant-card-body > .ant-space:first-child:not(.page-filter-inline) .ant-space-item,
+  .app-content .ant-card > .ant-card-body > .ant-space:first-child:not(.page-filter-inline) .ant-input-affix-wrapper,
+  .app-content .ant-card > .ant-card-body > .ant-space:first-child:not(.page-filter-inline) .ant-select {
+    width: 100% !important;
+  }
+
+  .app-content .ant-input,
+  .app-content .ant-input-affix-wrapper,
+  .app-content .ant-select-selector,
+  .app-content .ant-btn {
+    min-height: 38px;
+  }
+
+  .app-content .ant-table {
+    font-size: 12px;
+  }
+
+  /* Keep every data table readable: it scrolls inside its card, never off-screen. */
+  .app-content .ant-table-wrapper,
+  .app-content .ant-table-container,
+  .app-content .ant-table-content {
+    max-width: 100%;
+  }
+
+  .app-content .ant-table-content {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .app-content .ant-table:not(.ant-table-fixed) table {
+    min-width: 640px;
+  }
+
+  .desktop-table-only { display: none; }
+  .mobile-table-alternative { display: block; }
+
+  .mobile-page-title { display: none !important; }
+
+  .mobile-data-list { display: grid; gap: 12px; }
+  .mobile-data-list__item.ant-card { overflow: hidden; border-radius: 12px !important; box-shadow: var(--shadow-sm) !important; }
+  .mobile-data-list__item .ant-card-body { padding: 16px !important; }
+
+  /* List pages keep the desktop table in its existing card, while the mobile
+     card collection stands on its own instead of being nested in a large card. */
+  .app-content .ant-card:has(.mobile-table-alternative) {
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+  .app-content .ant-card:has(.mobile-table-alternative) > .ant-card-body {
+    padding: 0 !important;
+  }
+  .app-content .ant-card:has(.mobile-table-alternative) .ant-tabs {
+    display: none !important;
+  }
+  .mobile-data-list__title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .mobile-data-list__title-row strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mobile-data-list__code { display: block; margin-top: 4px; color: var(--color-text-muted); font-size: 12px; }
+  .mobile-data-list__metrics { display: flex; justify-content: space-between; gap: 12px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--color-border-secondary); color: var(--color-text-secondary); font-size: 12px; }
+  .mobile-data-list__metrics strong { display: block; margin-top: 2px; color: var(--color-text-primary); font-size: 14px; }
+  .mobile-data-list__empty { padding: 28px 12px; text-align: center; color: var(--color-text-muted); }
+
+  .app-content .ant-table-thead > tr > th,
+  .app-content .ant-table-tbody > tr > td {
+    padding: 10px 8px !important;
+    white-space: nowrap;
+  }
+
+  .ant-modal {
+    max-width: calc(100vw - 24px) !important;
+    margin: 12px auto;
+    padding-bottom: 0;
+  }
+
+  .ant-modal .ant-modal-content {
+    border-radius: 14px;
+  }
+
+  .ant-modal .ant-modal-body {
+    max-height: calc(100dvh - 150px);
+    /* Ant Design rows use negative side margins for gutters.  Without this,
+       the vertically scrollable modal body also exposes a horizontal bar. */
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  /* A form modal must fit within the actual visible mobile viewport.  The
+     browser's address bar and bottom navigation make 100vh taller than the
+     usable area on many phones, which previously hid the lower fields. */
+  .ant-modal-wrap {
+    display: flex;
+    align-items: flex-start;
+    overflow-y: auto;
+    padding: 12px;
+  }
+
+  .ant-modal {
+    margin: 0 auto;
+    max-height: calc(100dvh - 24px);
+  }
+
+  .ant-modal .ant-modal-content {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100dvh - 24px);
+  }
+
+  .ant-modal .ant-modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+  }
+
+  .ant-modal .ant-form .ant-row > .ant-col-12,
+  .ant-modal .ant-form .ant-row > .ant-col-8 {
+    flex: 0 0 100%;
+    max-width: 100%;
+  }
+
+  .ant-modal .ant-form-item {
+    margin-bottom: 14px;
+  }
+
+  .mobile-bottom-nav {
+    height: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom)) !important;
+  }
+
+  /* List pages keep the table focused; filters and KPIs are available through
+     the same two drawers on every screen that adopts PageDrawerControls. */
+  .page-summary-inline { display: none; }
+  .app-content .page-filter-inline,
+  .page-filter-inline { display: none !important; }
+  .page-drawer-controls { display: inline-flex !important; }
+  .page-drawer-controls .ant-btn { min-height: 34px; }
+
+  /* Every list page uses the same compact mobile action pattern. */
+  .responsive-list-page-header,
+  .app-content > div > div:first-child:has(.page-drawer-controls),
+  .app-content > div > div:first-child:has(.responsive-list-page-actions) {
+    display: block !important;
+    position: sticky !important;
+    top: 0;
+    z-index: 100;
+    background-color: var(--color-bg-primary) !important;
+    margin-top: -20px !important;
+    margin-left: -16px !important;
+    margin-right: -16px !important;
+    padding-top: 20px !important;
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+    padding-bottom: 14px !important;
+    margin-bottom: 16px !important;
+    border-bottom: 1px solid var(--color-border) !important;
+  }
+
+  .responsive-list-page-header > h1 {
+    display: none !important;
+  }
+
+  .responsive-list-page-actions,
+  .app-content > div > div:first-child:has(.page-drawer-controls) > .ant-space {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+
+  .responsive-list-page-actions > .ant-btn,
+  .app-content > div > div:first-child:has(.page-drawer-controls) > .ant-space > .ant-space-item:not(:has(.page-drawer-controls)) {
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+  }
+
+  .responsive-list-page-actions > .ant-btn button,
+  .app-content > div > div:first-child:has(.page-drawer-controls) > .ant-space > .ant-space-item:not(:has(.page-drawer-controls)) button,
+  .app-content > div > div:first-child:has(.page-drawer-controls) > .ant-space > .ant-space-item:not(:has(.page-drawer-controls)) a {
+    width: 100% !important;
+  }
+
+  .responsive-list-page-actions .page-drawer-controls,
+  .app-content > div > div:first-child:has(.page-drawer-controls) > .ant-space > .ant-space-item:has(.page-drawer-controls),
+  .page-drawer-controls {
+    display: contents !important;
+  }
+
+  .responsive-list-page-actions .page-drawer-controls > .ant-space-item,
+  .page-drawer-controls > .ant-space-item {
+    width: 100% !important;
+  }
+
+  .responsive-list-page-actions .page-drawer-controls .ant-btn,
+  .responsive-list-page-actions .page-drawer-controls .ant-badge,
+  .page-drawer-controls .ant-btn,
+  .page-drawer-controls .ant-badge {
+    width: 100% !important;
+  }
+
+  .responsive-list-page-actions.two-primary-actions > .ant-btn {
+    grid-column: auto !important;
+    grid-row: auto !important;
+    width: 100% !important;
+    order: 1 !important;
+  }
+
+  .responsive-list-page-actions.two-primary-actions .page-drawer-controls > .ant-space-item {
+    order: 2 !important;
+  }
+
+  .responsive-list-page-description {
+    margin-bottom: 12px;
+  }
+}
+
+@media (min-width: 768px) {
+  .mobile-table-alternative { display: none; }
+  .page-drawer-controls { display: none; }
+}
+
+.page-drawer-panel { display: grid; gap: 16px; }
+.page-drawer-panel .ant-input-affix-wrapper,
+.page-drawer-panel .ant-select { width: 100% !important; }
+.page-drawer-summary .ant-row { margin: 0 !important; }
+.page-drawer-summary .ant-col { padding: 0 0 12px !important; }
+
+.responsive-list-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.responsive-list-page-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

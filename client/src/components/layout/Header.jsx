@@ -1,0 +1,140 @@
+import React, { useMemo, useState } from 'react';
+import { Layout, Button, Badge, Avatar, Dropdown, Input, Tooltip, Typography } from 'antd';
+import { 
+  MenuUnfoldOutlined, 
+  MenuFoldOutlined, 
+  BellOutlined, 
+  UserOutlined,
+  ArrowLeftOutlined,
+  SearchOutlined,
+  CloseOutlined
+} from '@ant-design/icons';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { usePageTitle } from '../../context/PageTitleContext';
+
+const { Header: AntHeader } = Layout;
+const { Title } = Typography;
+
+export default function Header({ collapsed, setCollapsed, setMobileDrawerOpen }) {
+  const { title } = usePageTitle();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  const pageTitle = useMemo(() => {
+    const path = location.pathname;
+    const titles = [
+      ['/app/dashboard', 'Dashboard'], ['/app/raw-materials', 'Raw Materials'],
+      ['/app/packaging', 'Packaging Materials'], ['/app/finished-goods', 'Finished Goods'],
+      ['/app/suppliers', 'Suppliers'], ['/app/purchases', 'Purchases'],
+      ['/app/direct-purchases', 'Purchases'], ['/app/formulas', 'Formulas'],
+      ['/app/production', 'Production Orders'], ['/app/customers', 'Customers'],
+      ['/app/retail-sales', 'Sales & Invoices'], ['/app/accounts', 'Accounts'],
+      ['/app/journal-entries', 'Journal Entries'], ['/app/payables', 'Accounts Payable'],
+      ['/app/receivables', 'Accounts Receivable'], ['/app/payments', 'Payments'],
+      ['/app/expenses', 'Expenses'], ['/app/reports/profit-loss', 'Owner Profit & Loss'],
+      ['/app/reports/balance-sheet', 'Balance Sheet'], ['/app/reports/trial-balance', 'Trial Balance'],
+      ['/app/reports/stock', 'Stock Valuation'], ['/app/settings', 'Company Settings']
+    ];
+    const match = titles.find(([route]) => path === route || path.startsWith(`${route}/`));
+    // Route names must win here: some pages set a contextual title, but that
+    // state can remain briefly after navigation and must not label the next page.
+    return match?.[1] || title || 'Perfume ERP';
+  }, [location.pathname, title]);
+
+  const goBack = () => {
+    const detailParents = [
+      '/app/raw-materials', '/app/suppliers', '/app/purchases',
+      '/app/formulas', '/app/production', '/app/retail-sales',
+      '/app/journal-entries', '/app/payments', '/app/expenses'
+    ];
+    const parentPath = detailParents.find((route) => location.pathname.startsWith(`${route}/`));
+    if (parentPath) {
+      navigate(parentPath);
+      return;
+    }
+    navigate('/app/dashboard');
+  };
+
+  return (
+    <AntHeader className="app-header" style={{ 
+      padding: '0 24px', 
+      background: 'var(--color-bg-secondary)', 
+      borderBottom: '1px solid var(--color-border)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between'
+    }}>
+      <div className="header-left" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <Button 
+          type="text" 
+          icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+          onClick={() => setCollapsed(!collapsed)}
+          className="desktop-only"
+          style={{ color: 'var(--color-text-primary)' }}
+        />
+        <Button 
+          type="text" 
+          icon={<MenuUnfoldOutlined />}
+          onClick={() => setMobileDrawerOpen(true)}
+          className="mobile-only"
+          style={{ color: 'var(--color-text-primary)' }}
+        />
+        <Tooltip title="Back">
+          <Button
+            type="text"
+            icon={<ArrowLeftOutlined />}
+            onClick={goBack}
+            className="mobile-only mobile-back-button"
+            aria-label="Go back"
+          />
+        </Tooltip>
+        {pageTitle && (
+          <Title level={4} style={{ 
+            margin: 0, 
+            color: 'var(--color-gold)', 
+            fontFamily: 'Playfair Display', 
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            maxWidth: 280
+          }}>
+            {pageTitle}
+          </Title>
+        )}
+      </div>
+
+      <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+        <div className="mobile-only mobile-header-search">
+          {searchOpen ? (
+            <Input
+              autoFocus
+              size="small"
+              placeholder="Search this page"
+              suffix={<CloseOutlined onClick={() => setSearchOpen(false)} />}
+              aria-label="Search this page"
+            />
+          ) : (
+            <Tooltip title="Search">
+              <Button type="text" icon={<SearchOutlined />} onClick={() => setSearchOpen(true)} aria-label="Search this page" />
+            </Tooltip>
+          )}
+        </div>
+        <Badge count={5} size="small">
+          <BellOutlined style={{ fontSize: '20px', color: 'var(--color-text-primary)', cursor: 'pointer' }} />
+        </Badge>
+        <Dropdown menu={{ items: [
+          { key: 'profile', label: 'Profile' },
+          { key: 'settings', label: 'Settings' },
+          { type: 'divider' },
+          { key: 'logout', label: 'Logout' },
+        ]}} trigger={['click']}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+            <Avatar icon={<UserOutlined />} style={{ backgroundColor: 'var(--color-gold)' }} />
+            <span className="desktop-only">Admin User</span>
+          </div>
+        </Dropdown>
+      </div>
+    </AntHeader>
+  );
+}

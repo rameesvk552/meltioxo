@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Complete ERP Solution for Perfume Manufacturing</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Playfair+Display:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy: #0f1729;
+    --navy-light: #1a2744;
+    --gold: #d4a853;
+    --gold-light: #e8c97a;
+    --gold-dark: #b8913a;
+    --white: #ffffff;
+    --gray-100: #f7f8fa;
+    --gray-200: #e9ecf1;
+    --gray-400: #9ca3b0;
+    --gray-600: #6b7280;
+    --gray-800: #374151;
+    --green: #22c55e;
+    --green-bg: #f0fdf4;
+    --red: #ef4444;
+    --red-bg: #fef2f2;
+    --amber: #f59e0b;
+    --amber-bg: #fffbeb;
+    --blue: #3b82f6;
+    --blue-bg: #eff6ff;
+    --purple-bg: #f5f3ff;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  @page {
+    size: A4 portrait;
+    margin: 15mm;
+  }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    color: var(--gray-800);
+    line-height: 1.4;
+    background: var(--white);
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .page {
+    width: 100%;
+    page-break-after: always;
+    page-break-inside: avoid;
+    padding-bottom: 20px;
+  }
+  .page:last-child {
+    page-break-after: auto;
+  }
+
+  .page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid var(--gold);
+  }
+  .page-header-left {
+    font-size: 12px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--navy);
+    font-weight: 800;
+  }
+  .page-header-right {
+    font-size: 11px;
+    color: var(--gray-400);
+  }
+
+  .section-title-block { margin: 12px 0 16px; }
+  .section-number {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--gold-dark);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 2px;
+  }
+  .section-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 26px;
+    font-weight: 800;
+    color: var(--navy);
+    margin-bottom: 4px;
+    line-height: 1.2;
+  }
+  .section-subtitle {
+    font-size: 13px;
+    color: var(--gray-600);
+    font-weight: 400;
+  }
+
+  .content-block { margin-bottom: 14px; }
+  .content-block h3 {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--navy);
+    margin-bottom: 8px;
+  }
+
+  /* ─── FEATURE GRID ─── */
+  .feature-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .feature-grid-3 { grid-template-columns: repeat(3, 1fr); }
+  .feature-card {
+    background: var(--gray-100);
+    border: 1px solid var(--gray-200);
+    border-radius: 8px;
+    padding: 12px;
+  }
+  .feature-card-icon { font-size: 22px; margin-bottom: 6px; }
+  .feature-card h4 { font-size: 13px; font-weight: 700; color: var(--navy); margin-bottom: 4px; }
+  .feature-card p { font-size: 11px; color: var(--gray-600); line-height: 1.4; margin: 0; }
+  .feature-card-gold { background: #fdf6e3; border-color: var(--gold-light); }
+  .feature-card-blue { background: var(--blue-bg); border-color: #bfdbfe; }
+  .feature-card-green { background: var(--green-bg); border-color: #bbf7d0; }
+  .feature-card-purple { background: var(--purple-bg); border-color: #c4b5fd; }
+  .feature-card-red { background: var(--red-bg); border-color: #fecaca; }
+
+  /* ─── SCREEN MOCKUP ─── */
+  .screen-mockup {
+    background: var(--navy);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 14px;
+  }
+  .screen-toolbar {
+    background: var(--navy-light);
+    padding: 6px 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .screen-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .screen-dot.red { background: #ff5f57; }
+  .screen-dot.yellow { background: #ffbd2e; }
+  .screen-dot.green { background: #28c840; }
+  .screen-title { color: rgba(255,255,255,0.6); font-size: 10px; margin-left: 6px; }
+  .screen-content { padding: 14px; }
+  .screen-content .screen-heading {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--white);
+    margin-bottom: 10px;
+  }
+  .screen-content .screen-heading span { color: var(--gold); }
+
+  /* ─── KPI CARDS ─── */
+  .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; }
+  .kpi-card {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 6px;
+    padding: 10px;
+  }
+  .kpi-card .kpi-label { font-size: 9px; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .kpi-card .kpi-value { font-size: 16px; font-weight: 800; color: var(--white); }
+  .kpi-card .kpi-value.green { color: var(--green); }
+  .kpi-card .kpi-value.red { color: var(--red); }
+  .kpi-card .kpi-value.gold { color: var(--gold); }
+  .kpi-card .kpi-value.blue { color: var(--blue); }
+  .kpi-card .kpi-change { font-size: 9px; margin-top: 2px; }
+  .kpi-card .kpi-change.up { color: var(--green); }
+  .kpi-card .kpi-change.down { color: var(--red); }
+
+  /* ─── TABLES ─── */
+  .mock-table { width: 100%; border-collapse: collapse; font-size: 10px; }
+  .mock-table th {
+    text-align: left; padding: 6px 8px;
+    color: rgba(255,255,255,0.4); text-transform: uppercase;
+    font-size: 8px; letter-spacing: 0.5px; font-weight: 600;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .mock-table td { padding: 6px 8px; color: rgba(255,255,255,0.85); border-bottom: 1px solid rgba(255,255,255,0.04); }
+
+  .badge { display: inline-block; padding: 2px 6px; border-radius: 10px; font-size: 8px; font-weight: 600; text-transform: uppercase; }
+  .badge-green { background: rgba(34,197,94,0.15); color: #4ade80; }
+  .badge-red { background: rgba(239,68,68,0.15); color: #f87171; }
+  .badge-amber { background: rgba(245,158,11,0.15); color: #fbbf24; }
+  .badge-blue { background: rgba(59,130,246,0.15); color: #60a5fa; }
+
+  .light-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 12px; }
+  .light-table th {
+    text-align: left; padding: 6px 10px; background: var(--navy);
+    color: var(--gold-light); font-size: 9px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .light-table td { padding: 6px 10px; border-bottom: 1px solid var(--gray-200); color: var(--gray-800); }
+  .light-table tr:nth-child(even) td { background: var(--gray-100); }
+
+  /* ─── WORKFLOW ─── */
+  .workflow { display: flex; align-items: center; gap: 0; margin: 12px 0; justify-content: space-between; }
+  .workflow-step {
+    background: var(--navy); color: var(--white); padding: 8px 12px;
+    border-radius: 6px; text-align: center; font-size: 11px; font-weight: 600; flex: 1;
+  }
+  .workflow-step small { display: block; font-size: 8px; font-weight: 400; color: rgba(255,255,255,0.5); margin-top: 2px; }
+  .workflow-step.gold { background: var(--gold); color: var(--navy); }
+  .workflow-step.gold small { color: rgba(15,23,41,0.5); }
+  .workflow-arrow { font-size: 14px; color: var(--gold); padding: 0 4px; font-weight: 700; }
+
+  /* ─── INVOICE MOCKUP ─── */
+  .invoice-mockup { border: 1.5px solid var(--gray-200); border-radius: 8px; padding: 18px; margin: 12px 0; background: var(--white); }
+  .invoice-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 2px solid var(--navy); }
+  .invoice-company { font-family: 'Playfair Display', serif; font-size: 18px; font-weight: 800; color: var(--navy); }
+  .invoice-company small { display: block; font-family: 'Inter', sans-serif; font-size: 9px; font-weight: 400; color: var(--gray-600); margin-top: 2px; }
+  .invoice-badge { background: var(--navy); color: var(--gold); padding: 4px 12px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+  .invoice-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+  .invoice-meta-block h5 { font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--gray-400); margin-bottom: 4px; }
+  .invoice-meta-block p { font-size: 11px; color: var(--gray-800); margin: 0; line-height: 1.4; }
+  .invoice-table { width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 11px; }
+  .invoice-table th { text-align: left; padding: 6px 8px; background: var(--gray-100); color: var(--navy); font-size: 9px; font-weight: 700; text-transform: uppercase; border-bottom: 1.5px solid var(--gray-200); }
+  .invoice-table td { padding: 6px 8px; border-bottom: 1px solid var(--gray-200); }
+  .invoice-table .text-right { text-align: right; }
+  .invoice-totals { display: flex; justify-content: flex-end; }
+  .invoice-totals table { width: 220px; font-size: 11px; }
+  .invoice-totals td { padding: 4px 8px; }
+  .invoice-totals .grand-total td { font-size: 13px; font-weight: 800; color: var(--navy); border-top: 1.5px solid var(--navy); padding-top: 6px; }
+
+  /* ─── FORMULA CARD ─── */
+  .formula-card { background: #fdf6e3; border: 1.5px solid var(--gold-light); border-radius: 10px; padding: 18px; margin: 12px 0; }
+  .formula-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid rgba(212,168,83,0.3); }
+  .formula-name { font-family: 'Playfair Display', serif; font-size: 18px; font-weight: 800; color: var(--navy); }
+  .formula-badge { background: var(--navy); color: var(--gold); padding: 4px 12px; border-radius: 12px; font-size: 10px; font-weight: 700; }
+  .formula-sections { display: grid; grid-template-columns: 1.2fr 1fr; gap: 14px; }
+  .formula-section h5 { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--gold-dark); margin-bottom: 6px; font-weight: 700; }
+  .formula-table { width: 100%; border-collapse: collapse; font-size: 10px; }
+  .formula-table th { text-align: left; padding: 4px 6px; font-size: 8px; text-transform: uppercase; color: var(--gray-400); border-bottom: 1px solid rgba(212,168,83,0.3); }
+  .formula-table td { padding: 4px 6px; border-bottom: 1px solid rgba(212,168,83,0.15); }
+  .formula-total { display: flex; justify-content: space-between; margin-top: 12px; padding-top: 10px; border-top: 1.5px solid var(--gold); }
+  .formula-total-item { text-align: center; }
+  .formula-total-label { font-size: 9px; text-transform: uppercase; color: var(--gray-600); margin-bottom: 2px; }
+  .formula-total-value { font-size: 16px; font-weight: 800; color: var(--navy); }
+  .formula-total-value.green { color: #16a34a; }
+
+  /* ─── MISC ─── */
+  .highlight-box { border-radius: 8px; padding: 12px; margin: 10px 0; }
+  .highlight-box.gold { background: #fdf6e3; border: 1px solid var(--gold-light); }
+  .highlight-box.green { background: var(--green-bg); border: 1px solid #bbf7d0; }
+  .highlight-box h4 { font-size: 12px; font-weight: 700; color: var(--navy); margin-bottom: 4px; }
+  .highlight-box p, .highlight-box li { font-size: 10px; color: var(--gray-600); margin: 0; }
+  .highlight-box ul { padding-left: 14px; margin-top: 4px; }
+  .highlight-box li { margin-bottom: 2px; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .alert-panel { border-radius: 6px; padding: 8px 12px; margin-bottom: 6px; display: flex; align-items: flex-start; gap: 8px; font-size: 10px; }
+  .alert-panel.warn { background: var(--amber-bg); border: 1px solid #fde68a; color: #92400e; }
+  .alert-panel.danger { background: var(--red-bg); border: 1px solid #fecaca; color: #991b1b; }
+  .alert-panel.info { background: var(--blue-bg); border: 1px solid #bfdbfe; color: #1e40af; }
+  .alert-icon { font-size: 14px; flex-shrink: 0; }
+
+  .toc-list { list-style: none; padding: 0; }
+  .toc-list li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--gray-200); font-size: 12px; color: var(--gray-800); }
+  .toc-list li .toc-num { background: var(--navy); color: var(--gold); width: 24px; height: 24px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; flex-shrink: 0; }
+  .toc-list li .toc-icon { font-size: 16px; flex-shrink: 0; }
+  .toc-list li .toc-text { font-weight: 600; }
+  .toc-list li .toc-desc { font-size: 10px; color: var(--gray-400); font-weight: 400; }
+
+  .stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 14px 0; }
+  .stat-item { text-align: center; padding: 12px; background: var(--gray-100); border-radius: 8px; border: 1px solid var(--gray-200); }
+  .stat-item .stat-value { font-size: 22px; font-weight: 800; color: var(--navy); }
+  .stat-item .stat-label { font-size: 10px; color: var(--gray-400); text-transform: uppercase; margin-top: 2px; }
+
+  .aging-bar { height: 6px; border-radius: 3px; background: var(--gray-200); overflow: hidden; margin-top: 2px; }
+  .aging-fill { height: 100%; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- TABLE OF CONTENTS -->
+<!-- ═══════════════════════════════════════ -->
+<div class="page">
+  <div class="page-header">
+    <span class="page-header-left">PERFUME MANUFACTURING ERP</span>
+    <span class="page-header-right">Feature Overview</span>
+  </div>
+
+  <div class="section-title-block">
+    <div class="section-number" style="letter-spacing:3px;font-size:12px;color:var(--gold);">PERFUME MANUFACTURING ERP</div>
+    <div class="section-title">Complete ERP Solution for Perfume Manufacturing</div>
+    <div class="section-subtitle">One platform to manage your entire perfume business — from raw materials to finished goods, procurement to sales, and full financial accounting.</div>
+  </div>
+
+  <ul class="toc-list">
+    <li><span class="toc-num">01</span> <span class="toc-icon">📊</span> <span><span class="toc-text">Dashboard & Business Overview</span> — <span class="toc-desc">Real-time KPIs, charts, and smart alerts</span></span></li>
+    <li><span class="toc-num">02</span> <span class="toc-icon">🧪</span> <span><span class="toc-text">Raw Material Inventory</span> — <span class="toc-desc">Stock tracking, batch management, ledger, alerts</span></span></li>
+    <li><span class="toc-num">03</span> <span class="toc-icon">🏭</span> <span><span class="toc-text">Supplier Management</span> — <span class="toc-desc">Supplier directory, performance, and payment tracking</span></span></li>
+    <li><span class="toc-num">04</span> <span class="toc-icon">🛒</span> <span><span class="toc-text">Purchase Management</span> — <span class="toc-desc">Purchase orders, goods receipt, and automatic stock update</span></span></li>
+    <li><span class="toc-num">05</span> <span class="toc-icon">⭐</span> <span><span class="toc-text">Formula / Recipe Management</span> — <span class="toc-desc">Core module — perfume recipes with ingredients & packaging</span></span></li>
+    <li><span class="toc-num">06</span> <span class="toc-icon">🏭</span> <span><span class="toc-text">Production Management</span> — <span class="toc-desc">Manufacturing orders, material consumption, yield tracking</span></span></li>
+    <li><span class="toc-num">07</span> <span class="toc-icon">🧴</span> <span><span class="toc-text">Finished Goods & Sales</span> — <span class="toc-desc">Product inventory, sales orders, and invoicing</span></span></li>
+    <li><span class="toc-num">08</span> <span class="toc-icon">🏦</span> <span><span class="toc-text">Full Accounting & Finance</span> — <span class="toc-desc">Automated journal entries, payables, receivables</span></span></li>
+    <li><span class="toc-num">09</span> <span class="toc-icon">💳</span> <span><span class="toc-text">Payments & Expenses</span> — <span class="toc-desc">Payment tracking, bank book, cash book, expense management</span></span></li>
+    <li><span class="toc-num">10</span> <span class="toc-icon">📊</span> <span><span class="toc-text">Business Intelligence Reports Catalog</span> — <span class="toc-desc">25+ Report Heads covering Stock, ROI, Profitability, Wastage & Finance</span></span></li>
+  </ul>
+
+  <div class="stat-row">
+    <div class="stat-item">
+      <div class="stat-value" style="color: var(--gold);">15+</div>
+      <div class="stat-label">Modules</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-value" style="color: var(--navy);">50+</div>
+      <div class="stat-label">Screens</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-value" style="color: var(--green);">25+</div>
+      <div class="stat-label">Report Heads</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-value" style="color: var(--blue);">100%</div>
+      <div class="stat-label">Auto Accounting</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- 01. DASHBOARD -->
+<!-- ═══════════════════════════════════════ -->
+<div class="page">
+  <div class="page-header">
+    <span class="page-header-left">PERFUME MANUFACTURING ERP</span>
+    <span class="page-header-right">01 — Dashboard</span>
+  </div>
+  <div class="section-title-block">
+    <div class="section-number">Module 01</div>
+    <div class="section-title">Dashboard & Business Overview</div>
+    <div class="section-subtitle">See your entire business at a glance — revenue, profit, inventory, production, and urgent alerts in one screen.</div>
+  </div>
+  <div class="screen-mockup">
+    <div class="screen-toolbar">
+      <div class="screen-dot red"></div><div class="screen-dot yellow"></div><div class="screen-dot green"></div>
+      <span class="screen-title">PerfumeERP — Dashboard</span>
+    </div>
+    <div class="screen-content">
+      <div class="screen-heading">Welcome back, <span>Rahul</span> 👋</div>
+      <div class="kpi-row">
+        <div class="kpi-card"><div class="kpi-label">💰 Revenue (Month)</div><div class="kpi-value green">₹18,50,000</div><div class="kpi-change up">▲ 12% vs last month</div></div>
+        <div class="kpi-card"><div class="kpi-label">📈 Net Profit</div><div class="kpi-value green">₹7,21,250</div><div class="kpi-change up">▲ 8% vs last month</div></div>
+        <div class="kpi-card"><div class="kpi-label">🏦 Cash & Bank</div><div class="kpi-value blue">₹12,25,000</div><div class="kpi-change up">▲ Healthy</div></div>
+        <div class="kpi-card"><div class="kpi-label">📦 Inventory Value</div><div class="kpi-value gold">₹21,12,500</div><div class="kpi-change" style="color:rgba(255,255,255,0.4);">Raw + Finished</div></div>
+      </div>
+      <div class="kpi-row">
+        <div class="kpi-card"><div class="kpi-label">📋 Production</div><div class="kpi-value" style="color:var(--amber);">5</div><div class="kpi-change" style="color:#fbbf24;">Orders in pipeline</div></div>
+        <div class="kpi-card"><div class="kpi-label">⚠️ Low Stock</div><div class="kpi-value red">3</div><div class="kpi-change down">Needs reorder</div></div>
+        <div class="kpi-card"><div class="kpi-label">🔴 Payables</div><div class="kpi-value red">₹1,20,000</div><div class="kpi-change down">2 suppliers</div></div>
+        <div class="kpi-card"><div class="kpi-label">🟡 Receivables</div><div class="kpi-value" style="color:var(--amber);">₹85,000</div><div class="kpi-change" style="color:#fbbf24;">1 customer</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="content-block"><h3>📢 Smart Alerts on Dashboard</h3></div>
+  <div class="alert-panel warn"><span class="alert-icon">⚠️</span><div><strong>Low Stock:</strong> Oud Oil — only 120 ml remaining (Reorder Level: 500 ml). Rose Oil — 80 ml. Bottles 100ml — 25 pcs.</div></div>
+  <div class="alert-panel danger"><span class="alert-icon">🔴</span><div><strong>Overdue Payment:</strong> ₹45,000 to Fragrance World (15 days overdue) • ₹75,000 to Chemical Corp (22 days overdue)</div></div>
+  <div class="alert-panel info"><span class="alert-icon">📋</span><div><strong>Production Ready:</strong> PROD-2026-0010 "Royal Oud 100ml × 100 bottles" — all materials available, ready to start</div></div>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- 02. RAW MATERIAL INVENTORY -->
+<!-- ═══════════════════════════════════════ -->
+<div class="page">
+  <div class="page-header"><span class="page-header-left">PERFUME MANUFACTURING ERP</span><span class="page-header-right">02 — Raw Material Inventory</span></div>
+  <div class="section-title-block">
+    <div class="section-number">Module 02</div>
+    <div class="section-title">Raw Material Inventory</div>
+    <div class="section-subtitle">Track every drop of oil and gram of chemical — live stock, batch history, movement ledger, and automatic low stock alerts.</div>
+  </div>
+  <div class="screen-mockup">
+    <div class="screen-toolbar"><div class="screen-dot red"></div><div class="screen-dot yellow"></div><div class="screen-dot green"></div><span class="screen-title">PerfumeERP — Raw Materials Overview</span></div>
+    <div class="screen-content">
+      <div class="screen-heading">Raw Materials <span>(24 items)</span></div>
+      <table class="mock-table">
+        <thead><tr><th>SKU</th><th>Material</th><th>Category</th><th>Current Stock</th><th>Reserved</th><th>Available</th><th>Reorder Level</th><th>Avg Cost</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>RM-001</td><td>Oud Oil</td><td>Essential Oil</td><td>5,200 ml</td><td>1,200 ml</td><td>4,000 ml</td><td>500 ml</td><td>₹850/ml</td><td><span class="badge badge-green">OK</span></td></tr>
+          <tr><td>RM-002</td><td>Rose Oil</td><td>Essential Oil</td><td>120 ml</td><td>0 ml</td><td>120 ml</td><td>200 ml</td><td>₹450/ml</td><td><span class="badge badge-red">Low</span></td></tr>
+          <tr><td>RM-003</td><td>Ethanol</td><td>Solvent</td><td>50,000 ml</td><td>7,000 ml</td><td>43,000 ml</td><td>5,000 ml</td><td>₹2.50/ml</td><td><span class="badge badge-green">OK</span></td></tr>
+          <tr><td>RM-004</td><td>DPG</td><td>Chemical</td><td>8,500 ml</td><td>1,200 ml</td><td>7,300 ml</td><td>1,000 ml</td><td>₹15/ml</td><td><span class="badge badge-green">OK</span></td></tr>
+          <tr><td>RM-005</td><td>Fixative Agent</td><td>Fixative</td><td>2,000 ml</td><td>500 ml</td><td>1,500 ml</td><td>300 ml</td><td>₹120/ml</td><td><span class="badge badge-green">OK</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="feature-grid">
+    <div class="feature-card"><div class="feature-card-icon">📊</div><h4>Three Stock Numbers</h4><p><strong>Current Stock</strong> — Physical qty<br><strong>Reserved Stock</strong> — Locked for production<br><strong>Available Stock</strong> — Usable stock</p></div>
+    <div class="feature-card"><div class="feature-card-icon">🏷️</div><h4>Batch / Lot Tracking</h4><p>Every incoming stock creates a batch with supplier, purchase date, cost, and expiry date. Full traceability.</p></div>
+    <div class="feature-card"><div class="feature-card-icon">📒</div><h4>Stock Ledger</h4><p>Complete log of every stock movement — purchases (in), production (out), adjustments. Full audit trail.</p></div>
+    <div class="feature-card"><div class="feature-card-icon">🔔</div><h4>Low Stock Alerts</h4><p>Set a reorder level for each material. Alerts appear on dashboard when stock drops below threshold.</p></div>
+  </div>
+</div>
+
+<!-- 02 contd: STOCK LEDGER -->
+<div class="page">
+  <div class="page-header"><span class="page-header-left">PERFUME MANUFACTURING ERP</span><span class="page-header-right">02 — Stock Ledger & Batch Tracking</span></div>
+  <div class="section-title-block"><div class="section-title">Stock Ledger Output</div><div class="section-subtitle">Complete history of every stock movement for any material — who, what, when, and why.</div></div>
+  <div class="screen-mockup">
+    <div class="screen-toolbar"><div class="screen-dot red"></div><div class="screen-dot yellow"></div><div class="screen-dot green"></div><span class="screen-title">PerfumeERP — Stock Ledger: Oud Oil</span></div>
+    <div class="screen-content">
+      <div class="screen-heading">Stock Ledger: <span>Oud Oil</span></div>
+      <table class="mock-table">
+        <thead><tr><th>Date</th><th>Type</th><th>Reference</th><th>In</th><th>Out</th><th>Balance</th><th>Cost</th></tr></thead>
+        <tbody>
+          <tr><td>01/05/2026</td><td><span class="badge badge-green">Purchase</span></td><td>GRN-2026-0012</td><td style="color:#4ade80;">+2,000 ml</td><td></td><td>2,000 ml</td><td>₹800/ml</td></tr>
+          <tr><td>10/05/2026</td><td><span class="badge badge-blue">Production</span></td><td>PROD-2026-0001</td><td></td><td style="color:#f87171;">−200 ml</td><td>1,800 ml</td><td></td></tr>
+          <tr><td>15/06/2026</td><td><span class="badge badge-green">Purchase</span></td><td>GRN-2026-0018</td><td style="color:#4ade80;">+3,000 ml</td><td></td><td>4,800 ml</td><td>₹900/ml</td></tr>
+          <tr><td>20/06/2026</td><td><span class="badge badge-blue">Production</span></td><td>PROD-2026-0003</td><td></td><td style="color:#f87171;">−500 ml</td><td>4,300 ml</td><td></td></tr>
+          <tr><td>25/06/2026</td><td><span class="badge badge-amber">Adjustment</span></td><td>Spillage / Damage</td><td></td><td style="color:#f87171;">−100 ml</td><td>4,200 ml</td><td></td></tr>
+          <tr><td>20/07/2026</td><td><span class="badge badge-green">Purchase</span></td><td>GRN-2026-0025</td><td style="color:#4ade80;">+1,000 ml</td><td></td><td>5,200 ml</td><td>₹850/ml</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="content-block"><h3>📦 Batch / Lot Details</h3></div>
+  <table class="light-table">
+    <thead><tr><th>Batch #</th><th>Supplier</th><th>Received</th><th>Original Qty</th><th>Remaining</th><th>Cost/ml</th><th>Expiry</th></tr></thead>
+    <tbody>
+      <tr><td>BAT-001</td><td>Fragrance World</td><td>01/05/2026</td><td>2,000 ml</td><td>1,800 ml</td><td>₹800</td><td>01/05/2028</td></tr>
+      <tr><td>BAT-002</td><td>Arabian Oils</td><td>15/06/2026</td><td>3,000 ml</td><td>2,500 ml</td><td>₹900</td><td>15/06/2028</td></tr>
+      <tr><td>BAT-003</td><td>Fragrance World</td><td>20/07/2026</td><td>1,000 ml</td><td>900 ml</td><td>₹850</td><td>20/07/2028</td></tr>
+    </tbody>
+  </table>
+  <div class="highlight-box gold"><h4>✏️ Stock Adjustment</h4><p>Correct stock due to damage, expiry, or physical count. Every adjustment requires a reason and is logged in the ledger for full transparency and audit compliance.</p></div>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- 03. SUPPLIER MANAGEMENT -->
+<!-- ═══════════════════════════════════════ -->
+<div class="page">
+  <div class="page-header"><span class="page-header-left">PERFUME MANUFACTURING ERP</span><span class="page-header-right">03 — Supplier Management</span></div>
+  <div class="section-title-block">
+    <div class="section-number">Module 03</div>
+    <div class="section-title">Supplier Management</div>
+    <div class="section-subtitle">Complete directory of all your suppliers — what they supply, purchase history, outstanding balances, and performance tracking.</div>
+  </div>
+  <div class="screen-mockup">
+    <div class="screen-toolbar"><div class="screen-dot red"></div><div class="screen-dot yellow"></div><div class="screen-dot green"></div><span class="screen-title">PerfumeERP — Supplier Detail</span></div>
+    <div class="screen-content">
+      <div class="screen-heading">Fragrance World <span>LLC</span></div>
+      <div style="color:rgba(255,255,255,0.5);font-size:11px;margin-bottom:12px;">Contact: Ahmed Al Rashid &nbsp;|&nbsp; +971-50-1234567 &nbsp;|&nbsp; ahmed@fragranceworld.com<br>Payment Terms: Net 30 Days &nbsp;|&nbsp; Credit Limit: ₹5,00,000</div>
+      <div class="kpi-row" style="grid-template-columns: repeat(3, 1fr);">
+        <div class="kpi-card"><div class="kpi-label">Outstanding Balance</div><div class="kpi-value red">₹2,06,000</div></div>
+        <div class="kpi-card"><div class="kpi-label">Purchases (2026)</div><div class="kpi-value blue">₹12,50,000</div></div>
+        <div class="kpi-card"><div class="kpi-label">Total POs</div><div class="kpi-value gold">18</div></div>
+      </div>
+      <div style="color:var(--gold);font-size:10px;font-weight:600;text-transform:uppercase;margin:10px 0 6px;">Materials Supplied</div>
+      <table class="mock-table">
+        <thead><tr><th>Material</th><th>Category</th><th>Rate</th><th>Lead Time</th></tr></thead>
+        <tbody>
+          <tr><td>Oud Oil</td><td>Essential Oil</td><td>₹850/ml</td><td>7 days</td></tr>
+          <tr><td>Rose Oil</td><td>Essential Oil</td><td>₹450/ml</td><td>5 days</td></tr>
+          <tr><td>Sandalwood Oil</td><td>Essential Oil</td><td>₹1,200/ml</td><td>10 days</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="feature-grid">
+    <div class="feature-card"><div class="feature-card-icon">📋</div><h4>Purchase History</h4><p>Every purchase order placed with this supplier — dates, amounts, delivery and payment status all in one view.</p></div>
+    <div class="feature-card"><div class="feature-card-icon">📄</div><h4>Statement of Account</h4><p>Full debit/credit statement — printable, filterable by date range. Know exactly where you stand.</p></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- 04. PURCHASE MANAGEMENT -->
+<!-- ═══════════════════════════════════════ -->
+<div class="page">
+  <div class="page-header"><span class="page-header-left">PERFUME MANUFACTURING ERP</span><span class="page-header-right">04 — Purchase Management</span></div>
+  <div class="section-title-block">
+    <div class="section-number">Module 04</div>
+    <div class="section-title">Purchase Management</div>
+    <div class="section-subtitle">Complete procurement workflow — from creating purchase orders to receiving goods and automatic inventory update.</div>
+  </div>
+  <div class="content-block"><h3>📋 Purchase Workflow</h3></div>
+  <div class="workflow">
+    <div class="workflow-step">Create PO<small>Draft</small></div><div class="workflow-arrow">→</div>
+    <div class="workflow-step">Approve PO<small>Manager Review</small></div><div class="workflow-arrow">→</div>
+    <div class="workflow-step gold">Send to Supplier<small>Order Placed</small></div><div class="workflow-arrow">→</div>
+    <div class="workflow-step">Receive Goods<small>GRN Created</small></div><div class="workflow-arrow">→</div>
+    <div class="workflow-step" style="background:var(--green);">Stock Updated<small>Auto ✓</small></div>
+  </div>
+  <div class="screen-mockup">
+    <div class="screen-toolbar"><div class="screen-dot red"></div><div class="screen-dot yellow"></div><div class="screen-dot green"></div><span class="screen-title">PerfumeERP — Purchase Order #PO-2026-0045</span></div>
+    <div class="screen-content">
+      <div class="screen-heading">Purchase Order <span>#PO-2026-0045</span></div>
+      <div style="display:flex;gap:16px;color:rgba(255,255,255,0.5);font-size:11px;margin-bottom:12px;">
+        <span>Supplier: <strong style="color:white;">Fragrance World</strong></span>
+        <span>Date: <strong style="color:white;">26/07/2026</strong></span>
+        <span>Expected: <strong style="color:white;">02/08/2026</strong></span>
+        <span>Status: <span class="badge badge-amber">Approved</span></span>
+      </div>
+      <table class="mock-table">
+        <thead><tr><th>Material</th><th>Quantity</th><th>Unit</th><th>Rate</th><th>Tax (18%)</th><th>Total</th></tr></thead>
+        <tbody>
+          <tr><td>Oud Oil</td><td>2,000</td><td>ml</td><td>₹850</td><td>₹3,06,000</td><td>₹20,06,000</td></tr>
+          <tr><td>Rose Oil</td><td>1,000</td><td>ml</td><td>₹450</td><td>₹81,000</td><td>₹5,31,000</td></tr>
+          <tr><td>Sandalwood Oil</td><td>500</td><td>ml</td><td>₹1,200</td><td>₹1,08,000</td><td>₹7,08,000</td></tr>
+        </tbody>
+      </table>
+      <div style="text-align:right;margin-top:10px;color:rgba(255,255,255,0.5);font-size:11px;">Subtotal: ₹22,50,000 &nbsp;|&nbsp; Tax: ₹4,95,000 &nbsp;|&nbsp; <strong style="color:var(--gold);font-size:14px;">Grand Total: ₹27,45,000</strong></div>
+    </div>
+  </div>
+  <div class="highlight-box green">
+    <h4>✅ What Happens Automatically When You Receive Goods</h4>
+    <ul>
+      <li>Raw material stock updated instantly</li>
+      <li>Batch / lot number created for traceability</li>
+      <li>Average cost recalculated for each material</li>
+      <li>Supplier payable (amount you owe) recorded automatically</li>
+      <li>Accounting entry posted to your books — no manual work needed</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- 05. FORMULA / RECIPE MANAGEMENT -->
+<!-- ═══════════════════════════════════════ -->
+<div class="page">
+  <div class="page-header"><span class="page-header-left">PERFUME MANUFACTURING ERP</span><span class="page-header-right">05 — Formula Management</span></div>
+  <div class="section-title-block">
+    <div class="section-number">Module 05 — Core Module ⭐</div>
+    <div class="section-title">Formula / Recipe Management</div>
+    <div class="section-subtitle">The heart of the system. Every perfume has its own formula — a precise recipe of ingredients and packaging needed to produce one unit.</div>
+  </div>
+  <div class="formula-card">
+    <div class="formula-header">
+      <div><div class="formula-name">Royal Oud — 100ml</div><div style="font-size:11px;color:var(--gray-600);margin-top:2px;">Code: FORM-001 &nbsp;|&nbsp; Output: 1 bottle &nbsp;|&nbsp; Version: 3</div></div>
+      <div class="formula-badge">⭐ ACTIVE</div>
+    </div>
+    <div class="formula-sections">
+      <div class="formula-section">
+        <h5>🧪 Ingredients (Raw Materials)</h5>
+        <table class="formula-table">
+          <thead><tr><th>Material</th><th>Qty</th><th>Unit</th><th>Cost</th></tr></thead>
+          <tbody>
+            <tr><td>Ethanol</td><td>70</td><td>ml</td><td>₹175</td></tr>
+            <tr><td>Oud Oil</td><td>5</td><td>ml</td><td>₹4,250</td></tr>
+            <tr><td>Rose Oil</td><td>8</td><td>ml</td><td>₹3,600</td></tr>
+            <tr><td>DPG</td><td>12</td><td>ml</td><td>₹180</td></tr>
+            <tr><td>Fixative</td><td>5</td><td>ml</td><td>₹600</td></tr>
+            <tr style="font-weight:700;"><td colspan="3">Ingredient Total</td><td>₹8,805</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="formula-section">
+        <h5>📦 Packaging</h5>
+        <table class="formula-table">
+          <thead><tr><th>Material</th><th>Qty</th><th>Cost</th></tr></thead>
+          <tbody>
+            <tr><td>Glass Bottle 100ml</td><td>1 pc</td><td>₹35</td></tr>
+            <tr><td>Gold Spray Head</td><td>1 pc</td><td>₹15</td></tr>
+            <tr><td>Wooden Cap</td><td>1 pc</td><td>₹45</td></tr>
+            <tr><td>Product Label</td><td>1 pc</td><td>₹5</td></tr>
+            <tr><td>Gift Box</td><td>1 pc</td><td>₹120</td></tr>
+            <tr style="font-weight:700;"><td colspan="2">Packaging Total</td><td>₹220</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="formula-total">
+      <div class="formula-total-item"><div class="formula-total-label">Total Cost / Unit</div><div class="formula-total-value">₹9,025</div></div>
+      <div class="formula-total-item"><div class="formula-total-label">Selling Price</div><div class="formula-total-value">₹15,000</div></div>
+      <div class="formula-total-item"><div class="formula-total-label">Gross Margin</div><div class="formula-total-value green">39.8%</div></div>
+    </div>
+  </div>
+  <div class="feature-grid feature-grid-3">
+    <div class="feature-card feature-card-gold"><div class="feature-card-icon">♾️</div><h4>Unlimited Formulas</h4><p>Create as many perfume recipes as you need — no limits.</p></div>
+    <div class="feature-card feature-card-gold"><div class="feature-card-icon">📐</div><h4>Product Variants</h4><p>Same perfume, different sizes (50ml, 100ml, 200ml) — clone & adjust.</p></div>
+    <div class="feature-card feature-card-gold"><div class="feature-card-icon">🔄</div><h4>Version History</h4><p>Every change creates a new version. Full recipe modification history.</p></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- 06. PRODUCTION MANAGEMENT -->
+<!-- ═══════════════════════════════════════ -->
+<div class="page">
+  <div class="page-header"><span class="page-header-left">PERFUME MANUFACTURING ERP</span><span class="page-header-right">06 — Production Management</span></div>
+  <div class="section-title-block">
+    <div class="section-number">Module 06</div>
+    <div class="section-title">Production Management</div>
+    <div class="section-subtitle">The manufacturing engine — select a formula, specify quantity, and the system calculates everything automatically.</div>
+  </div>
+  <div class="content-block"><h3>🏭 Production Workflow</h3></div>
+  <div class="workflow">
+    <div class="workflow-step">Create Order<small>Select Formula</small></div><div class="workflow-arrow">→</div>
+    <div class="workflow-step gold">Auto-Calculate<small>Material Needs</small></div><div class="workflow-arrow">→</div>
+    <div class="workflow-step">Start Production<small>Reserve Materials</small></div><div class="workflow-arrow">→</div>
+    <div class="workflow-step">Manufacture<small>Consume Materials</small></div><div class="workflow-arrow">→</div>
+    <div class="workflow-step" style="background:var(--green);">Complete<small>Finished Goods ✓</small></div>
+  </div>
+  <div class="screen-mockup">
+    <div class="screen-toolbar"><div class="screen-dot red"></div><div class="screen-dot yellow"></div><div class="screen-dot green"></div><span class="screen-title">PerfumeERP — Production Order PROD-2026-0010</span></div>
+    <div class="screen-content">
+      <div class="screen-heading">Material Requirement: <span>Royal Oud 100ml × 100 bottles</span></div>
+      <div style="color:var(--gold);font-size:10px;font-weight:600;text-transform:uppercase;margin-bottom:6px;">Ingredients Required</div>
+      <table class="mock-table">
+        <thead><tr><th>Material</th><th>Required</th><th>Available</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>Ethanol</td><td>7,000 ml</td><td>43,000 ml</td><td><span class="badge badge-green">✓ Available</span></td></tr>
+          <tr><td>Oud Oil</td><td>500 ml</td><td>4,000 ml</td><td><span class="badge badge-green">✓ Available</span></td></tr>
+          <tr><td>Rose Oil</td><td>800 ml</td><td>120 ml</td><td><span class="badge badge-red">✗ Short 680 ml</span></td></tr>
+          <tr><td>DPG</td><td>1,200 ml</td><td>7,300 ml</td><td><span class="badge badge-green">✓ Available</span></td></tr>
+          <tr><td>Fixative</td><td>500 ml</td><td>1,500 ml</td><td><span class="badge badge-green">✓ Available</span></td></tr>
+        </tbody>
+      </table>
+      <div style="color:var(--gold);font-size:10px;font-weight:600;text-transform:uppercase;margin:10px 0 6px;">Packaging Required</div>
+      <table class="mock-table">
+        <thead><tr><th>Material</th><th>Required</th><th>Available</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>Glass Bottle 100ml</td><td>100 pcs</td><td>350 pcs</td><td><span class="badge badge-green">✓ Available</span></td></tr>
+          <tr><td>Gold Spray Head</td><td>100 pcs</td><td>800 pcs</td><td><span class="badge badge-green">✓ Available</span></td></tr>
+          <tr><td>Wooden Cap</td><td>100 pcs</td><td>200 pcs</td><td><span class="badge badge-green">✓ Available</span></td></tr>
+          <tr><td>Product Label</td><td>100 pcs</td><td>1,000 pcs</td><td><span class="badge badge-green">✓ Available</span></td></tr>
+          <tr><td>Gift Box</td><td>100 pcs</td><td>150 pcs</td><td><span class="badge badge-green">✓ Available</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="highlight-box gold">
+    <h4>🤖 What the System Does Automatically</h4>
+    <ul>
+      <li><strong>Calculates material needs</strong> — Formula × number of bottles to produce</li>
+      <li><strong>Checks availability</strong> — Shows shortages in red so you can purchase first</li>
+      <li><strong>Reserves materials</strong> — Locks materials so other orders can't use them</li>
+      <li><strong>Consumes materials</strong> — Deducts from stock on completion</li>
+      <li><strong>Creates finished goods</strong> — Adds manufactured bottles to your product inventory</li>
+      <li><strong>Updates accounts</strong> — All cost entries posted to your books automatically</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- 07. SALES & INVOICING -->
+<!-- ═══════════════════════════════════════ -->
+<div class="page">
+  <div class="page-header"><span class="page-header-left">PERFUME MANUFACTURING ERP</span><span class="page-header-right">07 — Sales & Invoicing</span></div>
+  <div class="section-title-block">
+    <div class="section-number">Module 07</div>
+    <div class="section-title">Finished Goods, Sales & Invoicing</div>
+    <div class="section-subtitle">Manage your product catalog, create sales orders, generate professional invoices, and track deliveries and payments.</div>
+  </div>
+  <div class="content-block"><h3>💼 Sales Workflow</h3></div>
+  <div class="workflow">
+    <div class="workflow-step">Sales Order<small>Customer + Products</small></div><div class="workflow-arrow">→</div>
+    <div class="workflow-step">Confirm<small>Stock Checked</small></div><div class="workflow-arrow">→</div>
+    <div class="workflow-step gold">Invoice<small>Auto-Generated</small></div><div class="workflow-arrow">→</div>
+    <div class="workflow-step">Deliver<small>Stock Deducted</small></div><div class="workflow-arrow">→</div>
+    <div class="workflow-step" style="background:var(--green);">Payment<small>Received ✓</small></div>
+  </div>
+  <div class="invoice-mockup">
+    <div class="invoice-header">
+      <div><div class="invoice-company">Royal Perfumes Pvt Ltd<small>123, Fragrances Lane, Andheri West, Mumbai 400053<br>GST: 27AABCR1234Z1 &nbsp;|&nbsp; +91-22-2345-6789</small></div></div>
+      <div class="invoice-badge">TAX INVOICE</div>
+    </div>
+    <div class="invoice-meta">
+      <div class="invoice-meta-block"><h5>Invoice To</h5><p><strong>Luxury Retail Store</strong><br>45, Connaught Place, New Delhi 110001<br>GST: 07ABCDE1234F5Z6</p></div>
+      <div class="invoice-meta-block" style="text-align:right;"><h5>Invoice Details</h5><p>Invoice #: <strong>INV-2026-0055</strong><br>Date: 26/07/2026<br>Due Date: 25/08/2026</p></div>
+    </div>
+    <table class="invoice-table">
+      <thead><tr><th>#</th><th>Product</th><th>HSN</th><th>Qty</th><th>Rate</th><th class="text-right">Amount</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Royal Oud — 100ml</td><td>3303</td><td>50</td><td>₹15,000</td><td class="text-right">₹7,50,000</td></tr>
+        <tr><td>2</td><td>Flora Rose — 50ml</td><td>3303</td><td>100</td><td>₹5,000</td><td class="text-right">₹5,00,000</td></tr>
+      </tbody>
+    </table>
+    <div class="invoice-totals">
+      <table>
+        <tr><td>Subtotal</td><td class="text-right">₹12,50,000</td></tr>
+        <tr><td>Discount (5%)</td><td class="text-right" style="color:var(--red);">−₹62,500</td></tr>
+        <tr><td>CGST (9%)</td><td class="text-right">₹1,06,875</td></tr>
+        <tr><td>SGST (9%)</td><td class="text-right">₹1,06,875</td></tr>
+        <tr class="grand-total"><td>Grand Total</td><td class="text-right">₹14,01,250</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- 08. ACCOUNTING -->
+<!-- ═══════════════════════════════════════ -->
+<div class="page">
+  <div class="page-header"><span class="page-header-left">PERFUME MANUFACTURING ERP</span><span class="page-header-right">08 — Full Accounting</span></div>
+  <div class="section-title-block">
+    <div class="section-number">Module 08</div>
+    <div class="section-title">Full Accounting & Finance</div>
+    <div class="section-subtitle">Complete double-entry accounting engine built in. Every purchase, production, sale, and payment auto-posts journal entries silently.</div>
+  </div>
+  <div class="feature-grid">
+    <div class="feature-card feature-card-gold">
+      <div class="feature-card-icon">⚡</div>
+      <h4>Automated Double-Entry Engine</h4>
+      <p>Every operational transaction automatically posts debit and credit journal entries behind the scenes without manual bookkeeper work.</p>
+    </div>
+    <div class="feature-card feature-card-gold">
+      <div class="feature-card-icon">🎯</div>
+      <h4>Perfume-Tailored Ledger Accounts</h4>
+      <p>Pre-configured accounts designed specifically for raw materials, packaging, work-in-progress, finished goods, and manufacturing overheads.</p>
+    </div>
+  </div>
+  <div class="content-block" style="margin-top:14px;"><h3>🤖 Automatic Accounting Postings</h3></div>
+  <table class="light-table">
+    <thead><tr><th>Operational Trigger</th><th>Automated Double-Entry Journal Entry</th></tr></thead>
+    <tbody>
+      <tr><td>📦 Goods Received (GRN)</td><td>Dr: Raw Material Inventory &nbsp;|&nbsp; Cr: Accounts Payable</td></tr>
+      <tr><td>💳 Supplier Payment</td><td>Dr: Accounts Payable &nbsp;|&nbsp; Cr: Bank Account</td></tr>
+      <tr><td>🏭 Production Issued</td><td>Dr: Work-in-Progress &nbsp;|&nbsp; Cr: Raw Material & Packaging Inv</td></tr>
+      <tr><td>✅ Production Completed</td><td>Dr: Finished Goods Inventory &nbsp;|&nbsp; Cr: Work-in-Progress</td></tr>
+      <tr><td>🧾 Sales Invoiced</td><td>Dr: Accounts Receivable &nbsp;|&nbsp; Cr: Sales Revenue & Tax</td></tr>
+      <tr><td>💰 Customer Payment</td><td>Dr: Bank Account &nbsp;|&nbsp; Cr: Accounts Receivable</td></tr>
+      <tr><td>💸 Expense Logged</td><td>Dr: Operating Expenses &nbsp;|&nbsp; Cr: Bank Account</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- 09. PAYMENTS & EXPENSES -->
+<!-- ═══════════════════════════════════════ -->
+<div class="page">
+  <div class="page-header"><span class="page-header-left">PERFUME MANUFACTURING ERP</span><span class="page-header-right">09 — Payments & Expenses</span></div>
+  <div class="section-title-block">
+    <div class="section-number">Module 09</div>
+    <div class="section-title">Payments, Payables, Receivables & Expenses</div>
+    <div class="section-subtitle">Track every rupee coming in and going out. Know who owes you, who you owe, and where your money is being spent.</div>
+  </div>
+  <div class="screen-mockup">
+    <div class="screen-toolbar"><div class="screen-dot red"></div><div class="screen-dot yellow"></div><div class="screen-dot green"></div><span class="screen-title">PerfumeERP — Accounts Payable</span></div>
+    <div class="screen-content">
+      <div class="screen-heading">Payables <span>— Total Outstanding: ₹4,25,000</span></div>
+      <table class="mock-table">
+        <thead><tr><th>Invoice #</th><th>Supplier</th><th>Amount</th><th>Paid</th><th>Due</th><th>Due Date</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>PI-0042</td><td>Fragrance World</td><td>₹2,06,000</td><td>₹0</td><td style="color:#f87171;">₹2,06,000</td><td>15/07/2026</td><td><span class="badge badge-red">Overdue</span></td></tr>
+          <tr><td>PI-0045</td><td>Chemical Corp</td><td>₹75,000</td><td>₹25,000</td><td style="color:#fbbf24;">₹50,000</td><td>01/08/2026</td><td><span class="badge badge-amber">Partial</span></td></tr>
+          <tr><td>PI-0048</td><td>Arabian Oils</td><td>₹3,50,000</td><td>₹1,81,000</td><td style="color:#fbbf24;">₹1,69,000</td><td>10/08/2026</td><td><span class="badge badge-amber">Partial</span></td></tr>
+          <tr><td>PI-0050</td><td>Glass Works</td><td>₹45,000</td><td>₹45,000</td><td style="color:#4ade80;">₹0</td><td>20/08/2026</td><td><span class="badge badge-green">Paid</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="two-col" style="margin-top:10px;">
+    <div class="feature-card"><div class="feature-card-icon">💳</div><h4>Payment Recording</h4><p>Pay via Cash, Bank, Cheque, UPI, Card. Supports <strong>partial payments</strong>. Each payment is linked to its invoice.</p></div>
+    <div class="feature-card"><div class="feature-card-icon">💸</div><h4>Expense Management</h4><p>Track rent, salaries, utilities, transport, marketing. Every expense auto-posted to accounts.</p></div>
+  </div>
+  <div class="content-block" style="margin-top:14px;"><h3>💸 Monthly Expense Breakdown</h3></div>
+  <table class="light-table">
+    <thead><tr><th>Category</th><th>July 2026</th><th>% of Total</th><th>Visual</th></tr></thead>
+    <tbody>
+      <tr><td>👥 Salaries & Wages</td><td>₹1,80,000</td><td>42%</td><td><div class="aging-bar"><div class="aging-fill" style="width:42%;background:var(--navy);"></div></div></td></tr>
+      <tr><td>🏢 Rent & Utilities</td><td>₹1,50,000</td><td>35%</td><td><div class="aging-bar"><div class="aging-fill" style="width:35%;background:var(--gold);"></div></div></td></tr>
+      <tr><td>🚚 Transportation</td><td>₹45,000</td><td>10%</td><td><div class="aging-bar"><div class="aging-fill" style="width:10%;background:var(--blue);"></div></div></td></tr>
+      <tr><td>📢 Marketing</td><td>₹30,000</td><td>7%</td><td><div class="aging-bar"><div class="aging-fill" style="width:7%;background:var(--green);"></div></div></td></tr>
+      <tr><td>🖥️ Office & Admin</td><td>₹25,000</td><td>6%</td><td><div class="aging-bar"><div class="aging-fill" style="width:6%;background:var(--gray-400);"></div></div></td></tr>
+      <tr style="font-weight:700;"><td>Total</td><td>₹4,30,000</td><td>100%</td><td></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- 10. BUSINESS INTELLIGENCE REPORTS CATALOG -->
+<!-- ═══════════════════════════════════════ -->
+<div class="page">
+  <div class="page-header"><span class="page-header-left">PERFUME MANUFACTURING ERP</span><span class="page-header-right">10 — Business Intelligence Reports Catalog</span></div>
+  <div class="section-title-block">
+    <div class="section-number">Module 10</div>
+    <div class="section-title">Business Intelligence Reports Catalog</div>
+    <div class="section-subtitle">25+ Report Heads covering every aspect of your business — from stock alerts to ROI, product profitability to supplier performance.</div>
+  </div>
+
+  <div class="content-block"><h3>📦 Inventory & Stock Report Heads</h3></div>
+  <div class="feature-grid">
+    <div class="feature-card feature-card-red"><div class="feature-card-icon">🚨</div><h4>Stock Alert Report</h4><p>All materials below reorder level — SKU, current stock, reorder level, shortage qty, and suggested purchase qty.</p></div>
+    <div class="feature-card"><div class="feature-card-icon">📦</div><h4>Stock Valuation Report</h4><p>Total inventory valuation — raw materials, packaging, and finished goods valued at weighted average cost.</p></div>
+    <div class="feature-card"><div class="feature-card-icon">📊</div><h4>Stock Movement Report</h4><p>All stock ins and outs for any date range by material or category. Identify fast vs slow-moving stock.</p></div>
+    <div class="feature-card"><div class="feature-card-icon">🔄</div><h4>Slow & Non-Moving Stock</h4><p>Materials with zero movement in 30/60/90 days to avoid dead capital tied in warehouse storage.</p></div>
+    <div class="feature-card"><div class="feature-card-icon">📅</div><h4>Expiry Alert Report</h4><p>Perishable essential oils & chemicals expiring within 30/60/90 days with batch details.</p></div>
+    <div class="feature-card"><div class="feature-card-icon">📈</div><h4>Stock Consumption Trend</h4><p>Monthly material consumption rates to help forecast upcoming purchase requirements accurately.</p></div>
+  </div>
+
+  <div class="content-block"><h3>🏭 Production & Manufacturing Report Heads</h3></div>
+  <div class="feature-grid">
+    <div class="feature-card feature-card-gold"><div class="feature-card-icon">💰</div><h4>Manufacturing Cost Report</h4><p>Per-product cost breakdown — raw materials, packaging, and overheads. Know your true production cost per bottle.</p></div>
+    <div class="feature-card feature-card-gold"><div class="feature-card-icon">📉</div><h4>Wastage & Loss Report</h4><p>Production material loss analysis — expected yield vs actual yield per production batch with monetary loss valuation.</p></div>
+    <div class="feature-card"><div class="feature-card-icon">📊</div><h4>Production Output Report</h4><p>Units manufactured per perfume product by date range — track factory output capacity.</p></div>
+    <div class="feature-card"><div class="feature-card-icon">🔍</div><h4>Batch Traceability Report</h4><p>Trace any finished perfume bottle batch back to specific raw material batches, suppliers, and purchase dates.</p></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- 10 contd. MORE BI REPORT HEADS -->
+<!-- ═══════════════════════════════════════ -->
+<div class="page">
+  <div class="page-header"><span class="page-header-left">PERFUME MANUFACTURING ERP</span><span class="page-header-right">10 — Business Intelligence Reports Catalog (cont.)</span></div>
+
+  <div class="content-block"><h3>💼 Sales & Profitability Report Heads</h3></div>
+  <div class="feature-grid">
+    <div class="feature-card feature-card-green"><div class="feature-card-icon">📈</div><h4>Product Profitability Report</h4><p>Per-product margin breakdown: selling price, production cost, gross profit, and margin contribution %.</p></div>
+    <div class="feature-card feature-card-green"><div class="feature-card-icon">💹</div><h4>ROI Report (Return on Investment)</h4><p>Return generated per rupee spent on raw material manufacturing per perfume line.</p></div>
+    <div class="feature-card"><div class="feature-card-icon">👥</div><h4>Customer Sales & Outstanding</h4><p>Total revenue, sales count, average order value, and current outstanding balance per client.</p></div>
+    <div class="feature-card"><div class="feature-card-icon">🏆</div><h4>Top Best-Selling Products</h4><p>Ranked performance list of top perfume SKUs by sales revenue, unit volume, and profitability.</p></div>
+  </div>
+
+  <div class="content-block"><h3>🛒 Purchase & Supplier Report Heads</h3></div>
+  <div class="feature-grid">
+    <div class="feature-card feature-card-blue"><div class="feature-card-icon">⭐</div><h4>Supplier Performance Rating</h4><p>Supplier metrics: On-time delivery %, quality defect score, average lead time, and price consistency.</p></div>
+    <div class="feature-card feature-card-blue"><div class="feature-card-icon">💲</div><h4>Purchase Price Variance</h4><p>Track cost increases across raw material suppliers over time to control raw material inflation.</p></div>
+  </div>
+
+  <div class="content-block"><h3>🏦 Financial & Accounting Report Heads</h3></div>
+  <div class="feature-grid feature-grid-3">
+    <div class="feature-card feature-card-purple"><div class="feature-card-icon">📊</div><h4>Profit & Loss Statement</h4><p>Net income summary detailing total sales revenue, COGS, and operating expenses.</p></div>
+    <div class="feature-card feature-card-purple"><div class="feature-card-icon">🏛️</div><h4>Balance Sheet</h4><p>Financial standing snapshot — Total Assets vs Total Liabilities and Owner Equity.</p></div>
+    <div class="feature-card feature-card-purple"><div class="feature-card-icon">⚖️</div><h4>Trial Balance Report</h4><p>Summary of all ledger debits and credits ensuring financial book balance.</p></div>
+    <div class="feature-card"><div class="feature-card-icon">💵</div><h4>Cash Flow Statement</h4><p>Inflows and outflows categorized by operating, investment, and financing activities.</p></div>
+    <div class="feature-card"><div class="feature-card-icon">📋</div><h4>AP & AR Aging Reports</h4><p>Overdue debt and collection buckets (Current, 30, 60, 90+ days) for suppliers and customers.</p></div>
+    <div class="feature-card"><div class="feature-card-icon">📒</div><h4>General Ledger & Day Book</h4><p>Complete transaction register by account code and daily entry logs.</p></div>
+  </div>
+</div>
+
+</body>
+</html>

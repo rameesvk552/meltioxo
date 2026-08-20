@@ -1,0 +1,64 @@
+/* Purchase entry: card-forward layout, with a mobile first line-item experience. */
+.ant-layout-content:has(.ant-table) .ant-card {
+  border: 1px solid #e6eaee;
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(22, 35, 48, .06);
+}
+.ant-layout-content:has(.ant-table) .ant-card-head {
+  min-height: 62px;
+  padding: 0 22px;
+  border-bottom-color: #edf0f3;
+}
+.ant-layout-content:has(.ant-table) .ant-card-head-title {
+  color: #263342;
+  font-size: 16px;
+  font-weight: 700;
+}
+.ant-layout-content:has(.ant-table) .ant-form-item-label > label {
+  color: #536274;
+  font-weight: 600;
+  font-size: 12px;
+}
+.ant-layout-content:has(.ant-table) .ant-input,
+.ant-layout-content:has(.ant-table) .ant-picker,
+.ant-layout-content:has(.ant-table) .ant-select-selector,
+.ant-layout-content:has(.ant-table) .ant-input-number {
+  border-radius: 9px !important;
+}
+.ant-layout-content:has(.ant-table) .ant-table-wrapper {
+  border: 1px solid #e6ebef;
+  border-radius: 11px;
+  overflow: hidden;
+}
+.ant-layout-content:has(.ant-table) .ant-table-thead > tr > th {
+  background: #f4f6f8;
+  color: #526274;
+  font-size: 12px;
+  font-weight: 700;
+}
+.ant-layout-content:has(.ant-table) .ant-btn-dashed {
+  min-height: 42px;
+  border-radius: 10px;
+  border-color: #d7dee5;
+  color: #47586a;
+  font-weight: 600;
+}
+.ant-layout-content:has(.ant-table) .ant-divider {
+  border-color: #edf0f2;
+}
+
+@media (max-width: 640px) {
+  .ant-layout-content:has(.ant-table) { background: #f7f8fa; }
+  .ant-layout-content:has(.ant-table) > div { padding: 16px !important; }
+  .ant-layout-content:has(.ant-table) > div > div:first-child { gap: 12px; align-items: flex-start !important; }
+  .ant-layout-content:has(.ant-table) h1 { margin: 0; font-family: var(--font-heading); font-size: 27px; color: #263342; }
+  .ant-layout-content:has(.ant-table) .ant-card { border-radius: 14px; }
+  .ant-layout-content:has(.ant-table) .ant-card-head { min-height: 56px; padding: 0 16px; }
+  .ant-layout-content:has(.ant-table) .ant-card-body { padding: 16px; }
+  /* Keep the line-item grid horizontally scrollable. Transforming table cells into
+     pseudo-fields breaks Ant Design's responsive table layout on small screens. */
+  .ant-layout-content:has(.ant-table) .ant-table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .ant-layout-content:has(.ant-table) .ant-table { min-width: 760px; }
+  .ant-layout-content:has(.ant-table) .ant-space { flex-wrap: wrap; }
+  .ant-layout-content:has(.ant-table) .ant-card + .ant-card { margin-top: 18px; }
+}

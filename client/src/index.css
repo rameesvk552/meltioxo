@@ -1,0 +1,6 @@
+/* Base resets — design-system.css and global.css handle everything else. */
+body {
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

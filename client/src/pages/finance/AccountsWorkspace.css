@@ -1,0 +1,27 @@
+.account-tree-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+}
+
+.account-tree-title strong { font-size: 12px; }
+.account-tree-balance {
+  margin-left: auto;
+  padding-right: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.accounts-page .ant-card {
+  border-color: #e8e1da;
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(44, 34, 26, .025);
+}
+
+.accounts-page .ant-tree .ant-tree-node-content-wrapper { flex: 1; }
+.accounts-page .ant-tree-treenode {
+  width: 100%;
+  border-bottom: 1px solid #f0ece8;
+}

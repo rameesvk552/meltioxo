@@ -1,0 +1,22 @@
+# Dependencies and generated builds
+node_modules/
+dist/
+build/
+.vite/
+.vite-temp/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+
+# Local tooling and transient files
+.codex-remote-attachments/
+*.log
+.DS_Store
+Thumbs.db
+
+# Backups and packaged release artifacts
+ec2-cleanup-backup-*/
+*.tgz
+*.tar.gz
