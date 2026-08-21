@@ -1,6 +1,7 @@
 const db = require('../models');
 const { AppError } = require('../middleware/errorHandler');
 const accounting = require('../services/accounting.service');
+const { ACCOUNT_CODES } = require('../config/constants');
 
 const number = value => Number(value || 0);
 
@@ -61,17 +62,17 @@ exports.create = async (req, res, next) => {
     }
     cogs = accounting.money(cogs);
 
-    const accounts = await accounting.getAccountsByCode(req.tenantId, ['4000', '5000', '1300', '2100'], transaction);
+    const accounts = await accounting.getAccountsByCode(req.tenantId, [ACCOUNT_CODES.SALES_REVENUE, ACCOUNT_CODES.COGS, ACCOUNT_CODES.FG_INVENTORY, ACCOUNT_CODES.TAX_PAYABLE], transaction);
     const revenueJournal = await accounting.createAndPost(req.tenantId, { entry_date: sale_date, reference_type: 'retail_sale_revenue', reference_id: sale.id,
       narration: 'Retail sale revenue', lines: [
         { account_id: paymentAccount.id, debit_amount: number(sale.total_amount), description: `Retail sale ${sale.sale_number}` },
-        { account_id: accounts['4000'].id, credit_amount: subtotal - discountAmount, description: `Retail sale ${sale.sale_number}` },
-        ...(taxAmount ? [{ account_id: accounts['2100'].id, credit_amount: taxAmount, description: `Tax on ${sale.sale_number}` }] : [])
+        { account_id: accounts[ACCOUNT_CODES.SALES_REVENUE].id, credit_amount: subtotal - discountAmount, description: `Retail sale ${sale.sale_number}` },
+        ...(taxAmount ? [{ account_id: accounts[ACCOUNT_CODES.TAX_PAYABLE].id, credit_amount: taxAmount, description: `Tax on ${sale.sale_number}` }] : [])
       ] }, req.user.id, transaction);
     const cogsJournal = cogs ? await accounting.createAndPost(req.tenantId, { entry_date: sale_date, reference_type: 'retail_sale_cogs', reference_id: sale.id,
       narration: 'Retail sale cost of goods sold', lines: [
-        { account_id: accounts['5000'].id, debit_amount: cogs, description: `COGS for ${sale.sale_number}` },
-        { account_id: accounts['1300'].id, credit_amount: cogs, description: `COGS for ${sale.sale_number}` }
+        { account_id: accounts[ACCOUNT_CODES.COGS].id, debit_amount: cogs, description: `COGS for ${sale.sale_number}` },
+        { account_id: accounts[ACCOUNT_CODES.FG_INVENTORY].id, credit_amount: cogs, description: `COGS for ${sale.sale_number}` }
       ] }, req.user.id, transaction) : null;
     if (db.sequelize.getDialect() === 'postgres') await db.sequelize.query('SELECT pg_advisory_xact_lock(hashtext(:key))', { replacements: { key: `${req.tenantId}:payment:incoming` }, transaction });
     const paymentSequence = await db.payment.count({ where: { tenant_id: req.tenantId, payment_type: 'incoming' }, transaction }) + 1;

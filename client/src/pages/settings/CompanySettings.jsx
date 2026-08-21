@@ -1,18 +1,29 @@
 ﻿import React from 'react';
-import { Card, Form, Input, Button, Row, Col, Typography, Tabs, Select, Upload, Table, Space, Tag } from 'antd';
-import { SaveOutlined, UploadOutlined, PlusOutlined, DeleteOutlined, UserOutlined } from '@ant-design/icons';
+import { Card, Form, Input, InputNumber, Button, Row, Col, Typography, Tabs, Select, Upload, Table, Space, Tag, Modal, Switch, message } from 'antd';
+import { SaveOutlined, UploadOutlined, PlusOutlined, DeleteOutlined, UserOutlined, EditOutlined, CreditCardOutlined } from '@ant-design/icons';
 import client from '../../api/client';
 import useApiData from '../../hooks/useApiData';
 
 const { Title } = Typography;
 const { Option } = Select;
 const { TextArea } = Input;
+const paymentTypes = ['CASH', 'BANK', 'UPI', 'CARD', 'WALLET', 'GATEWAY', 'OTHER'];
+const acceptedLogoTypes = ['image/png', 'image/jpeg', 'image/webp'];
+const maxLogoSize = 1024 * 1024;
 
 const CompanySettings = () => {
   const [formCompany] = Form.useForm();
   const [formPrefs] = Form.useForm();
+  const [paymentForm] = Form.useForm();
+  const [paymentModalOpen, setPaymentModalOpen] = React.useState(false);
+  const [editingPayment, setEditingPayment] = React.useState(null);
+  const [savingPayment, setSavingPayment] = React.useState(false);
+  const [savingCompany, setSavingCompany] = React.useState(false);
+  const [logoUrl, setLogoUrl] = React.useState(null);
   const { data: tenant } = useApiData('/tenant/settings', { initialData: {} });
   const { data: userData, loading } = useApiData('/users');
+  const { data: paymentMethods, loading: loadingPaymentMethods, reload: reloadPaymentMethods } = useApiData('/accounts/payment-methods?active_only=false');
+  const { data: paymentLedgers } = useApiData('/accounts/payment-method-ledgers');
   const users = userData.map(item => ({
     ...item,
     role: item.role || '—',
@@ -20,7 +31,8 @@ const CompanySettings = () => {
   }));
 
   React.useEffect(() => {
-    formCompany.setFieldsValue({ name: tenant.name, email: tenant.email, phone: tenant.phone, taxId: tenant.tax_id });
+    formCompany.setFieldsValue({ name: tenant.name, email: tenant.email, phone: tenant.phone, taxId: tenant.tax_id, address: tenant.address });
+    setLogoUrl(tenant.logo_url || null);
     formPrefs.setFieldsValue({
       currency: tenant.currency,
       taxSystem: tenant.tax_system,
@@ -30,9 +42,39 @@ const CompanySettings = () => {
   }, [tenant, formCompany, formPrefs]);
 
   const handleSaveCompany = async (values) => {
-    await client.put('/tenant/settings', {
-      name: values.name, email: values.email, phone: values.phone, tax_id: values.taxId
-    });
+    try {
+      setSavingCompany(true);
+      await client.put('/tenant/settings', {
+        name: values.name,
+        email: values.email,
+        phone: values.phone,
+        tax_id: values.taxId,
+        address: values.address,
+        logo_url: logoUrl,
+      });
+      message.success('Company information saved.');
+    } catch (error) {
+      message.error(error.response?.data?.message || 'Could not save company information.');
+    } finally {
+      setSavingCompany(false);
+    }
+  };
+
+  const handleLogoSelect = (file) => {
+    if (!acceptedLogoTypes.includes(file.type)) {
+      message.error('Choose a PNG, JPEG, or WebP image.');
+      return Upload.LIST_IGNORE;
+    }
+    if (file.size > maxLogoSize) {
+      message.error('The logo must be smaller than 1 MB.');
+      return Upload.LIST_IGNORE;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => setLogoUrl(reader.result);
+    reader.onerror = () => message.error('Could not read that image. Please try another file.');
+    reader.readAsDataURL(file);
+    return false;
   };
 
   const handleSavePrefs = async (values) => {
@@ -42,6 +84,46 @@ const CompanySettings = () => {
       fy_start_month: values.fyStart,
       date_format: values.dateFormat
     });
+  };
+
+  const openPaymentMethod = (method = null) => {
+    setEditingPayment(method);
+    paymentForm.resetFields();
+    paymentForm.setFieldsValue(method ? {
+      name: method.name,
+      methodType: method.method_type,
+      accountId: method.account_id,
+      isDefault: method.is_default,
+      isActive: method.is_active,
+      sortOrder: method.sort_order,
+    } : { methodType: 'CASH', isDefault: false, isActive: true, sortOrder: paymentMethods.length * 10 + 10 });
+    setPaymentModalOpen(true);
+  };
+
+  const savePaymentMethod = async () => {
+    try {
+      const values = await paymentForm.validateFields();
+      setSavingPayment(true);
+      const payload = {
+        name: values.name.trim(),
+        method_type: values.methodType,
+        account_id: values.accountId,
+        is_default: Boolean(values.isDefault),
+        is_active: Boolean(values.isActive),
+        sort_order: Number(values.sortOrder || 0),
+      };
+      if (editingPayment) await client.patch(`/accounts/payment-methods/${editingPayment.id}`, payload);
+      else await client.post('/accounts/payment-methods', payload);
+      message.success(`Payment method ${editingPayment ? 'updated' : 'created'}.`);
+      setPaymentModalOpen(false);
+      setEditingPayment(null);
+      await reloadPaymentMethods();
+    } catch (error) {
+      if (error?.errorFields) return;
+      message.error(error.response?.data?.message || 'Could not save the payment method.');
+    } finally {
+      setSavingPayment(false);
+    }
   };
 
   const userColumns = [
@@ -59,6 +141,15 @@ const CompanySettings = () => {
         </Space>
       )
     }
+  ];
+
+  const paymentColumns = [
+    { title: 'Method', dataIndex: 'name', render: (name, method) => <Space><CreditCardOutlined /><strong>{name}</strong>{method.is_default && <Tag color="gold">Default</Tag>}</Space> },
+    { title: 'Type', dataIndex: 'method_type', render: value => <Tag>{value}</Tag> },
+    { title: 'Posting ledger', render: (_, method) => method.account ? `${method.account.code} — ${method.account.name}` : 'Not mapped' },
+    { title: 'Status', dataIndex: 'is_active', render: active => <Tag color={active ? 'success' : 'default'}>{active ? 'Active' : 'Inactive'}</Tag> },
+    { title: 'Order', dataIndex: 'sort_order', width: 80 },
+    { title: '', width: 80, render: (_, method) => <Button size="small" icon={<EditOutlined />} onClick={() => openPaymentMethod(method)}>Edit</Button> },
   ];
 
   const items = [
@@ -100,17 +191,30 @@ const CompanySettings = () => {
             <Col xs={24} md={8}>
               <div style={{ marginBottom: 16 }}>
                 <span style={{ color: '#fff', display: 'block', marginBottom: 8 }}>Company Logo</span>
-                <div style={{ width: 150, height: 150, background: 'rgba(255,255,255,0.1)', border: '1px dashed #30363d', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
-                  <UserOutlined style={{ fontSize: 48, color: '#8b949e' }} />
+                <div style={{ width: 150, height: 150, padding: 10, background: 'rgba(255,255,255,0.1)', border: '1px dashed #30363d', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
+                  {logoUrl
+                    ? <img src={logoUrl} alt="Company logo preview" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                    : <UserOutlined style={{ fontSize: 48, color: '#8b949e' }} />}
                 </div>
-                <Upload showUploadList={false}>
-                  <Button icon={<UploadOutlined />}>Upload Logo</Button>
-                </Upload>
+                <Space wrap>
+                  <Upload
+                    accept=".png,.jpg,.jpeg,.webp"
+                    beforeUpload={handleLogoSelect}
+                    maxCount={1}
+                    showUploadList={false}
+                  >
+                    <Button icon={<UploadOutlined />}>{logoUrl ? 'Change Logo' : 'Upload Logo'}</Button>
+                  </Upload>
+                  {logoUrl && <Button danger icon={<DeleteOutlined />} onClick={() => setLogoUrl(null)}>Remove</Button>}
+                </Space>
+                <Typography.Text type="secondary" style={{ display: 'block', marginTop: 8, fontSize: 12 }}>
+                  PNG, JPEG, or WebP. Maximum 1 MB. The logo will appear on invoice headers.
+                </Typography.Text>
               </div>
             </Col>
           </Row>
           <div style={{ marginTop: 24 }}>
-            <Button type="primary" htmlType="submit" icon={<SaveOutlined />} >
+            <Button type="primary" htmlType="submit" icon={<SaveOutlined />} loading={savingCompany}>
               Save Company Info
             </Button>
           </div>
@@ -188,6 +292,19 @@ const CompanySettings = () => {
           />
         </div>
       )
+    },
+    {
+      key: '4',
+      label: 'Payment Methods',
+      children: (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 16 }}>
+            <Typography.Text type="secondary">Define the methods available in POS and purchases. Every method must post to an active ledger under Cash & Bank.</Typography.Text>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => openPaymentMethod()}>Add Method</Button>
+          </div>
+          <Table columns={paymentColumns} dataSource={paymentMethods} loading={loadingPaymentMethods} rowKey="id" pagination={false} scroll={{ x: 760 }} />
+        </div>
+      )
     }
   ];
 
@@ -198,6 +315,31 @@ const CompanySettings = () => {
       <Card >
         <Tabs items={items} />
       </Card>
+
+      <Modal
+        title={editingPayment ? 'Edit payment method' : 'Add payment method'}
+        open={paymentModalOpen}
+        onCancel={() => setPaymentModalOpen(false)}
+        onOk={savePaymentMethod}
+        confirmLoading={savingPayment}
+        okText={editingPayment ? 'Save changes' : 'Add method'}
+        forceRender
+      >
+        <Form form={paymentForm} layout="vertical">
+          <Row gutter={12}>
+            <Col span={14}><Form.Item name="name" label="Display name" rules={[{ required: true, whitespace: true, message: 'Enter a payment method name' }]}><Input placeholder="e.g. UPI, Visa Card, HDFC Bank" /></Form.Item></Col>
+            <Col span={10}><Form.Item name="methodType" label="Method type" rules={[{ required: true }]}><Select options={paymentTypes.map(type => ({ value: type, label: type }))} /></Form.Item></Col>
+          </Row>
+          <Form.Item name="accountId" label="Posting ledger" rules={[{ required: true, message: 'Select the ledger that receives or pays this money' }]} extra="Only active posting ledgers under Cash & Bank are available.">
+            <Select showSearch optionFilterProp="label" placeholder="Select Cash or Bank ledger" options={paymentLedgers.map(ledger => ({ value: ledger.id, label: `${ledger.code} — ${ledger.name}` }))} />
+          </Form.Item>
+          <Row gutter={12}>
+            <Col span={8}><Form.Item name="sortOrder" label="Display order"><InputNumber min={0} precision={0} style={{ width: '100%' }} /></Form.Item></Col>
+            <Col span={8}><Form.Item name="isDefault" label="Default method" valuePropName="checked"><Switch /></Form.Item></Col>
+            <Col span={8}><Form.Item name="isActive" label="Available" valuePropName="checked"><Switch /></Form.Item></Col>
+          </Row>
+        </Form>
+      </Modal>
       
       <style>{`
         .ant-tabs-tab { color: #8b949e !important; }

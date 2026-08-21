@@ -1,8 +1,10 @@
 const { Op } = require('sequelize');
 const db = require('../models');
 const { AppError } = require('../middleware/errorHandler');
+const { ACCOUNT_CODES } = require('../config/constants');
 
 const PAYMENT_METHOD_TYPES = ['CASH', 'BANK', 'UPI', 'CARD', 'WALLET', 'GATEWAY', 'OTHER'];
+const ACCOUNT_TYPE_BASES = { asset: 1000, liability: 2000, equity: 3000, revenue: 4000, expense: 5000 };
 const today = () => new Date().toISOString().slice(0, 10);
 
 const money = (value, field = 'Amount') => {
@@ -15,6 +17,33 @@ const dateOnly = value => {
   const result = value ? String(value).slice(0, 10) : today();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(result)) throw new AppError('Entry date must be YYYY-MM-DD', 400);
   return result;
+};
+
+const accountCodeRange = (parentCode, type) => {
+  const match = String(parentCode || '').toUpperCase().match(/^G?(\d{4})$/);
+  if (match) {
+    const parentNumber = Number(match[1]);
+    const base = String(parentCode).toUpperCase().startsWith('G') && parentNumber % 100 === 0
+      ? parentNumber
+      : Math.floor(parentNumber / 100) * 100;
+    return { start: base + 1, end: base + 99 };
+  }
+  const base = ACCOUNT_TYPE_BASES[type] || 9000;
+  return { start: base + 1, end: base + 999 };
+};
+
+const generateNextAccountCode = async (tenantId, parent, type, transaction) => {
+  const { start, end } = accountCodeRange(parent?.code, type);
+  const rows = await db.account.findAll({ where: { tenant_id: tenantId }, attributes: ['code'], transaction });
+  const used = new Set(rows.map(row => String(row.code)).filter(code => /^\d{4}$/.test(code)).map(Number));
+  const inRange = [...used].filter(code => code >= start && code <= end);
+  let candidate = inRange.length ? Math.max(...inRange) + 1 : start;
+  if (candidate > end) {
+    candidate = start;
+    while (candidate <= end && used.has(candidate)) candidate += 1;
+  }
+  if (candidate > end) throw new AppError('No account codes are available under this group', 409);
+  return String(candidate).padStart(4, '0');
 };
 
 const normalizePaymentMethodType = value => {
@@ -121,7 +150,7 @@ const createAndPost = async (tenantId, data, userId, transaction) => {
 
 const getCashBankLedgers = async (tenantId, transaction) => {
   const all = await db.account.findAll({ where: { tenant_id: tenantId, is_active: true, type: 'asset' }, order: [['code', 'ASC'], ['name', 'ASC']], transaction });
-  const root = all.find(account => account.code === '1000');
+  const root = all.find(account => account.code === ACCOUNT_CODES.CASH_BANK_GROUP);
   if (!root) throw new AppError('Cash & Bank group is not configured', 500);
   const byId = new Map(all.map(account => [account.id, account]));
   const isDescendant = account => {
@@ -148,7 +177,7 @@ const ensureDefaultPaymentMethods = async (tenantId, transaction) => {
   const ledgers = await getCashBankLedgers(tenantId, transaction);
   // Travel Bot creates only Cash. Other methods are tenant-owned and are added
   // after the matching real-world ledger is created under Cash & Bank.
-  const defaults = [['1001', 'Cash', 'CASH', 10, true]];
+  const defaults = [[ACCOUNT_CODES.CASH, 'Cash', 'CASH', 10, true]];
   for (const [code, name, type, sortOrder, isDefault] of defaults) {
     const ledger = ledgers.find(item => item.code === code);
     if (!ledger) continue;
@@ -189,6 +218,43 @@ const resolvePaymentMethod = async (tenantId, payload = {}, transaction) => {
   const fallback = await db.paymentMethod.findOne({ where: { tenant_id: tenantId, is_active: true }, include: [db.account], order: [['is_default', 'DESC'], ['sort_order', 'ASC']], transaction });
   if (!fallback) throw new AppError('Configure an active payment method before recording money movements', 400);
   return fallback;
+};
+
+// Split payments are validated in cents so Cash + UPI + Card always matches
+// the document total exactly. A missing payments array keeps older clients
+// compatible with the original single payment_method_id payload.
+const normalizePaymentSplits = (payload = {}, totalAmount) => {
+  if (!Array.isArray(payload.payments)) return null;
+  if (!payload.payments.length) throw new AppError('Add at least one payment', 400);
+  const seen = new Set();
+  const splits = payload.payments.map((row, index) => {
+    const paymentMethodId = String(row.payment_method_id || '').trim();
+    if (!paymentMethodId) throw new AppError(`Payment ${index + 1} requires a payment method`, 400);
+    if (seen.has(paymentMethodId)) throw new AppError('Use each payment method only once per transaction', 400);
+    seen.add(paymentMethodId);
+    const amount = money(row.amount, `Payment ${index + 1} amount`);
+    if (amount <= 0) throw new AppError(`Payment ${index + 1} amount must be greater than zero`, 400);
+    return { payment_method_id: paymentMethodId, amount };
+  });
+  const paidCents = splits.reduce((sum, row) => sum + Math.round(row.amount * 100), 0);
+  const totalCents = Math.round(money(totalAmount, 'Document total') * 100);
+  if (paidCents !== totalCents) {
+    throw new AppError(`Payment total ${(paidCents / 100).toFixed(2)} must equal document total ${(totalCents / 100).toFixed(2)}`, 400);
+  }
+  return splits;
+};
+
+const resolvePaymentSplits = async (tenantId, payload = {}, totalAmount, transaction) => {
+  const splits = normalizePaymentSplits(payload, totalAmount);
+  if (!splits) {
+    const method = await resolvePaymentMethod(tenantId, payload, transaction);
+    return [{ method, amount: money(totalAmount) }];
+  }
+  const resolved = [];
+  for (const split of splits) {
+    resolved.push({ method: await getPaymentMethod(tenantId, split.payment_method_id, transaction), amount: split.amount });
+  }
+  return resolved;
 };
 
 const createPaymentMethod = async (tenantId, payload, transaction) => {
@@ -240,4 +306,4 @@ const reverseJournal = async (tenantId, journalId, userId, reversalDate, narrati
   return reversal;
 };
 
-module.exports = { PAYMENT_METHOD_TYPES, money, paymentModeForType, validateJournalLines, createJournalEntry, postJournal, generateAutoNumber, getAccountsByCode, createAndPost, getCashBankLedgers, assertCashBankLedger, ensureDefaultPaymentMethods, listPaymentMethods, getPaymentMethod, resolvePaymentMethod, createPaymentMethod, updatePaymentMethod, reverseJournal };
+module.exports = { PAYMENT_METHOD_TYPES, accountCodeRange, generateNextAccountCode, money, paymentModeForType, validateJournalLines, createJournalEntry, postJournal, generateAutoNumber, getAccountsByCode, createAndPost, getCashBankLedgers, assertCashBankLedger, ensureDefaultPaymentMethods, listPaymentMethods, getPaymentMethod, resolvePaymentMethod, normalizePaymentSplits, resolvePaymentSplits, createPaymentMethod, updatePaymentMethod, reverseJournal };

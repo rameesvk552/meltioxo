@@ -1,0 +1,63 @@
+.formula-output-guide {
+  border-radius: 12px;
+}
+
+.formula-output-guide .ant-alert-message {
+  color: #243447;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.formula-guide-copy {
+  max-width: 920px;
+  color: #46566a;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.formula-guide-copy p {
+  margin: 3px 0 7px;
+}
+
+.formula-guide-copy ol {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+
+.formula-guide-copy li + li {
+  margin-top: 3px;
+}
+
+.formula-guide-example,
+.formula-guide-rule {
+  padding: 7px 9px;
+  border: 1px solid rgba(52, 119, 204, .16);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, .58);
+}
+
+.formula-guide-rule {
+  margin-top: 6px;
+}
+
+.formula-litre-confirm {
+  margin: 9px 0 0;
+}
+
+.formula-litre-confirm .ant-form-item-explain-error {
+  font-size: 11px;
+}
+
+@media (max-width: 767px) {
+  .formula-output-guide {
+    padding: 10px 11px;
+  }
+
+  .formula-output-guide .ant-alert-icon {
+    margin-inline-end: 8px;
+  }
+
+  .formula-guide-copy {
+    font-size: 11px;
+  }
+}

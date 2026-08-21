@@ -2,10 +2,11 @@ const db = require('../models');
 const { AppError } = require('../middleware/errorHandler');
 const accounting = require('../services/accounting.service');
 const production = require('../services/production.service');
+const { ACCOUNT_CODES } = require('../config/constants');
 
 const number = value => Number(value || 0);
 const today = () => new Date().toISOString().slice(0, 10);
-const modeOf = row => row.fulfillment_mode === 'make_now' ? 'make_now' : 'stock';
+const fulfillmentModeForVariant = variant => variant?.source_type === 'ready_made' ? 'stock' : 'make_now';
 
 const loadVariant = (tenantId, id, transaction) => db.finishedGood.findOne({
   where: { id, tenant_id: tenantId, is_active: true },
@@ -15,7 +16,7 @@ const loadVariant = (tenantId, id, transaction) => db.finishedGood.findOne({
     { model: db.variantPackaging, include: [db.packagingMaterial] }
   ],
   transaction,
-  ...(transaction ? { lock: transaction.LOCK.UPDATE } : {})
+  ...(transaction ? { lock: { level: transaction.LOCK.UPDATE, of: db.finishedGood } } : {})
 });
 
 const buildPreview = async (tenantId, items, transaction) => {
@@ -25,10 +26,9 @@ const buildPreview = async (tenantId, items, transaction) => {
   for (const [index, row] of items.entries()) {
     const quantity = number(row.quantity);
     if (!row.finished_good_id || quantity <= 0) throw new AppError(`Sale item ${index + 1} requires a product and positive quantity`, 400);
-    if (row.fulfillment_mode && !['stock', 'make_now'].includes(row.fulfillment_mode)) throw new AppError('Invalid fulfillment mode', 400);
     const variant = await loadVariant(tenantId, row.finished_good_id, transaction);
     if (!variant || !variant.product || !variant.product.is_active) throw new AppError('Select an active product variant', 400);
-    const fulfillmentMode = modeOf(row);
+    const fulfillmentMode = fulfillmentModeForVariant(variant);
     const line = {
       index,
       finished_good_id: variant.id,
@@ -141,7 +141,7 @@ const consumeStockLine = async ({ tenantId, saleId, variant, line, createdBy, tr
     await db.stockMovement.create({ tenant_id: tenantId, material_type: 'finished', material_id: variant.id, movement_type: 'sale', direction: 'out', quantity: taken, batch_id: batch.id, unit_cost: batch.cost_per_unit, total_cost: cost, reference_type: 'retail_sale', reference_id: saleId, created_by: createdBy }, { transaction });
     remaining -= taken; lineCost += cost;
   }
-  if (remaining > 0.0001) throw new AppError(`No costed production batches available for ${variant.name}`, 400);
+  if (remaining > 0.0001) throw new AppError(`No costed stock batches available for ${variant.name}`, 400);
   await variant.update({ current_stock: number(variant.current_stock) - line.quantity }, { transaction });
   return lineCost;
 };
@@ -161,8 +161,6 @@ exports.create = async (req, res, next) => {
       await transaction.rollback();
       return res.status(409).json({ success: false, code: 'NEGATIVE_STOCK_CONFIRMATION_REQUIRED', message: 'Confirm the material shortages to complete this sale', preview, shortages: preview.shortages });
     }
-    const method = await accounting.resolvePaymentMethod(req.tenantId, req.body, transaction);
-    const paymentAccount = method.account;
     const sequence = await db.retailSale.count({ where: { tenant_id: req.tenantId }, transaction }) + 1;
     let subtotal = 0, discountAmount = 0, taxAmount = 0;
     const calculated = items.map((row, index) => {
@@ -171,10 +169,13 @@ exports.create = async (req, res, next) => {
       if (discountPct < 0 || discountPct > 100 || taxRate < 0 || taxRate > 100) throw new AppError('Discount and tax rates must be between 0 and 100', 400);
       const base = accounting.money(quantity * price), discount = accounting.money(base * discountPct / 100), taxable = accounting.money(base - discount), tax = accounting.money(taxable * taxRate / 100);
       subtotal += base; discountAmount += discount; taxAmount += tax;
-      return { ...row, line_number: index + 1, fulfillment_mode: modeOf(row), quantity, unit_price: price, discount_pct: discountPct, tax_rate: taxRate, tax_amount: tax, total: accounting.money(taxable + tax) };
+      return { ...row, line_number: index + 1, fulfillment_mode: preview.lines[index].fulfillment_mode, quantity, unit_price: price, discount_pct: discountPct, tax_rate: taxRate, tax_amount: tax, total: accounting.money(taxable + tax) };
     });
     subtotal = accounting.money(subtotal); discountAmount = accounting.money(discountAmount); taxAmount = accounting.money(taxAmount);
-    const sale = await db.retailSale.create({ tenant_id: req.tenantId, sale_number: `RS-${new Date(sale_date).getFullYear()}-${String(sequence).padStart(4, '0')}`, sale_date, customer_id, payment_account_id: paymentAccount.id, payment_method_id: method.id, notes, subtotal, discount_amount: discountAmount, tax_amount: taxAmount, total_amount: accounting.money(subtotal - discountAmount + taxAmount), created_by: req.user.id }, { transaction });
+    const totalAmount = accounting.money(subtotal - discountAmount + taxAmount);
+    const paymentSplits = await accounting.resolvePaymentSplits(req.tenantId, req.body, totalAmount, transaction);
+    const primaryPayment = paymentSplits[0];
+    const sale = await db.retailSale.create({ tenant_id: req.tenantId, sale_number: `RS-${new Date(sale_date).getFullYear()}-${String(sequence).padStart(4, '0')}`, sale_date, customer_id, payment_account_id: primaryPayment.method.account.id, payment_method_id: primaryPayment.method.id, notes, subtotal, discount_amount: discountAmount, tax_amount: taxAmount, total_amount: totalAmount, created_by: req.user.id }, { transaction });
     let cogs = 0;
     for (const line of calculated) {
       const variant = await loadVariant(req.tenantId, line.finished_good_id, transaction);
@@ -185,7 +186,7 @@ exports.create = async (req, res, next) => {
         if (!made.batch || number(made.batch.remaining_qty) < line.quantity) throw new AppError('Created production batch could not fulfill the sale', 500);
         lineCost = line.quantity * number(made.batch.cost_per_unit);
         await made.batch.update({ remaining_qty: number(made.batch.remaining_qty) - line.quantity }, { transaction });
-        await variant.reload({ transaction, lock: transaction.LOCK.UPDATE });
+        await variant.reload({ transaction, include: [], lock: transaction.LOCK.UPDATE });
         await variant.update({ current_stock: number(variant.current_stock) - line.quantity }, { transaction });
         await db.stockMovement.create({ tenant_id: req.tenantId, material_type: 'finished', material_id: variant.id, movement_type: 'sale', direction: 'out', quantity: line.quantity, batch_id: made.batch.id, unit_cost: made.batch.cost_per_unit, total_cost: lineCost, reference_type: 'retail_sale', reference_id: sale.id, notes: 'Create Now batch sold immediately', created_by: req.user.id }, { transaction });
       } else {
@@ -195,22 +196,25 @@ exports.create = async (req, res, next) => {
       cogs += accounting.money(lineCost);
     }
     cogs = accounting.money(cogs);
-    const accounts = await accounting.getAccountsByCode(req.tenantId, ['4000', '5000', '1300', '2100'], transaction);
+    const accounts = await accounting.getAccountsByCode(req.tenantId, [ACCOUNT_CODES.SALES_REVENUE, ACCOUNT_CODES.COGS, ACCOUNT_CODES.FG_INVENTORY, ACCOUNT_CODES.TAX_PAYABLE], transaction);
     const revenueJournal = await accounting.createAndPost(req.tenantId, { entry_date: sale_date, reference_type: 'retail_sale_revenue', reference_id: sale.id, narration: 'Retail sale revenue', lines: [
-      { account_id: paymentAccount.id, debit_amount: number(sale.total_amount), description: `Retail sale ${sale.sale_number}` },
-      { account_id: accounts['4000'].id, credit_amount: subtotal - discountAmount, description: `Retail sale ${sale.sale_number}` },
-      ...(taxAmount ? [{ account_id: accounts['2100'].id, credit_amount: taxAmount, description: `Tax on ${sale.sale_number}` }] : [])
+      ...paymentSplits.map(split => ({ account_id: split.method.account.id, debit_amount: split.amount, description: `${split.method.name} received for ${sale.sale_number}` })),
+      { account_id: accounts[ACCOUNT_CODES.SALES_REVENUE].id, credit_amount: subtotal - discountAmount, description: `Retail sale ${sale.sale_number}` },
+      ...(taxAmount ? [{ account_id: accounts[ACCOUNT_CODES.TAX_PAYABLE].id, credit_amount: taxAmount, description: `Tax on ${sale.sale_number}` }] : [])
     ] }, req.user.id, transaction);
     const cogsJournal = cogs ? await accounting.createAndPost(req.tenantId, { entry_date: sale_date, reference_type: 'retail_sale_cogs', reference_id: sale.id, narration: 'Retail sale cost of goods sold', lines: [
-      { account_id: accounts['5000'].id, debit_amount: cogs, description: `COGS for ${sale.sale_number}` },
-      { account_id: accounts['1300'].id, credit_amount: cogs, description: `COGS for ${sale.sale_number}` }
+      { account_id: accounts[ACCOUNT_CODES.COGS].id, debit_amount: cogs, description: `COGS for ${sale.sale_number}` },
+      { account_id: accounts[ACCOUNT_CODES.FG_INVENTORY].id, credit_amount: cogs, description: `COGS for ${sale.sale_number}` }
     ] }, req.user.id, transaction) : null;
     if (db.sequelize.getDialect() === 'postgres') await db.sequelize.query('SELECT pg_advisory_xact_lock(hashtext(:key))', { replacements: { key: `${req.tenantId}:payment:incoming` }, transaction });
     const paymentSequence = await db.payment.count({ where: { tenant_id: req.tenantId, payment_type: 'incoming' }, transaction }) + 1;
-    const paymentRecord = await db.payment.create({ tenant_id: req.tenantId, payment_number: `PAY-IN-${new Date(sale_date).getFullYear()}-${String(paymentSequence).padStart(4, '0')}`, payment_type: 'incoming', party_type: 'customer', party_id: customer_id, payment_method_id: method.id, payment_mode: accounting.paymentModeForType(method.method_type), bank_account_id: paymentAccount.id, amount: sale.total_amount, payment_date: sale_date, notes: `Retail sale ${sale.sale_number}`, journal_entry_id: revenueJournal.id, created_by: req.user.id }, { transaction });
+    const paymentRecords = [];
+    for (const [index, split] of paymentSplits.entries()) {
+      paymentRecords.push(await db.payment.create({ tenant_id: req.tenantId, payment_number: `PAY-IN-${new Date(sale_date).getFullYear()}-${String(paymentSequence + index).padStart(4, '0')}`, payment_type: 'incoming', party_type: 'customer', party_id: customer_id, payment_method_id: split.method.id, payment_mode: accounting.paymentModeForType(split.method.method_type), bank_account_id: split.method.account.id, amount: split.amount, payment_date: sale_date, notes: `Retail sale ${sale.sale_number}`, journal_entry_id: revenueJournal.id, created_by: req.user.id }, { transaction }));
+    }
     await sale.update({ cogs_amount: cogs, journal_entry_id: revenueJournal.id, cogs_journal_id: cogsJournal?.id || null }, { transaction });
     await transaction.commit();
-    res.status(201).json({ ...sale.toJSON(), payment_id: paymentRecord.id });
+    res.status(201).json({ ...sale.toJSON(), payment_id: paymentRecords[0].id, payment_ids: paymentRecords.map(record => record.id) });
   } catch (error) {
     if (!transaction.finished) await transaction.rollback();
     next(error);
@@ -218,3 +222,4 @@ exports.create = async (req, res, next) => {
 };
 
 exports.buildPreview = buildPreview;
+exports.fulfillmentModeForVariant = fulfillmentModeForVariant;

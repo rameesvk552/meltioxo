@@ -3,7 +3,7 @@ module.exports = (sequelize, DataTypes) => {
     id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
     receipt_id: { type: DataTypes.UUID },
     po_item_id: { type: DataTypes.UUID },
-    material_type: { type: DataTypes.ENUM('raw','packaging') },
+    material_type: { type: DataTypes.ENUM('raw','packaging','finished') },
     material_id: { type: DataTypes.UUID },
     quantity: { type: DataTypes.DECIMAL(15,4) },
     batch_number: { type: DataTypes.STRING },

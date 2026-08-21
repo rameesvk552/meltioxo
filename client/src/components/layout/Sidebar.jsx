@@ -1,6 +1,6 @@
 import React from 'react';
 import { Menu } from 'antd';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { 
   DashboardOutlined, 
   AppstoreOutlined, 
@@ -10,6 +10,7 @@ import {
   ToolOutlined, 
   TeamOutlined, 
   DollarOutlined, 
+  CreditCardOutlined,
   BankOutlined, 
   LineChartOutlined, 
   SettingOutlined 
@@ -17,6 +18,13 @@ import {
 
 export default function Sidebar({ onNavigate }) {
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const selectedKey = location.pathname === '/app/retail-sales/new'
+    ? '/app/retail-sales/new'
+    : location.pathname.startsWith('/app/retail-sales/')
+      ? '/app/retail-sales'
+      : location.pathname;
 
   const items = [
     { key: '/app/dashboard', icon: <DashboardOutlined />, label: 'Dashboard' },
@@ -30,6 +38,7 @@ export default function Sidebar({ onNavigate }) {
     { key: '/app/formulas', icon: <ExperimentOutlined />, label: 'Formulas' },
     { key: '/app/production', icon: <ToolOutlined />, label: 'Production' },
     { key: '/app/customers', icon: <TeamOutlined />, label: 'Customers' },
+    { key: '/app/retail-sales/new', icon: <CreditCardOutlined />, label: 'POS' },
     { key: 'sales', icon: <DollarOutlined />, label: 'Sales', children: [
       { key: '/app/retail-sales', label: 'Retail Sales' },
     ]},
@@ -56,6 +65,7 @@ export default function Sidebar({ onNavigate }) {
       mode="inline"
       theme="light"
       items={items}
+      selectedKeys={[selectedKey]}
       onClick={({ key }) => {
         // Parent menu keys only expand/collapse their submenu; route selections
         // should also dismiss the mobile drawer after navigation.

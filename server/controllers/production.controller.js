@@ -86,6 +86,9 @@ exports.create = async (req, res, next) => {
     if (!variant || !variant.product || !variant.product.is_active) {
       throw new AppError('Select an active product variant', 400);
     }
+    if (variant.source_type === 'ready_made') {
+      throw new AppError('Ready-made variants must be purchased and cannot be sent to production', 400);
+    }
 
     const formulaId = variant.formula_id || variant.product.formula_id;
     const formula = await db.formula.findOne({
@@ -99,7 +102,7 @@ exports.create = async (req, res, next) => {
       where: { id: outputSpecs.map(row => row.finished_good_id), tenant_id: req.tenantId, is_active: true },
       include: [db.product], transaction
     });
-    if (variants.length !== outputSpecs.length || variants.some(row => !row.product || !row.product.is_active || (row.formula_id || row.product.formula_id) !== formulaId)) {
+    if (variants.length !== outputSpecs.length || variants.some(row => row.source_type === 'ready_made' || !row.product || !row.product.is_active || (row.formula_id || row.product.formula_id) !== formulaId)) {
       throw new AppError('All variants must be active and use the same product formula', 400);
     }
     const item = await productionOrder.create({

@@ -1,8 +1,9 @@
 import React, { useContext } from 'react';
 import { Form, Input, Button, Checkbox, Typography, message } from 'antd';
-import { UserOutlined, LockOutlined, CrownOutlined } from '@ant-design/icons';
+import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { Link, useNavigate } from 'react-router-dom';
 import { AuthContext } from '../../context/AuthContext';
+import WayonLogo from '../../components/common/WayonLogo';
 
 const { Title, Text } = Typography;
 
@@ -55,7 +56,7 @@ export default function Login() {
         `}
       </style>
 
-      {/* Left Pane - Premium Cover */}
+      {/* Left Pane - Brand */}
       <div className="auth-cover-pane" style={{
         flex: '1.2',
         position: 'relative',
@@ -93,37 +94,9 @@ export default function Login() {
         <div style={{
           position: 'relative',
           zIndex: 1,
-          maxWidth: '480px',
-          background: 'rgba(255, 255, 255, 0.03)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          border: '1px solid rgba(255, 255, 255, 0.08)',
-          borderRadius: '24px',
-          padding: '48px',
-          boxShadow: '0 30px 60px rgba(0, 0, 0, 0.4)'
+          padding: '48px'
         }}>
-          <div style={{ 
-            display: 'inline-flex', 
-            alignItems: 'center', 
-            justifyContent: 'center', 
-            width: '64px', 
-            height: '64px', 
-            borderRadius: '16px', 
-            background: 'rgba(181, 66, 48, 0.15)', 
-            border: '1px solid rgba(181, 66, 48, 0.3)', 
-            marginBottom: '32px' 
-          }}>
-            <CrownOutlined style={{ fontSize: 32, color: '#fca390' }} />
-          </div>
-          <h1 style={{ color: '#ffffff', fontFamily: 'Playfair Display, Georgia, serif', fontSize: '38px', fontWeight: 600, margin: '0 0 16px 0', lineHeight: 1.2 }}>
-            Perfume ERP
-          </h1>
-          <p style={{ color: '#fca390', fontSize: '16px', fontWeight: 500, letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 24px 0' }}>
-            Manufacturing Excellence
-          </p>
-          <p style={{ color: '#a1a1a6', fontSize: '15px', lineHeight: '1.6', margin: 0 }}>
-            An enterprise suite meticulously crafted for modern fragrance houses. Seamlessly orchestrate inventory, formulas, production, and financials with bespoke precision.
-          </p>
+          <WayonLogo inverse size={72} />
         </div>
       </div>
 
@@ -138,21 +111,14 @@ export default function Login() {
       }}>
         <div style={{ width: '100%', maxWidth: 400 }}>
           {/* Logo visible only on mobile */}
-          <div className="mobile-logo-header" style={{ textAlign: 'center', marginBottom: 32 }}>
-            <CrownOutlined style={{ fontSize: 40, color: 'var(--color-gold)' }} />
-            <Title level={2} style={{ color: 'var(--color-text-primary)', fontFamily: 'Playfair Display', margin: '8px 0' }}>
-              Perfume ERP
-            </Title>
-            <Text style={{ color: '#5c5c5e' }}>Manufacturing Excellence Platform</Text>
+          <div className="mobile-logo-header" style={{ textAlign: 'center', marginBottom: 40 }}>
+            <WayonLogo size={50} />
           </div>
 
-          <div style={{ marginBottom: 32 }}>
-            <Title level={2} style={{ color: 'var(--color-text-primary)', margin: '0 0 8px 0', fontWeight: 600 }}>
+          <div style={{ marginBottom: 24 }}>
+            <Title level={2} style={{ color: 'var(--color-text-primary)', margin: 0, fontWeight: 600 }}>
               Sign In
             </Title>
-            <Text style={{ color: 'var(--color-text-secondary)' }}>
-              Enter your credentials to access your workspace
-            </Text>
           </div>
 
           <Form 

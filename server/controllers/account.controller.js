@@ -10,20 +10,41 @@ exports.getAll = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
-exports.create = async (req, res, next) => {
+exports.getNextCode = async (req, res, next) => {
   try {
-    const code = String(req.body.code || '').trim();
+    const type = String(req.query.type || '').trim();
+    if (!['asset', 'liability', 'equity', 'revenue', 'expense'].includes(type)) throw new AppError('Select a valid account type', 400);
+    const parent = req.query.parent_id
+      ? await account.findOne({ where: { id: req.query.parent_id, tenant_id: req.tenantId, is_group: true } })
+      : null;
+    if (req.query.parent_id && !parent) throw new AppError('Parent account group not found', 400);
+    if (parent && parent.type !== type) throw new AppError('Ledger type must match its parent group', 400);
+    res.json({ code: await accounting.generateNextAccountCode(req.tenantId, parent, type) });
+  } catch (error) { next(error); }
+};
+
+exports.create = async (req, res, next) => {
+  const transaction = await db.sequelize.transaction();
+  try {
     const name = String(req.body.name || '').trim();
-    if (!code || !name) throw new AppError('Ledger code and name are required', 400);
+    if (!name) throw new AppError('Ledger name is required', 400);
     if (!['asset', 'liability', 'equity', 'revenue', 'expense'].includes(req.body.type)) throw new AppError('Select a valid account type', 400);
+    let parent = null;
     if (req.body.parent_id) {
-      const parent = await account.findOne({ where: { id: req.body.parent_id, tenant_id: req.tenantId } });
+      parent = await account.findOne({ where: { id: req.body.parent_id, tenant_id: req.tenantId }, transaction });
       if (!parent?.is_group) throw new AppError('A ledger must be placed under an account group', 400);
       if (parent.type !== req.body.type) throw new AppError('Ledger type must match its parent group', 400);
     }
-    const item = await account.create({ code, name, type: req.body.type, parent_id: req.body.parent_id || null, is_group: Boolean(req.body.is_group), is_active: req.body.is_active !== false, tenant_id: req.tenantId });
+    if (transaction && db.sequelize.getDialect() === 'postgres') {
+      await db.sequelize.query('SELECT pg_advisory_xact_lock(hashtext(:key))', { replacements: { key: `${req.tenantId}:account-code` }, transaction });
+    }
+    const code = String(req.body.code || '').trim() || await accounting.generateNextAccountCode(req.tenantId, parent, req.body.type, transaction);
+    const duplicate = await account.findOne({ where: { tenant_id: req.tenantId, code }, transaction });
+    if (duplicate) throw new AppError('An account with this code already exists', 409);
+    const item = await account.create({ code, name, type: req.body.type, parent_id: req.body.parent_id || null, is_group: Boolean(req.body.is_group), is_active: req.body.is_active !== false, tenant_id: req.tenantId }, { transaction });
+    await transaction.commit();
     res.status(201).json(item);
-  } catch (error) { next(error); }
+  } catch (error) { await transaction.rollback(); next(error); }
 };
 
 exports.update = async (req, res, next) => {

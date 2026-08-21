@@ -6,6 +6,7 @@ module.exports = (sequelize, DataTypes) => {
     name: { type: DataTypes.STRING },
     product_id: { type: DataTypes.UUID, allowNull: true },
     formula_id: { type: DataTypes.UUID, allowNull: true },
+    source_type: { type: DataTypes.ENUM('live_make', 'ready_made'), allowNull: false, defaultValue: 'live_make' },
     size_label: { type: DataTypes.STRING, allowNull: true },
     fill_quantity_ml: { type: DataTypes.DECIMAL(15,4), allowNull: true },
     is_active: { type: DataTypes.BOOLEAN, defaultValue: true },

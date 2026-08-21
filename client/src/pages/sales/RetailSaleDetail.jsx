@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button, Card, Col, Descriptions, Empty, Row, Space, Spin, Table, Tag, Typography } from 'antd';
-import { ArrowLeftOutlined, ExperimentOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, ExperimentOutlined, PrinterOutlined } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 import useApiData from '../../hooks/useApiData';
 
@@ -16,11 +16,16 @@ export default function RetailSaleDetail() {
 
   return (
     <div style={{ padding: 24 }}>
-      <Space style={{ marginBottom: 16 }}>
-        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/app/retail-sales')}>Sales</Button>
-        <Title level={3} style={{ margin: 0 }}>{sale.sale_number}</Title>
-        <Tag color="success">Posted</Tag>
-      </Space>
+      <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <Space wrap>
+          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/app/retail-sales')}>Sales</Button>
+          <Title level={3} style={{ margin: 0 }}>{sale.sale_number}</Title>
+          <Tag color="success">Posted</Tag>
+        </Space>
+        <Button type="primary" icon={<PrinterOutlined />} onClick={() => navigate(`/app/retail-sales/${sale.id}/invoice`)}>
+          Invoice &amp; Print
+        </Button>
+      </div>
       <Card style={{ marginBottom: 16 }}>
         <Descriptions column={{ xs: 1, sm: 2, lg: 4 }}>
           <Descriptions.Item label="Date">{sale.sale_date}</Descriptions.Item>

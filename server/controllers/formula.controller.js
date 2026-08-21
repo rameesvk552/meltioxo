@@ -2,6 +2,23 @@ const db = require('../models');
 const { formula, formulaIngredient, formulaPackaging } = db;
 const { AppError } = require('../middleware/errorHandler');
 
+const normalizeOutputUnit = value => String(value || '').trim().toLowerCase();
+const isLitreOutput = value => ['l', 'litre', 'litres', 'liter', 'liters'].includes(normalizeOutputUnit(value));
+const validateOutputSafety = (outputQuantity, outputUnit, confirmed) => {
+  const unit = normalizeOutputUnit(outputUnit);
+  if (!['ml', 'millilitre', 'millilitres', 'milliliter', 'milliliters', 'l', 'litre', 'litres', 'liter', 'liters'].includes(unit)) {
+    throw new AppError('Formula output unit must be millilitres (ml) or litres (L)', 400);
+  }
+  if (!Number.isFinite(Number(outputQuantity)) || Number(outputQuantity) <= 0) {
+    throw new AppError('Formula output quantity must be greater than zero', 400);
+  }
+  if (isLitreOutput(outputUnit) && confirmed !== true) {
+    throw new AppError('Confirm the litre batch size before saving this formula', 400);
+  }
+};
+
+exports.validateOutputSafety = validateOutputSafety;
+
 exports.getAll = async (req, res, next) => {
   try {
     const formulas = await formula.findAll({
@@ -23,7 +40,8 @@ exports.getById = async (req, res, next) => {
 exports.create = async (req, res, next) => {
   const transaction = await db.sequelize.transaction();
   try {
-    const { ingredients = [], packaging = [], ...header } = req.body;
+    const { ingredients = [], packaging = [], confirm_litre_output: confirmedLitreOutput, ...header } = req.body;
+    validateOutputSafety(header.output_quantity, header.output_unit, confirmedLitreOutput);
     header.version = Number.parseInt(header.version, 10) || 1;
     if (!header.code?.trim()) {
       const formulaCount = await formula.count({ where: { tenant_id: req.tenantId }, transaction });
@@ -56,10 +74,18 @@ exports.create = async (req, res, next) => {
 exports.update = async (req, res, next) => {
   const transaction = await db.sequelize.transaction();
   try {
-    const { ingredients, packaging, ...header } = req.body;
+    const { ingredients, packaging, confirm_litre_output: confirmedLitreOutput, ...header } = req.body;
     if (header.version !== undefined) header.version = Number.parseInt(header.version, 10) || 1;
     const item = await formula.findOne({ where: { id: req.params.id, tenant_id: req.tenantId }, transaction });
     if (!item) throw new AppError('Not found', 404);
+    const changesRecipe = ['output_quantity', 'output_unit'].some(key => Object.prototype.hasOwnProperty.call(header, key)) || ingredients !== undefined;
+    if (changesRecipe) {
+      validateOutputSafety(
+        header.output_quantity ?? item.output_quantity,
+        header.output_unit ?? item.output_unit,
+        confirmedLitreOutput
+      );
+    }
     await item.update(header, { transaction });
     if (ingredients !== undefined) {
       await formulaIngredient.destroy({ where: { formula_id: item.id }, transaction });

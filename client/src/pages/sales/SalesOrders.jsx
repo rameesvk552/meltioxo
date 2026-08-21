@@ -1,6 +1,6 @@
 import React from 'react';
 import { Card, Row, Col, Statistic, Tag, Button, Space } from 'antd';
-import { PlusOutlined, ShoppingCartOutlined, CheckCircleOutlined, WhatsAppOutlined, EyeOutlined } from '@ant-design/icons';
+import { PlusOutlined, ShoppingCartOutlined, CheckCircleOutlined, FileTextOutlined, WhatsAppOutlined, EyeOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import useApiData from '../../hooks/useApiData';
 import ResponsiveDataTable from '../../components/common/ResponsiveDataTable';
@@ -23,7 +23,7 @@ const SalesOrders = () => {
   const handleWhatsAppShare = (record) => {
     const phone = record.customerPhone;
     if (!phone) return;
-    const text = `*Perfume ERP - Sales Invoice*%0A%0A` +
+    const text = `*Wayon - Sales Invoice*%0A%0A` +
                  `Dear *${record.customer}*,%0A` +
                  `Please find the invoice details for your order *${record.id}*:%0A%0A` +
                  `• *Order Date:* ${record.date}%0A` +
@@ -31,7 +31,7 @@ const SalesOrders = () => {
                  `• *Status:* ${record.status}%0A%0A` +
                  `Sale #: ${record.sale_number}%0A%0A` +
                  `Thank you!%0A` +
-                 `*Perfume ERP Team*`;
+                 `*Wayon Team*`;
     window.open(`https://wa.me/${phone.replace(/[^0-9]/g, '')}?text=${text}`, '_blank');
   };
 
@@ -67,6 +67,7 @@ const SalesOrders = () => {
       render: (_, record) => (
         <Space size="middle">
           <Button type="text" icon={<EyeOutlined />} onClick={() => navigate(`/app/retail-sales/${record.id}`)}>View</Button>
+          <Button type="text" icon={<FileTextOutlined />} onClick={() => navigate(`/app/retail-sales/${record.id}/invoice`)}>Invoice</Button>
           <Button type="text" icon={<WhatsAppOutlined />} style={{ color: '#25D366' }} onClick={() => handleWhatsAppShare(record)} />
         </Space>
       ),
@@ -102,7 +103,7 @@ const SalesOrders = () => {
       </Row>
 
       <Card >
-        <ResponsiveDataTable columns={columns} dataSource={salesRows} loading={loading} emptyText="No sales found" mobileRenderItem={(sale) => <><div className="mobile-data-list__title-row"><strong>{sale.sale_number || sale.id}</strong><Tag color={sale.status === 'Posted' ? 'success' : 'warning'}>{sale.status}</Tag></div><span className="mobile-data-list__code">{sale.customer} · {sale.items} item{sale.items === 1 ? '' : 's'}</span><div className="mobile-data-list__metrics"><span>Total <strong>₹{sale.total.toLocaleString('en-IN')}</strong></span><span>Date <strong>{sale.date || '—'}</strong></span></div><Button block icon={<EyeOutlined />} onClick={() => navigate(`/app/retail-sales/${sale.id}`)} style={{ marginTop: 12 }}>View Sale</Button></>} />
+        <ResponsiveDataTable columns={columns} dataSource={salesRows} loading={loading} emptyText="No sales found" mobileRenderItem={(sale) => <><div className="mobile-data-list__title-row"><strong>{sale.sale_number || sale.id}</strong><Tag color={sale.status === 'Posted' ? 'success' : 'warning'}>{sale.status}</Tag></div><span className="mobile-data-list__code">{sale.customer} · {sale.items} item{sale.items === 1 ? '' : 's'}</span><div className="mobile-data-list__metrics"><span>Total <strong>₹{sale.total.toLocaleString('en-IN')}</strong></span><span>Date <strong>{sale.date || '—'}</strong></span></div><Space.Compact block style={{ marginTop: 12 }}><Button icon={<EyeOutlined />} onClick={() => navigate(`/app/retail-sales/${sale.id}`)} style={{ width: '50%' }}>View Sale</Button><Button type="primary" icon={<FileTextOutlined />} onClick={() => navigate(`/app/retail-sales/${sale.id}/invoice`)} style={{ width: '50%' }}>Invoice</Button></Space.Compact></>} />
       </Card>
     </div>
   );

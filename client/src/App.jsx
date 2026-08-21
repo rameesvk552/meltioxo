@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useContext } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { Spin } from 'antd';
 import AppLayout from './components/layout/AppLayout';
+import { AuthContext } from './context/AuthContext';
 
 import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
@@ -25,8 +27,9 @@ import RawMaterialDetail from './pages/inventory/RawMaterialDetail';
 import SupplierDetail from './pages/purchasing/SupplierDetail';
 import FormulaBuilder from './pages/manufacturing/FormulaBuilder';
 import ProductionOrderDetail from './pages/manufacturing/ProductionOrderDetail';
-import SalesOrderForm from './pages/sales/SalesOrderForm';
+import SalesOrderForm from './pages/sales/SalesOrderPOS';
 import RetailSaleDetail from './pages/sales/RetailSaleDetail';
+import RetailSaleInvoice from './pages/sales/RetailSaleInvoice';
 import JournalEntryForm from './pages/finance/JournalEntryForm';
 import PaymentForm from './pages/finance/PaymentForm';
 import ExpenseForm from './pages/finance/ExpenseForm';
@@ -46,6 +49,12 @@ function RedirectToRawMaterialDetail() {
   return <Navigate to={`/app/raw-materials/${id}`} replace />;
 }
 
+function ProtectedApp() {
+  const { isAuthenticated, loading } = useContext(AuthContext);
+  if (loading) return <div style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center' }}><Spin size="large" /></div>;
+  return isAuthenticated ? <AppLayout /> : <Navigate to="/login" replace />;
+}
+
 export default function App() {
   return (
     <Routes>
@@ -56,7 +65,7 @@ export default function App() {
       <Route path="/inventory/raw-materials" element={<Navigate to="/app/raw-materials" replace />} />
       <Route path="/inventory/raw-materials/:id" element={<RedirectToRawMaterialDetail />} />
       
-      <Route path="/app" element={<AppLayout />}>
+      <Route path="/app" element={<ProtectedApp />}>
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
         
@@ -83,6 +92,7 @@ export default function App() {
         
         <Route path="retail-sales" element={<SalesOrders />} />
         <Route path="retail-sales/new" element={<SalesOrderForm />} />
+        <Route path="retail-sales/:id/invoice" element={<RetailSaleInvoice />} />
         <Route path="retail-sales/:id" element={<RetailSaleDetail />} />
         
         <Route path="accounts" element={<AccountsWorkspace />} />

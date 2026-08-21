@@ -1,5 +1,6 @@
 const db = require('../models');
 const { Op } = require('sequelize');
+const { ACCOUNT_CODES } = require('../config/constants');
 
 exports.trialBalance = async (tenantId, asOfDate) => {
   const lines = await db.journalEntryLine.findAll({ include: [{ model: db.journalEntry, where: { tenant_id: tenantId, status: 'posted', ...(asOfDate ? { entry_date: { [Op.lte]: asOfDate } } : {}) } }, db.account] });
@@ -18,7 +19,7 @@ const round = value => Math.round((number(value) + Number.EPSILON) * 100) / 100;
 const percent = (value, base) => base ? round((value / base) * 100) : 0;
 const isoDate = date => date.toISOString().slice(0, 10);
 
-const isCogsAccount = account => account.code === '5000' || /cost of goods sold|\bcogs\b/i.test(account.name || '');
+const isCogsAccount = account => account.code === ACCOUNT_CODES.COGS || /cost of goods sold|\bcogs\b/i.test(account.name || '');
 
 const bucketKey = (date, groupBy) => {
   const value = String(date).slice(0, 10);

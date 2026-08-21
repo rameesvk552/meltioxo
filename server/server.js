@@ -10,7 +10,8 @@ const app = express();
 
 app.use(helmet());
 app.use(cors());
-app.use(express.json());
+// Company logos are stored as small data URLs in tenant settings.
+app.use(express.json({ limit: '2mb' }));
 app.use(morgan('dev'));
 
 // Routes would be mounted here
@@ -75,29 +76,44 @@ const migratePaymentModesToText = async () => {
   }
 };
 
-// Existing tenants were seeded before Cash & Bank became a parent group. Bring those
-// ledgers into the same selectable hierarchy without changing their balances.
-const ensureCashBankHierarchy = async () => {
-  const tenants = await db.tenant.findAll({ attributes: ['id'] });
-  for (const tenant of tenants) {
-    let group = await db.account.findOne({ where: { tenant_id: tenant.id, code: '1000' } });
-    if (!group) group = await db.account.create({ tenant_id: tenant.id, code: '1000', name: 'Cash & Bank', type: 'asset', is_system: true, is_group: true });
-    else await group.update({ name: group.name === 'Cash' ? 'Cash & Bank' : group.name, is_group: true });
-    // Match Travel Bot's lean setup: only Cash exists by default. Tenants add
-    // their real bank/UPI/card ledgers and map payment methods when needed.
-    const defaults = [['1001', 'Cash in Hand']];
-    for (const [code, name] of defaults) {
-      const ledger = await db.account.findOne({ where: { tenant_id: tenant.id, code } });
-      if (ledger) await ledger.update({ parent_id: group.id });
-      else await db.account.create({ tenant_id: tenant.id, code, name, type: 'asset', parent_id: group.id, is_system: true });
-    }
-    const inputTax = await db.account.findOne({ where: { tenant_id: tenant.id, code: '1110' } });
-    if (!inputTax) await db.account.create({ tenant_id: tenant.id, code: '1110', name: 'Input Tax Recoverable', type: 'asset', is_system: true });
-    await require('./services/accounting.service').ensureDefaultPaymentMethods(tenant.id);
+// Existing purchase tables used enums that only allowed raw and packaging
+// materials. Add finished goods before model sync so ready-made SKUs can be
+// received without rebuilding or discarding any historical purchase rows.
+const migratePurchaseItemEnums = async () => {
+  for (const enumName of ['enum_purchase_order_items_material_type', 'enum_purchase_receipt_items_material_type']) {
+    const [types] = await db.sequelize.query('SELECT 1 FROM pg_type WHERE typname = :enumName', { replacements: { enumName } });
+    if (types.length) await db.sequelize.query(`ALTER TYPE "${enumName}" ADD VALUE IF NOT EXISTS 'finished'`);
   }
 };
 
-migrateRawMaterialCategoryToText().then(migratePaymentModesToText).then(() => db.sequelize.sync({ alter: true })).then(ensureCashBankHierarchy).then(() => {
+// Products created before ready-made purchasing required a formula at the
+// database level. Ready-made products intentionally have no formula.
+const migrateProductsForReadyMade = async () => {
+  const [columns] = await db.sequelize.query(`
+    SELECT is_nullable
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'products'
+      AND column_name = 'formula_id'
+  `);
+  if (columns[0]?.is_nullable === 'NO') {
+    await db.sequelize.query('ALTER TABLE "products" ALTER COLUMN "formula_id" DROP NOT NULL');
+  }
+};
+
+// Upgrade every tenant to the same BS/PL hierarchy. Legacy ledger codes are
+// renamed in place so historical journals and production balances remain linked.
+const ensureDefaultAccountHierarchy = async () => {
+  const { ensureChartOfAccounts } = require('./seeders/seed-chart-of-accounts');
+  const accounting = require('./services/accounting.service');
+  const tenants = await db.tenant.findAll({ attributes: ['id'] });
+  for (const tenant of tenants) {
+    await ensureChartOfAccounts(tenant.id);
+    await accounting.ensureDefaultPaymentMethods(tenant.id);
+  }
+};
+
+migrateRawMaterialCategoryToText().then(migratePaymentModesToText).then(migratePurchaseItemEnums).then(migrateProductsForReadyMade).then(() => db.sequelize.sync({ alter: true })).then(ensureDefaultAccountHierarchy).then(() => {
   console.log('Database synced');
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);

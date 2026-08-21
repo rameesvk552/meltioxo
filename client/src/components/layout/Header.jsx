@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useContext, useMemo, useState } from 'react';
 import { Layout, Button, Badge, Avatar, Dropdown, Input, Tooltip, Typography } from 'antd';
 import { 
   MenuUnfoldOutlined, 
@@ -11,6 +11,7 @@ import {
 } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { usePageTitle } from '../../context/PageTitleContext';
+import { AuthContext } from '../../context/AuthContext';
 
 const { Header: AntHeader } = Layout;
 const { Title } = Typography;
@@ -19,7 +20,9 @@ export default function Header({ collapsed, setCollapsed, setMobileDrawerOpen })
   const { title } = usePageTitle();
   const location = useLocation();
   const navigate = useNavigate();
+  const { user, logout } = useContext(AuthContext);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   const pageTitle = useMemo(() => {
     const path = location.pathname;
@@ -29,7 +32,7 @@ export default function Header({ collapsed, setCollapsed, setMobileDrawerOpen })
       ['/app/suppliers', 'Suppliers'], ['/app/purchases', 'Purchases'],
       ['/app/direct-purchases', 'Purchases'], ['/app/formulas', 'Formulas'],
       ['/app/production', 'Production Orders'], ['/app/customers', 'Customers'],
-      ['/app/retail-sales', 'Sales & Invoices'], ['/app/accounts', 'Accounts'],
+      ['/app/retail-sales/new', 'POS'], ['/app/retail-sales', 'Sales & Invoices'], ['/app/accounts', 'Accounts'],
       ['/app/journal-entries', 'Journal Entries'], ['/app/payables', 'Accounts Payable'],
       ['/app/receivables', 'Accounts Receivable'], ['/app/payments', 'Payments'],
       ['/app/expenses', 'Expenses'], ['/app/reports/profit-loss', 'Owner Profit & Loss'],
@@ -39,7 +42,7 @@ export default function Header({ collapsed, setCollapsed, setMobileDrawerOpen })
     const match = titles.find(([route]) => path === route || path.startsWith(`${route}/`));
     // Route names must win here: some pages set a contextual title, but that
     // state can remain briefly after navigation and must not label the next page.
-    return match?.[1] || title || 'Perfume ERP';
+    return match?.[1] || title || 'Wayon';
   }, [location.pathname, title]);
 
   const goBack = () => {
@@ -54,6 +57,21 @@ export default function Header({ collapsed, setCollapsed, setMobileDrawerOpen })
       return;
     }
     navigate('/app/dashboard');
+  };
+
+  const handleAccountMenu = async ({ key }) => {
+    if (key === 'settings' || key === 'profile') {
+      navigate('/app/settings');
+      return;
+    }
+    if (key !== 'logout' || loggingOut) return;
+    setLoggingOut(true);
+    try {
+      await logout();
+      navigate('/login', { replace: true });
+    } finally {
+      setLoggingOut(false);
+    }
   };
 
   return (
@@ -123,15 +141,15 @@ export default function Header({ collapsed, setCollapsed, setMobileDrawerOpen })
         <Badge count={5} size="small">
           <BellOutlined style={{ fontSize: '20px', color: 'var(--color-text-primary)', cursor: 'pointer' }} />
         </Badge>
-        <Dropdown menu={{ items: [
+        <Dropdown menu={{ onClick: handleAccountMenu, items: [
           { key: 'profile', label: 'Profile' },
           { key: 'settings', label: 'Settings' },
           { type: 'divider' },
-          { key: 'logout', label: 'Logout' },
+          { key: 'logout', label: loggingOut ? 'Signing out…' : 'Logout', disabled: loggingOut },
         ]}} trigger={['click']}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
             <Avatar icon={<UserOutlined />} style={{ backgroundColor: 'var(--color-gold)' }} />
-            <span className="desktop-only">Admin User</span>
+            <span className="desktop-only">{user?.name || 'Admin User'}</span>
           </div>
         </Dropdown>
       </div>

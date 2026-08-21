@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
-import { Card, Form, Input, InputNumber, Select, Button, Table, Space, Divider, Row, Col, message } from 'antd';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Alert, Button, Card, Checkbox, Col, Divider, Form, Input, InputNumber, Row, Select, Space, Table, message } from 'antd';
 import { PlusOutlined, DeleteOutlined, SaveOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 import client from '../../api/client';
 import useApiData from '../../hooks/useApiData';
+import './FormulaBuilder.css';
 
 const { Option } = Select;
 const { TextArea } = Input;
@@ -13,17 +14,14 @@ export default function FormulaBuilder() {
   const { id } = useParams();
   const isEditing = Boolean(id);
   const [form] = Form.useForm();
+  const outputQuantity = Number(Form.useWatch('output', form) || 0);
+  const outputUnit = Form.useWatch('unit', form) || 'ml';
+  const outputInMl = outputUnit === 'L' ? outputQuantity * 1000 : outputQuantity;
   const { data: rawData } = useApiData('/raw-materials');
-  const { data: packagingData } = useApiData('/packaging-materials');
-  const rawMaterials = rawData.map(item => ({ ...item, price: Number(item.avg_cost || 0) }));
-  const packagingMaterials = packagingData.map(item => ({ ...item, price: Number(item.avg_cost || 0) }));
+  const rawMaterials = useMemo(() => rawData.map(item => ({ ...item, price: Number(item.avg_cost || 0) })), [rawData]);
   
   const [ingredients, setIngredients] = useState([
     { key: '1', materialId: '', qty: 0.1, price: 0, cost: 0, unit: 'kg' }
-  ]);
-
-  const [packaging, setPackaging] = useState([
-    { key: '1', materialId: '', qty: 10, price: 0, cost: 0 }
   ]);
 
   useEffect(() => {
@@ -37,6 +35,7 @@ export default function FormulaBuilder() {
           version: data.version,
           output: Number(data.output_quantity),
           unit: data.output_unit,
+          confirm_litre_output: false,
           description: data.description
         });
         setIngredients((data.formulaIngredients || []).map((item, index) => ({
@@ -46,13 +45,6 @@ export default function FormulaBuilder() {
           price: 0,
           cost: 0,
           unit: item.unit || 'kg'
-        })));
-        setPackaging((data.formulaPackagings || []).map((item, index) => ({
-          key: item.id || `packaging-${index}`,
-          materialId: item.packaging_material_id,
-          qty: Number(item.quantity),
-          price: 0,
-          cost: 0
         })));
       } catch {
         message.error('Unable to load this formula');
@@ -67,15 +59,7 @@ export default function FormulaBuilder() {
       const price = material ? material.price : item.price;
       return { ...item, price, cost: item.qty * price };
     }));
-  }, [rawData]);
-
-  useEffect(() => {
-    setPackaging(current => current.map(item => {
-      const material = packagingMaterials.find(row => row.id === item.materialId);
-      const price = material ? material.price : item.price;
-      return { ...item, price, cost: item.qty * price };
-    }));
-  }, [packagingData]);
+  }, [rawMaterials]);
 
   // Ingredients handlers
   const handleAddIngredient = () => {
@@ -104,36 +88,9 @@ export default function FormulaBuilder() {
     }));
   };
 
-  // Packaging handlers
-  const handleAddPackaging = () => {
-    const nextKey = (packaging.length + 1).toString();
-    setPackaging([...packaging, { key: nextKey, materialId: '', qty: 10, price: 0, cost: 0 }]);
-  };
-
-  const handleRemovePackaging = (key) => {
-    if (packaging.length === 1) return;
-    setPackaging(packaging.filter(x => x.key !== key));
-  };
-
-  const handlePackagingChange = (key, field, val) => {
-    setPackaging(packaging.map(item => {
-      if (item.key === key) {
-        const updated = { ...item, [field]: val };
-        if (field === 'materialId') {
-          const mat = packagingMaterials.find(m => m.id === val);
-          updated.price = mat ? mat.price : 0;
-        }
-        updated.cost = updated.qty * updated.price;
-        return updated;
-      }
-      return item;
-    }));
-  };
-
   // Calculations
   const rawCostTotal = ingredients.reduce((sum, item) => sum + item.cost, 0);
-  const pkgCostTotal = packaging.reduce((sum, item) => sum + item.cost, 0);
-  const totalCost = rawCostTotal + pkgCostTotal;
+  const totalCost = rawCostTotal;
 
   const onFinish = async (values) => {
     const payload = {
@@ -143,11 +100,9 @@ export default function FormulaBuilder() {
       description: values.description,
       output_quantity: values.output,
       output_unit: values.unit,
+      confirm_litre_output: values.unit === 'L' ? Boolean(values.confirm_litre_output) : false,
       ingredients: ingredients.filter(item => item.materialId).map(item => ({
         raw_material_id: item.materialId, quantity: item.qty, unit: item.unit
-      })),
-      packaging: packaging.filter(item => item.materialId).map(item => ({
-        packaging_material_id: item.materialId, quantity: item.qty
       }))
     };
     try {
@@ -217,52 +172,6 @@ export default function FormulaBuilder() {
     }
   ];
 
-  const packagingColumns = [
-    {
-      title: 'Packaging Material',
-      dataIndex: 'materialId',
-      key: 'materialId',
-      width: '40%',
-      render: (val, record) => (
-        <Select value={val || undefined} placeholder="Select Packaging" onChange={v => handlePackagingChange(record.key, 'materialId', v)} style={{ width: '100%' }}>
-          {packagingMaterials.map(m => (
-            <Option key={m.id} value={m.id}>{m.name}</Option>
-          ))}
-        </Select>
-      )
-    },
-    {
-      title: 'Quantity (pcs)',
-      dataIndex: 'qty',
-      key: 'qty',
-      width: '20%',
-      render: (val, record) => (
-        <InputNumber min={1} value={val} onChange={v => handlePackagingChange(record.key, 'qty', v)} style={{ width: '100%' }} />
-      )
-    },
-    {
-      title: 'Unit Cost',
-      dataIndex: 'price',
-      key: 'price',
-      align: 'right',
-      render: v => `₹${v.toLocaleString()}`
-    },
-    {
-      title: 'Line Cost',
-      key: 'cost',
-      align: 'right',
-      render: (_, record) => `₹${record.cost.toLocaleString()}`
-    },
-    {
-      title: '',
-      key: 'remove',
-      align: 'center',
-      render: (_, record) => (
-        <Button type="text" danger icon={<DeleteOutlined />} onClick={() => handleRemovePackaging(record.key)} />
-      )
-    }
-  ];
-
   return (
     <div style={{ padding: 24 }}>
       <Form form={form} layout="vertical" onFinish={onFinish}>
@@ -288,20 +197,71 @@ export default function FormulaBuilder() {
               </Row>
               <Row gutter={16}>
                 <Col xs={24} md={12}>
-                  <Form.Item name="output" label="Target Output Quantity" rules={[{ required: true }]}>
-                    <InputNumber min={1} placeholder="e.g. 100" style={{ width: '100%' }} />
+                  <Form.Item name="output" label="Target Batch Output" rules={[{ required: true, message: 'Enter the batch output quantity' }]}>
+                    <InputNumber min={outputUnit === 'L' ? 0.001 : 1} placeholder="e.g. 30" style={{ width: '100%' }} />
                   </Form.Item>
                 </Col>
                 <Col xs={24} md={12}>
-                  <Form.Item name="unit" label="Output Unit" initialValue="L">
-                    <Select style={{ width: '100%' }}>
-                      <Option value="L">Liters (L)</Option>
-                      <Option value="ml">Milliliters (ml)</Option>
-                      <Option value="kg">Kilograms (kg)</Option>
+                  <Form.Item name="unit" label="Output Unit" initialValue="ml" rules={[{ required: true }]}>
+                    <Select style={{ width: '100%' }} onChange={() => form.setFieldValue('confirm_litre_output', false)}>
+                      <Option value="ml">Millilitres (ml) — recommended</Option>
+                      <Option value="L">Litres (L) — large batches only</Option>
                     </Select>
                   </Form.Item>
                 </Col>
               </Row>
+              {outputUnit === 'L' ? (
+                <Alert
+                  type="warning"
+                  showIcon
+                  className="formula-output-guide"
+                  style={{ marginBottom: 16 }}
+                  message={`How this formula works — ${outputQuantity || 0} L equals ${outputInMl.toLocaleString()} ml`}
+                  description={(
+                    <div className="formula-guide-copy">
+                      <p><strong>This recipe describes one complete batch.</strong> Enter every ingredient quantity needed to produce the full {outputQuantity || 0} L batch.</p>
+                      <ol>
+                        <li>Products use this formula as their default recipe; a variant can inherit it or select an override.</li>
+                        <li>When Production or POS “Make Now” creates a variant, ingredient quantities are scaled to its fill size and sale quantity.</li>
+                        <li>Packaging such as bottles and boxes is deducted from the selected variant’s Packaging BOM.</li>
+                      </ol>
+                      <div className="formula-guide-example"><strong>Scaling rule:</strong> ingredient used = batch ingredient × required liquid ÷ {outputInMl.toLocaleString()}ml.</div>
+                      <Form.Item
+                        name="confirm_litre_output"
+                        valuePropName="checked"
+                        className="formula-litre-confirm"
+                        rules={[{
+                          validator: (_, checked) => checked
+                            ? Promise.resolve()
+                            : Promise.reject(new Error('Confirm the litre batch size before saving'))
+                        }]}
+                      >
+                        <Checkbox>I confirm that this recipe produces {outputQuantity || 0} L ({outputInMl.toLocaleString()}ml).</Checkbox>
+                      </Form.Item>
+                    </div>
+                  )}
+                />
+              ) : (
+                <Alert
+                  type="info"
+                  showIcon
+                  className="formula-output-guide"
+                  style={{ marginBottom: 16 }}
+                  message={`How this formula works — batch output: ${outputQuantity || 0} ml`}
+                  description={(
+                    <div className="formula-guide-copy">
+                      <p><strong>This recipe describes one complete batch.</strong> Enter every ingredient quantity needed to produce the full {outputQuantity || 0}ml output.</p>
+                      <ol>
+                        <li>Products use this formula as their default recipe; a variant can inherit it or select a different formula.</li>
+                        <li>Production and POS “Make Now” automatically scale every ingredient using the variant’s fill size and quantity.</li>
+                        <li>Bottles, boxes, caps, and labels are deducted separately from the variant’s Packaging BOM.</li>
+                      </ol>
+                      <div className="formula-guide-example"><strong>Example:</strong> a 30ml batch containing 19ml MARJ deducts 19ml for one 30ml bottle, or 38ml for two bottles.</div>
+                      <div className="formula-guide-rule"><strong>Scaling rule:</strong> ingredient used = batch ingredient × required liquid ÷ {outputInMl.toLocaleString() || 0}ml.</div>
+                    </div>
+                  )}
+                />
+              )}
               <Form.Item name="description" label="Notes & Recipe Description">
                 <TextArea rows={2} placeholder="Ingredients mixing steps, temperature guidelines..." />
               </Form.Item>
@@ -375,64 +335,6 @@ export default function FormulaBuilder() {
               </Button>
             </Card>
 
-            <Card title="Required Packaging (Bottles / Caps / Boxes)" style={{ marginBottom: 24 }}>
-              <div className="desktop-only">
-                <Table dataSource={packaging} columns={packagingColumns} pagination={false} scroll={{ x: 650 }} style={{ marginBottom: 16 }} />
-              </div>
-              <div className="mobile-only" style={{ marginBottom: 16 }}>
-                {packaging.map((item, index) => (
-                  <Card 
-                    key={item.key} 
-                    size="small" 
-                    title={`Packaging #${index + 1}`}
-                    extra={packaging.length > 1 ? (
-                      <Button type="text" danger icon={<DeleteOutlined />} onClick={() => handleRemovePackaging(item.key)} />
-                    ) : null}
-                    style={{ marginBottom: 12, borderColor: 'var(--color-border)' }}
-                  >
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      <div>
-                        <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 4 }}>Packaging Material</div>
-                        <Select 
-                          value={item.materialId || undefined} 
-                          placeholder="Select Packaging"
-                          onChange={v => handlePackagingChange(item.key, 'materialId', v)} 
-                          style={{ width: '100%' }}
-                        >
-                          {packagingMaterials.map(m => (
-                            <Option key={m.id} value={m.id}>{m.name}</Option>
-                          ))}
-                        </Select>
-                      </div>
-
-                      <div>
-                        <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 4 }}>Quantity (pcs)</div>
-                        <InputNumber 
-                          min={1} 
-                          value={item.qty} 
-                          onChange={v => handlePackagingChange(item.key, 'qty', v)} 
-                          style={{ width: '100%' }} 
-                        />
-                      </div>
-
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--color-bg-secondary)', padding: '8px 12px', borderRadius: 6, fontSize: 13 }}>
-                        <div>
-                          <span style={{ color: 'var(--color-text-secondary)' }}>Unit Cost: </span>
-                          <span style={{ fontWeight: 500 }}>₹{(item.price || 0).toLocaleString()}</span>
-                        </div>
-                        <div>
-                          <span style={{ color: 'var(--color-text-secondary)' }}>Line Cost: </span>
-                          <span style={{ fontWeight: 'bold', color: 'var(--color-gold)' }}>₹{(item.cost || 0).toLocaleString()}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </Card>
-                ))}
-              </div>
-              <Button type="dashed" onClick={handleAddPackaging} icon={<PlusOutlined />} style={{ width: '100%', color: 'var(--color-gold)', borderColor: 'var(--color-gold)' }}>
-                Add Packaging
-              </Button>
-            </Card>
           </Col>
 
           <Col xs={24} lg={8}>
@@ -440,10 +342,6 @@ export default function FormulaBuilder() {
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                 <span>Raw Materials Cost:</span>
                 <span>₹{rawCostTotal.toLocaleString()}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                <span>Packaging Materials:</span>
-                <span>₹{pkgCostTotal.toLocaleString()}</span>
               </div>
               <Divider />
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 16, fontWeight: 'bold', marginBottom: 24 }}>

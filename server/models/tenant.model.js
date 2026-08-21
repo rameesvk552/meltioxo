@@ -7,7 +7,7 @@ module.exports = (sequelize, DataTypes) => {
     phone: { type: DataTypes.STRING },
     email: { type: DataTypes.STRING },
     tax_id: { type: DataTypes.STRING },
-    logo_url: { type: DataTypes.STRING },
+    logo_url: { type: DataTypes.TEXT },
     currency: { type: DataTypes.STRING, defaultValue: 'INR' },
     tax_system: { type: DataTypes.STRING, defaultValue: 'GST' },
     fy_start_month: { type: DataTypes.INTEGER, defaultValue: 4 },

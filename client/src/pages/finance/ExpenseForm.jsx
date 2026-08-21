@@ -14,7 +14,7 @@ const ExpenseForm = () => {
   const navigate = useNavigate();
   const { data: accounts } = useApiData('/accounts');
   const { data: paymentMethods } = useApiData('/accounts/payment-methods');
-  const expenseAccounts = accounts.filter(item => item.type === 'expense');
+  const expenseAccounts = accounts.filter(item => item.type === 'expense' && !item.is_group && item.is_active !== false);
 
   const onFinish = async (values) => {
     await client.post('/expenses', {

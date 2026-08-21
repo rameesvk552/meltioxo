@@ -6,6 +6,7 @@ import useApiData from '../../hooks/useApiData';
 import client from '../../api/client';
 import MobileDataList from '../../components/common/MobileDataList';
 import PageDrawerControls from '../../components/common/PageDrawerControls';
+import SingleTagSelect from '../../components/common/SingleTagSelect';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -247,13 +248,11 @@ export default function RawMaterials() {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item name="category" label="Category" rules={[{ required: true, message: 'Please enter a category' }]}>
-                <Select
+                <SingleTagSelect
                   showSearch
                   optionFilterProp="label"
                   placeholder="Select or type a new category"
                   options={categories.map(category => ({ value: category, label: category }))}
-                  mode="tags"
-                  maxCount={1}
                 />
               </Form.Item>
             </Col>
