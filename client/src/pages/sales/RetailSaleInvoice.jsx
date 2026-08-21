@@ -103,19 +103,23 @@ export default function RetailSaleInvoice() {
           <section className="invoice-identity">
             <span className="invoice-kicker">{hasTax ? 'TAX INVOICE' : 'INVOICE'}</span>
             <Title level={2}>{sale.sale_number}</Title>
-            <dl>
-              <div><dt>Invoice date</dt><dd>{date(sale.sale_date)}</dd></div>
-              <div><dt>Status</dt><dd>PAID</dd></div>
-            </dl>
+            <span className="invoice-paid-badge">Paid in full</span>
           </section>
         </header>
 
-        <section className="invoice-bill-to">
-          <span className="invoice-label">BILL TO</span>
-          <strong>{customer.name || 'Walk-in customer'}</strong>
-          {customer.address && <span>{customer.address}</span>}
-          {customer.phone && <span>Phone: {customer.phone}</span>}
-          {hasTax && customer.tax_id && <span>GSTIN: {customer.tax_id}</span>}
+        <section className="invoice-overview">
+          <div className="invoice-bill-to">
+            <span className="invoice-label">BILLED TO</span>
+            <strong>{customer.name || 'Walk-in customer'}</strong>
+            {customer.address && <span>{customer.address}</span>}
+            {customer.phone && <span>{customer.phone}</span>}
+            {hasTax && customer.tax_id && <span>GSTIN: {customer.tax_id}</span>}
+          </div>
+          <dl className="invoice-meta">
+            <div><dt>Invoice date</dt><dd>{date(sale.sale_date)}</dd></div>
+            <div><dt>Payment status</dt><dd>Paid</dd></div>
+            <div><dt>Payment via</dt><dd>{sale.paymentMethod?.name || sale.paymentAccount?.name || 'Recorded payment'}</dd></div>
+          </dl>
         </section>
 
         <div className="invoice-table-wrap">
