@@ -6,6 +6,8 @@ module.exports = (sequelize, DataTypes) => {
     material_type: { type: DataTypes.ENUM('raw','packaging','finished') },
     material_id: { type: DataTypes.UUID },
     quantity: { type: DataTypes.DECIMAL(15,4) },
+    unit_price: { type: DataTypes.DECIMAL(15,2), allowNull: true },
+    tax_rate: { type: DataTypes.DECIMAL(6,2), allowNull: true },
     batch_number: { type: DataTypes.STRING },
     expiry_date: { type: DataTypes.DATEONLY, allowNull: true }
   }, {

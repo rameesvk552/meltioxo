@@ -34,3 +34,25 @@
   .payment-quick-buttons { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .payment-cash-tendered { grid-template-columns: 1fr 1fr; }
 }
+
+/* Quick checkout controls */
+.payment-quick-buttons { gap: 7px; }
+.payment-quick-buttons .ant-btn {
+  height: 40px;
+  border-radius: 8px !important;
+  font-size: 11px;
+  font-weight: 600;
+}
+.payment-quick-buttons .ant-btn .anticon { font-size: 14px; }
+.payment-quick-splits { gap: 7px; padding: 9px; border-radius: 9px; }
+.payment-quick-split > span { font-size: 11px; }
+.payment-cash-tendered { gap: 8px; }
+.payment-cash-tendered label { gap: 5px; font-size: 10px; font-weight: 600; }
+.payment-cash-tendered label .ant-input-number { min-height: 38px; border-radius: 8px; }
+.payment-cash-tendered > div { min-height: 58px; padding: 7px 10px; border-radius: 8px; }
+.payment-cash-tendered > div span { font-size: 10px; }
+.payment-cash-tendered > div strong { font-size: 16px; }
+
+@media (max-width: 640px) {
+  .payment-quick-buttons { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

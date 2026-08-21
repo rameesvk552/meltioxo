@@ -10,7 +10,9 @@ module.exports = (sequelize, DataTypes) => {
     due_date: { type: DataTypes.DATEONLY },
     total_amount: { type: DataTypes.DECIMAL(15,2) },
     paid_amount: { type: DataTypes.DECIMAL(15,2), defaultValue: 0 },
-    status: { type: DataTypes.ENUM('unpaid','partial','paid','overdue'), defaultValue: 'unpaid' },
+    status: { type: DataTypes.ENUM('draft','unpaid','partial','paid','overdue'), defaultValue: 'draft' },
+    paid_immediately: { type: DataTypes.BOOLEAN, defaultValue: false },
+    payment_splits: { type: DataTypes.JSONB, allowNull: true },
     journal_entry_id: { type: DataTypes.UUID, allowNull: true }
   }, {
     tableName: 'purchase_invoices',

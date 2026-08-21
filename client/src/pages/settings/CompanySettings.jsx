@@ -9,7 +9,7 @@ const { Option } = Select;
 const { TextArea } = Input;
 const paymentTypes = ['CASH', 'BANK', 'UPI', 'CARD', 'WALLET', 'GATEWAY', 'OTHER'];
 const acceptedLogoTypes = ['image/png', 'image/jpeg', 'image/webp'];
-const maxLogoSize = 1024 * 1024;
+const maxLogoSize = 5 * 1024 * 1024;
 
 const CompanySettings = () => {
   const [formCompany] = Form.useForm();
@@ -66,7 +66,7 @@ const CompanySettings = () => {
       return Upload.LIST_IGNORE;
     }
     if (file.size > maxLogoSize) {
-      message.error('The logo must be smaller than 1 MB.');
+      message.error('The logo must be 5 MB or smaller.');
       return Upload.LIST_IGNORE;
     }
 
@@ -208,7 +208,7 @@ const CompanySettings = () => {
                   {logoUrl && <Button danger icon={<DeleteOutlined />} onClick={() => setLogoUrl(null)}>Remove</Button>}
                 </Space>
                 <Typography.Text type="secondary" style={{ display: 'block', marginTop: 8, fontSize: 12 }}>
-                  PNG, JPEG, or WebP. Maximum 1 MB. The logo will appear on invoice headers.
+                  PNG, JPEG, or WebP. Maximum 5 MB. The logo will appear on invoice headers.
                 </Typography.Text>
               </div>
             </Col>

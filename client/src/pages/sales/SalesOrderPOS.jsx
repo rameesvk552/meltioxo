@@ -162,17 +162,18 @@ export default function SalesOrderPOS() {
   return <div className="pos-page">
     <Form form={form} onFinish={openSaleConfirmation} className="pos-form">
       <header className="pos-topbar">
-        <Button type="text" icon={<ArrowLeftOutlined />} aria-label="Back" onClick={() => navigate('/app/retail-sales')} />
+        <Button type="text" icon={<ArrowLeftOutlined />} aria-label="Back to sales" onClick={() => navigate('/app/retail-sales')} />
         <span className="pos-title-icon"><ShoppingCartOutlined /></span>
-        <div className="pos-title"><h1>New retail sale</h1><span>Compact point of sale</span></div>
-        <Tag>{selectedCount} {selectedCount === 1 ? 'item' : 'items'}</Tag>
+        <div className="pos-title"><h1>New retail sale</h1><span>Build the order, then collect payment</span></div>
+        <div className="pos-order-status"><span className="pos-status-dot" />Draft order</div>
+        <Tag>{selectedCount} {selectedCount === 1 ? 'product' : 'products'}</Tag>
       </header>
 
       <div className="pos-layout">
         <main className="pos-main">
           <Card className="pos-customer-card">
             <div className="pos-customer-row">
-              <div className="pos-section-label"><UserOutlined /><div><strong>Customer</strong><span>Optional</span></div></div>
+              <div className="pos-section-label"><UserOutlined /><div><strong>Customer</strong><span>Optional for walk-ins</span></div></div>
               <div className="pos-customer-search">
                 <Input allowClear prefix={<SearchOutlined />} inputMode="numeric" placeholder="Search phone number" value={phone} onChange={event => { setPhone(event.target.value); setSelectedCustomer(null); }} />
                 {selectedCustomer && <div className="pos-selected-customer"><span><strong>{selectedCustomer.name || 'Walk-in customer'}</strong> · {selectedCustomer.phone}</span><Tag color="success">Selected</Tag></div>}
@@ -185,7 +186,7 @@ export default function SalesOrderPOS() {
           </Card>
 
           <Card className="pos-items-card">
-            <div className="pos-items-toolbar"><div><strong>Products</strong><span>{selectedCount} selected</span></div><Button type="primary" size="small" icon={<PlusOutlined />} onClick={addItem}>Add product</Button></div>
+            <div className="pos-items-toolbar"><div><strong>Order items</strong><span>{selectedCount ? `${selectedCount} product${selectedCount === 1 ? '' : 's'} in this sale` : 'Search and add products to begin'}</span></div><Button type="primary" icon={<PlusOutlined />} onClick={addItem}>Add product</Button></div>
             <div className="pos-items-scroll">
               {items.map((item, index) => {
                 const selected = products.find(product => product.id === item.product);
@@ -218,17 +219,17 @@ export default function SalesOrderPOS() {
 
         <aside className="pos-checkout">
           <Card>
-            <div className="pos-checkout-heading"><strong>Checkout</strong><Tag>Draft</Tag></div>
+            <div className="pos-checkout-heading"><div><span className="pos-checkout-kicker">ORDER SUMMARY</span><strong>Checkout</strong></div><Tag>{selectedCount} {selectedCount === 1 ? 'item' : 'items'}</Tag></div>
             <div className="pos-summary"><div><span>Subtotal</span><strong>{money(subtotal)}</strong></div><div><span>Discount</span><strong className={discountAmount ? 'negative' : ''}>− {money(discountAmount)}</strong></div>{tax > 0 && <div><span>Tax</span><strong>+ {money(tax)}</strong></div>}</div>
             <Divider />
-            <label className="pos-discount-label">Order discount</label>
+            <label className="pos-discount-label">Order discount <span>Optional</span></label>
             <div className="pos-discount"><Radio.Group value={discountMode} onChange={event => { setDiscountMode(event.target.value); setDiscount(0); }} optionType="button" buttonStyle="solid" size="small"><Radio.Button value="percentage">%</Radio.Button><Radio.Button value="amount">₹</Radio.Button></Radio.Group><InputNumber min={0} max={discountMode === 'percentage' ? 100 : subtotal} value={discount} onChange={value => setDiscount(value || 0)} suffix={discountMode === 'percentage' ? '%' : undefined} prefix={discountMode === 'amount' ? '₹' : undefined} /></div>
-            <div className="pos-total"><span>Total due</span><strong>{money(total)}</strong></div>
+            <div className="pos-total"><div><span>Total due</span><small>Taxes included where applicable</small></div><strong>{money(total)}</strong></div>
             <Form.Item label="Payment" required className="pos-payment">
               <PaymentSplitEditor paymentMethods={paymentMethods} total={total} value={paymentSplits} onChange={setPaymentSplits} cashTendered={cashTendered} onCashTenderedChange={setCashTendered} compact quick />
             </Form.Item>
             <Button type="primary" htmlType="submit" icon={<CheckCircleOutlined />} block className="pos-complete">Complete sale · {money(total)}</Button>
-            <Button type="text" size="small" block onClick={() => navigate('/app/retail-sales')}>Cancel</Button>
+            <Button type="text" size="small" block className="pos-cancel" onClick={() => navigate('/app/retail-sales')}>Cancel sale</Button>
             <p className="pos-auto-note"><CheckCircleOutlined /> Stock and accounts update automatically</p>
           </Card>
         </aside>

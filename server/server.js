@@ -10,8 +10,8 @@ const app = express();
 
 app.use(helmet());
 app.use(cors());
-// Company logos are stored as small data URLs in tenant settings.
-app.use(express.json({ limit: '2mb' }));
+// A 5 MB logo expands to roughly 6.7 MB when encoded as a data URL.
+app.use(express.json({ limit: '8mb' }));
 app.use(morgan('dev'));
 
 // Routes would be mounted here
@@ -86,6 +86,13 @@ const migratePurchaseItemEnums = async () => {
   }
 };
 
+// Purchases are now saved as editable drafts before they affect inventory or
+// the general ledger. Preserve the existing invoice enum and add the new state.
+const migratePurchaseInvoiceStatus = async () => {
+  const [types] = await db.sequelize.query("SELECT 1 FROM pg_type WHERE typname = 'enum_purchase_invoices_status'");
+  if (types.length) await db.sequelize.query('ALTER TYPE "enum_purchase_invoices_status" ADD VALUE IF NOT EXISTS \'draft\'');
+};
+
 // Products created before ready-made purchasing required a formula at the
 // database level. Ready-made products intentionally have no formula.
 const migrateProductsForReadyMade = async () => {
@@ -113,7 +120,7 @@ const ensureDefaultAccountHierarchy = async () => {
   }
 };
 
-migrateRawMaterialCategoryToText().then(migratePaymentModesToText).then(migratePurchaseItemEnums).then(migrateProductsForReadyMade).then(() => db.sequelize.sync({ alter: true })).then(ensureDefaultAccountHierarchy).then(() => {
+migrateRawMaterialCategoryToText().then(migratePaymentModesToText).then(migratePurchaseItemEnums).then(migratePurchaseInvoiceStatus).then(migrateProductsForReadyMade).then(() => db.sequelize.sync({ alter: true })).then(ensureDefaultAccountHierarchy).then(() => {
   console.log('Database synced');
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);

@@ -238,3 +238,109 @@
   .pos-confirm-modal .ant-modal-footer { flex-direction: column-reverse; }
   .pos-confirm-modal .ant-modal-footer .ant-btn { width: 100%; margin: 0 !important; }
 }
+
+/* 2026 POS refresh: larger type, clear workflow hierarchy and a focused checkout. */
+@media (min-width: 768px) {
+  .pos-page {
+    padding: 22px 24px 24px;
+    background: radial-gradient(circle at 72% -20%, rgba(181, 66, 48, .06), transparent 32%), var(--color-bg-primary);
+  }
+  .pos-form { max-width: 1660px; margin: 0 auto; gap: 16px; }
+  .pos-topbar { min-height: 52px; gap: 12px; }
+  .pos-topbar > .ant-btn { width: 40px; min-width: 40px; height: 40px; border-radius: 10px; }
+  .pos-title-icon { width: 40px; height: 40px; border-radius: 11px; background: linear-gradient(145deg, #c44d39, #a83626); color: #fff; box-shadow: 0 8px 20px rgba(181, 66, 48, .2); font-size: 17px; }
+  .pos-title h1 { font-size: 21px; font-weight: 720; line-height: 1.2; }
+  .pos-title span { display: block; margin-top: 2px; font-size: 12px; letter-spacing: 0; text-transform: none; }
+  .pos-order-status { display: flex; align-items: center; gap: 7px; color: var(--color-text-secondary); font-size: 12px; font-weight: 600; }
+  .pos-status-dot { width: 7px; height: 7px; border-radius: 50%; background: #f59e0b; box-shadow: 0 0 0 4px #fff5df; }
+  .pos-topbar > .ant-tag, .pos-checkout-heading .ant-tag { padding: 3px 10px; border: 0; background: #edeff2; color: #536071; font-size: 11px; }
+  .pos-layout { grid-template-columns: minmax(0, 1fr) 360px; gap: 18px; }
+  .pos-main { gap: 12px; }
+  .pos-page .ant-card { border-color: #e1e5e9 !important; border-radius: 14px !important; box-shadow: 0 10px 30px rgba(28, 28, 30, .045) !important; }
+  .pos-customer-card > .ant-card-body { padding: 14px 16px !important; }
+  .pos-customer-row { grid-template-columns: 190px minmax(0, 1fr); gap: 16px; }
+  .pos-section-label { min-height: 40px; gap: 10px; }
+  .pos-section-label > .anticon { width: 34px; height: 34px; border-radius: 9px; }
+  .pos-section-label strong { font-size: 13px; }
+  .pos-section-label span, .pos-items-toolbar span { margin-top: 2px; font-size: 11px; }
+  .pos-customer-search .ant-input-affix-wrapper { min-height: 40px; border-radius: 9px; }
+  .pos-selected-customer { margin-top: 7px; padding: 7px 10px; border: 1px solid #ccebd8; border-radius: 8px; font-size: 12px; }
+  .pos-customer-results { top: 46px; padding: 6px; border-radius: 10px; }
+  .pos-customer-results > button:not(.ant-btn) { padding: 9px 10px; border-radius: 7px; font-size: 12px; }
+  .pos-items-card { overflow: hidden; }
+  .pos-items-card > .ant-card-body { padding: 18px !important; }
+  .pos-items-toolbar { min-height: 42px; margin-bottom: 14px; }
+  .pos-items-toolbar strong { font-size: 16px; }
+  .pos-items-toolbar .ant-btn { min-height: 36px; padding-inline: 15px; }
+  .pos-items-scroll { gap: 10px; padding-right: 4px; }
+  .pos-item { min-height: 0; border-color: #dfe4e8; border-radius: 11px; transition: border-color 150ms ease, box-shadow 150ms ease; }
+  .pos-item:focus-within { border-color: rgba(181, 66, 48, .5); box-shadow: 0 0 0 3px rgba(181, 66, 48, .07); }
+  .pos-item-head { min-height: 42px; gap: 8px; padding: 5px 11px; font-size: 12px; }
+  .pos-item-head > span:nth-child(3) { font-size: 11px; }
+  .pos-item-index { width: 24px; height: 24px; border-radius: 7px; font-size: 11px; }
+  .pos-item-head .ant-btn { width: 30px; min-width: 30px; height: 30px; }
+  .pos-item-grid { grid-template-columns: minmax(260px, 1fr) 96px 132px 142px; gap: 10px; padding: 13px 12px 10px; }
+  .pos-field { gap: 5px; }
+  .pos-field > span { color: #536071; font-size: 11px; font-weight: 600; }
+  .pos-field .ant-select-selector, .pos-field .ant-input-number { min-height: 38px; border-radius: 8px !important; }
+  .pos-line-total { min-height: 38px; padding: 7px 10px; border: 1px solid #e8ebee; border-radius: 8px; font-size: 10px; }
+  .pos-line-total span { color: var(--color-text-secondary); }
+  .pos-line-total strong { font-size: 13px; }
+  .pos-item-bottom { min-height: 34px; gap: 8px; padding: 0 12px 12px; }
+  .pos-item-bottom .ant-tag { margin: 0; border: 0; border-radius: 6px; font-size: 10px; }
+  .pos-stock-note { padding: 5px 8px; border-radius: 6px; font-size: 10px; }
+  .pos-add-row.ant-btn { min-height: 36px !important; margin-top: 12px; border-radius: 9px !important; font-size: 12px; }
+  .pos-checkout > .ant-card { border-top: 3px solid var(--color-gold) !important; }
+  .pos-checkout > .ant-card > .ant-card-body { padding: 21px 20px !important; }
+  .pos-checkout-heading strong { margin-top: 2px; font-size: 19px; }
+  .pos-checkout-kicker { color: var(--color-gold); font-size: 9px; font-weight: 800; letter-spacing: .1em; }
+  .pos-summary { gap: 10px; margin-top: 22px; }
+  .pos-summary > div { font-size: 12px; }
+  .pos-summary strong { font-weight: 650; }
+  .pos-checkout .ant-divider { margin: 16px 0; }
+  .pos-discount-label { display: flex; justify-content: space-between; margin-bottom: 7px; font-size: 12px; font-weight: 650; }
+  .pos-discount-label span { color: var(--color-text-muted); font-size: 10px; font-weight: 500; }
+  .pos-discount { gap: 7px; }
+  .pos-discount .ant-input-number { min-height: 38px; border-radius: 8px; }
+  .pos-discount .ant-radio-group { padding: 3px; border-radius: 8px; }
+  .pos-discount .ant-radio-button-wrapper { min-width: 35px; height: 30px; border-radius: 6px !important; font-size: 11px; line-height: 30px; }
+  .pos-total { margin: 20px 0; padding: 16px; border-radius: 11px; background: linear-gradient(145deg, #302421, #201817); box-shadow: 0 10px 24px rgba(43, 32, 30, .14); }
+  .pos-total > div { display: flex; flex-direction: column; }
+  .pos-total span { font-size: 12px; font-weight: 650; }
+  .pos-total small { margin-top: 2px; color: rgba(255,255,255,.58); font-size: 8px; }
+  .pos-total strong { font-size: 22px; white-space: nowrap; }
+  .pos-payment.ant-form-item { margin-bottom: 13px; }
+  .pos-payment .ant-form-item-label { padding: 0 0 6px; }
+  .pos-payment .ant-form-item-label > label { font-size: 12px; font-weight: 650; }
+  .pos-complete.ant-btn { min-height: 44px; border-radius: 9px !important; font-size: 12px; font-weight: 700 !important; box-shadow: 0 7px 18px rgba(181, 66, 48, .22) !important; }
+  .pos-cancel.ant-btn { margin-top: 3px; color: var(--color-text-secondary); font-size: 11px; }
+  .pos-auto-note { margin-top: 7px; font-size: 9px; }
+}
+
+@media (min-width: 768px) and (max-width: 1200px) {
+  .pos-layout { grid-template-columns: minmax(0, 1fr); }
+  .pos-item-grid { grid-template-columns: minmax(220px, 1fr) 90px 120px 130px; }
+}
+
+@media (max-width: 767px) {
+  .app-content > .pos-page { padding: 8px 8px calc(var(--mobile-nav-height) + 12px) !important; }
+  .pos-form, .pos-layout, .pos-main { gap: 8px; }
+  .pos-customer-row { grid-template-columns: 1fr; gap: 8px; }
+  .pos-customer-card > .ant-card-body, .pos-items-card > .ant-card-body { padding: 10px !important; }
+  .pos-items-toolbar strong { font-size: 14px; }
+  .pos-items-toolbar .ant-btn { min-height: 34px; padding-inline: 10px; font-size: 11px; }
+  .pos-item-head { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .pos-item-head > strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pos-item-head > span:nth-child(3) { display: none; }
+  .pos-item-grid { gap: 8px; padding: 10px; }
+  .pos-item-bottom { align-items: flex-start; flex-direction: column; padding: 0 10px 10px; }
+  .pos-stock-note { width: 100%; max-width: none; white-space: normal; }
+  .pos-checkout > .ant-card { border-top: 3px solid var(--color-gold) !important; }
+  .pos-checkout > .ant-card > .ant-card-body { padding: 17px 15px !important; }
+  .pos-checkout-heading strong { font-size: 17px; }
+  .pos-checkout-kicker { color: var(--color-gold); font-size: 9px; font-weight: 800; letter-spacing: .1em; }
+  .pos-discount-label { display: flex; justify-content: space-between; }
+  .pos-discount-label span { color: var(--color-text-muted); font-size: 9px; font-weight: 500; }
+  .pos-total > div { display: flex; flex-direction: column; }
+  .pos-total small { color: rgba(255,255,255,.58); font-size: 8px; }
+}

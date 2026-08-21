@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Button, Card, Col, DatePicker, Form, Input, InputNumber, Modal, Row, Segmented, Select, Space, Statistic, Table, Tag, message } from 'antd';
-import { AppstoreAddOutlined, CheckCircleOutlined, CloseOutlined, DeleteOutlined, FileTextOutlined, InfoCircleOutlined, PlusOutlined, ShoppingCartOutlined } from '@ant-design/icons';
+import { Button, Card, Col, DatePicker, Form, Input, InputNumber, Modal, Popconfirm, Row, Segmented, Select, Space, Statistic, Table, Tag, message } from 'antd';
+import { AppstoreAddOutlined, CloseOutlined, DeleteOutlined, EditOutlined, FileTextOutlined, InfoCircleOutlined, PlusOutlined, SaveOutlined, SendOutlined, ShoppingCartOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import client from '../../api/client';
 import useApiData from '../../hooks/useApiData';
@@ -30,6 +30,8 @@ export default function Purchases() {
   const { data: finishedGoods, reload: reloadFinishedGoods } = useApiData('/finished-goods');
   const { data: paymentMethods } = useApiData('/accounts/payment-methods');
   const [creating, setCreating] = useState(false), [saving, setSaving] = useState(false), [items, setItems] = useState([blankItem()]);
+  const [editingId, setEditingId] = useState(null);
+  const [postingId, setPostingId] = useState(null);
   const [paymentSplits, setPaymentSplits] = useState([]);
   const [quickMaterialForm] = Form.useForm();
   const [quickMaterial, setQuickMaterial] = useState(null);
@@ -61,7 +63,15 @@ export default function Purchases() {
   const update = (key, field, value) => setItems(all => all.map(item => { if (item.key !== key) return item; const next = { ...item, [field]: value }; if (field === 'materialType') { next.materialId = null; next.unitPrice = 0; } if (field === 'materialId') next.unitPrice = materialOptions(next.materialType).find(x => x.id === value)?.price ?? 0; return next; }));
   const subtotal = items.reduce((sum, x) => sum + Number(x.quantity || 0) * Number(x.unitPrice || 0), 0);
   const tax = items.reduce((sum, x) => sum + Number(x.quantity || 0) * Number(x.unitPrice || 0) * Number(x.taxRate || 0) / 100, 0);
-  const reset = () => { form.resetFields(); setItems([blankItem()]); setPaymentSplits([]); setCreating(false); };
+  const reset = () => { form.resetFields(); setItems([blankItem()]); setPaymentSplits([]); setEditingId(null); setCreating(false); };
+  const openNewPurchase = () => {
+    form.resetFields();
+    form.setFieldsValue({ invoiceDate: dayjs(), paidImmediately: 'no' });
+    setItems([blankItem()]);
+    setPaymentSplits([]);
+    setEditingId(null);
+    setCreating(true);
+  };
   const selectSupplier = supplierId => {
     form.setFieldValue('supplierId', supplierId);
     void form.validateFields(['supplierId']).catch(() => undefined);
@@ -179,6 +189,15 @@ export default function Purchases() {
       message.error(error.response?.data?.message || 'Could not create the ready-made product.');
     } finally { setSavingQuickFinished(false); }
   };
+  const draftPayload = (values, validPayments) => ({
+    supplier_id: values.supplierId,
+    invoice_date: values.invoiceDate.format('YYYY-MM-DD'),
+    due_date: values.paidImmediately === 'yes' ? undefined : values.dueDate?.format('YYYY-MM-DD'),
+    notes: values.notes,
+    paid_immediately: values.paidImmediately === 'yes',
+    payments: values.paidImmediately === 'yes' ? validPayments.map(row => ({ payment_method_id: row.payment_method_id, amount: row.amount })) : undefined,
+    items: items.map(item => ({ material_type: item.materialType, material_id: item.materialId, quantity: item.quantity, unit_price: item.unitPrice, tax_rate: item.taxRate }))
+  });
   const submit = async values => {
     const valid = items.filter(x => x.materialId && x.quantity > 0);
     if (valid.length !== items.length) return message.error('Select an item and quantity for every purchase line.');
@@ -189,8 +208,49 @@ export default function Purchases() {
       if (paidCents !== Math.round((subtotal + tax) * 100)) return message.error('Split payments must equal the purchase total.');
     }
     setSaving(true);
-    try { await client.post('/purchases', { supplier_id: values.supplierId, invoice_date: values.invoiceDate.format('YYYY-MM-DD'), due_date: values.paidImmediately === 'yes' ? undefined : values.dueDate?.format('YYYY-MM-DD'), notes: values.notes, paid_immediately: values.paidImmediately === 'yes', payments: values.paidImmediately === 'yes' ? validPayments.map(row => ({ payment_method_id: row.payment_method_id, amount: row.amount })) : undefined, items: valid.map(x => ({ material_type: x.materialType, material_id: x.materialId, quantity: x.quantity, unit_price: x.unitPrice, tax_rate: x.taxRate })) }); message.success('Purchase recorded, inventory updated, and accounts posted.'); reset(); await Promise.all([reload(), reloadFinishedGoods()]); }
+    try {
+      const payload = draftPayload(values, validPayments);
+      if (editingId) await client.put(`/purchases/${editingId}`, payload);
+      else await client.post('/purchases', payload);
+      message.success(editingId ? 'Purchase draft updated.' : 'Purchase saved as draft.');
+      reset();
+      await reload();
+    }
     catch (error) { message.error(error.response?.data?.message || 'Could not save the purchase.'); } finally { setSaving(false); }
+  };
+  const editDraft = purchase => {
+    if (purchase.status !== 'draft') return;
+    const draftItems = purchase.purchaseReceipt?.purchaseReceiptItems || [];
+    form.setFieldsValue({
+      supplierId: purchase.supplier_id,
+      invoiceDate: purchase.invoice_date ? dayjs(purchase.invoice_date) : dayjs(),
+      dueDate: purchase.due_date ? dayjs(purchase.due_date) : undefined,
+      paidImmediately: purchase.paid_immediately ? 'yes' : 'no',
+      notes: purchase.purchaseReceipt?.notes || undefined
+    });
+    setItems(draftItems.length ? draftItems.map((item, index) => ({
+      key: item.id || `${purchase.id}-${index}`,
+      materialType: item.material_type,
+      materialId: item.material_id,
+      quantity: Number(item.quantity),
+      unitPrice: Number(item.unit_price || 0),
+      taxRate: Number(item.tax_rate || 0)
+    })) : [blankItem()]);
+    setPaymentSplits(Array.isArray(purchase.payment_splits) ? purchase.payment_splits : []);
+    setEditingId(purchase.id);
+    setCreating(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+  const postDraft = async purchase => {
+    setPostingId(purchase.id);
+    try {
+      await client.post(`/purchases/${purchase.id}/post`);
+      if (editingId === purchase.id) reset();
+      message.success('Purchase posted. Inventory and accounts are now updated.');
+      await Promise.all([reload(), reloadRawMaterials(), reloadPackagingMaterials(), reloadFinishedGoods()]);
+    } catch (error) {
+      message.error(error.response?.data?.message || 'Could not post the purchase.');
+    } finally { setPostingId(null); }
   };
   const itemColumns = [
     { title: 'Type', width: 154, render: (_, item) => <Select aria-label="Purchase item type" value={item.materialType} onChange={value => update(item.key, 'materialType', value)} options={purchaseTypeOptions} /> },
@@ -201,7 +261,14 @@ export default function Purchases() {
     { title: 'Line total', width: 128, align: 'right', render: (_, item) => <strong className="purchase-line-total">{formatMoney(Number(item.quantity || 0) * Number(item.unitPrice || 0) * (1 + Number(item.taxRate || 0) / 100))}</strong> },
     { title: '', width: 48, align: 'center', render: (_, item) => <Button type="text" danger icon={<DeleteOutlined />} title="Remove line item" aria-label="Remove line item" disabled={items.length === 1} onClick={() => setItems(all => all.filter(existing => existing.key !== item.key))} /> }
   ];
-  const columns = [{ title: 'Invoice #', dataIndex: 'invoice_number' }, { title: 'Supplier', render: (_, purchase) => purchase.supplier?.name || '—' }, { title: 'Date', dataIndex: 'invoice_date', render: value => value ? dayjs(value).format('DD MMM YYYY') : '—' }, { title: 'Amount', dataIndex: 'total_amount', align: 'right', render: value => formatMoney(value) }, { title: 'Status', dataIndex: 'status', render: value => <Tag color={value === 'paid' ? 'success' : 'warning'}>{(value || 'unpaid').toUpperCase()}</Tag> }];
+  const statusTag = status => <Tag color={status === 'paid' ? 'success' : status === 'draft' ? 'default' : 'warning'}>{(status || 'unpaid').toUpperCase()}</Tag>;
+  const draftActions = purchase => purchase.status === 'draft' ? <Space size="small">
+    <Button size="small" icon={<EditOutlined />} onClick={() => editDraft(purchase)}>Edit</Button>
+    <Popconfirm title="Post this purchase?" description="This updates inventory and accounts. The purchase cannot be edited afterward." okText="Post purchase" onConfirm={() => postDraft(purchase)}>
+      <Button size="small" type="primary" icon={<SendOutlined />} loading={postingId === purchase.id}>Post</Button>
+    </Popconfirm>
+  </Space> : null;
+  const columns = [{ title: 'Invoice #', dataIndex: 'invoice_number' }, { title: 'Supplier', render: (_, purchase) => purchase.supplier?.name || '—' }, { title: 'Date', dataIndex: 'invoice_date', render: value => value ? dayjs(value).format('DD MMM YYYY') : '—' }, { title: 'Amount', dataIndex: 'total_amount', align: 'right', render: value => formatMoney(value) }, { title: 'Status', dataIndex: 'status', render: statusTag }, { title: 'Actions', width: 170, render: (_, purchase) => draftActions(purchase) }];
 
   const mobileItemFields = item => <>
     <div className="purchase-mobile-item__field purchase-mobile-item__field--wide">
@@ -216,14 +283,14 @@ export default function Purchases() {
   return <div className="purchases-page">
     <div className="purchases-page__header">
       <div><span className="purchases-page__eyebrow">Procurement</span><h1>Purchases</h1><p>Record supplier invoices and keep inventory costs up to date.</p></div>
-      <Space className="purchases-page__actions"><PageDrawerControls title="Purchases" summary={<Statistic title="Total value" value={purchases.reduce((sum, purchase) => sum + Number(purchase.total_amount || 0), 0)} prefix="₹" />} /><Button className="purchase-form-toggle" type={creating ? 'default' : 'primary'} icon={creating ? <CloseOutlined /> : <PlusOutlined />} onClick={() => setCreating(value => !value)}>{creating ? 'Close form' : 'Record purchase'}</Button></Space>
+      <Space className="purchases-page__actions"><PageDrawerControls title="Purchases" summary={<Statistic title="Total value" value={purchases.reduce((sum, purchase) => sum + Number(purchase.total_amount || 0), 0)} prefix="₹" />} /><Button className="purchase-form-toggle" type={creating ? 'default' : 'primary'} icon={creating ? <CloseOutlined /> : <PlusOutlined />} onClick={creating ? reset : openNewPurchase}>{creating ? 'Close form' : 'Record purchase'}</Button></Space>
     </div>
 
     {creating && <Form className="purchase-form" form={form} layout="vertical" onFinish={submit} initialValues={{ invoiceDate: dayjs(), paidImmediately: 'no' }}>
       <Card className="purchase-entry-card">
         <div className="purchase-entry-card__header">
           <div className="purchase-section-icon"><FileTextOutlined /></div>
-          <div><div className="purchase-entry-card__title-row"><h2>New supplier invoice</h2><Tag className="purchase-draft-tag">DRAFT</Tag></div><p>Add the invoice details, then enter materials or ready-made products purchased.</p></div>
+          <div><div className="purchase-entry-card__title-row"><h2>{editingId ? 'Edit purchase draft' : 'New supplier invoice'}</h2><Tag className="purchase-draft-tag">DRAFT</Tag></div><p>Add the invoice details, then enter materials or ready-made products purchased.</p></div>
         </div>
 
         <section className="purchase-form-section" aria-labelledby="purchase-details-title">
@@ -270,18 +337,19 @@ export default function Purchases() {
         </section>
 
         <div className="purchase-checkout">
-          <div className="purchase-checkout__note"><InfoCircleOutlined /><span><strong>Ready to post</strong>Saving updates inventory and creates the accounting entries automatically.</span></div>
+          <div className="purchase-checkout__note"><InfoCircleOutlined /><span><strong>Saved safely as a draft</strong>Inventory and accounting are updated only when you post the purchase from the history below.</span></div>
           <div className="purchase-checkout__summary"><div><span>Subtotal</span><span>{formatMoney(subtotal)}</span></div><div><span>GST</span><span>{formatMoney(tax)}</span></div><div className="purchase-checkout__total"><span>Grand total</span><strong>{formatMoney(subtotal + tax)}</strong></div></div>
-          <div className="purchase-checkout__actions"><Button size="large" onClick={reset}>Cancel</Button><Button size="large" type="primary" htmlType="submit" loading={saving} icon={<CheckCircleOutlined />}>Save purchase</Button></div>
+          <div className="purchase-checkout__actions"><Button size="large" onClick={reset}>Cancel</Button><Button size="large" type="primary" htmlType="submit" loading={saving} icon={<SaveOutlined />}>{editingId ? 'Update draft' : 'Save draft'}</Button></div>
         </div>
       </Card>
     </Form>}
 
     <Card className="purchase-history-card" title={<div className="purchase-history-card__title"><ShoppingCartOutlined /><span>Purchase history</span></div>} extra={<Button icon={<PlusOutlined />} onClick={() => openQuickSupplier(false)}>Add supplier</Button>}>
       <ResponsiveDataTable rowKey="id" columns={columns} dataSource={purchases} loading={loading} emptyText="No purchases found" mobileRenderItem={purchase => <>
-        <div className="mobile-data-list__title-row"><strong>{purchase.invoice_number || 'Purchase'}</strong><Tag color={purchase.status === 'paid' ? 'success' : 'warning'}>{(purchase.status || 'unpaid').toUpperCase()}</Tag></div>
+        <div className="mobile-data-list__title-row"><strong>{purchase.invoice_number || 'Purchase'}</strong>{statusTag(purchase.status)}</div>
         <span className="mobile-data-list__code">{purchase.supplier?.name || '—'} · {purchase.invoice_date ? dayjs(purchase.invoice_date).format('DD MMM YYYY') : '—'}</span>
         <div className="mobile-data-list__metrics"><span>Amount <strong>{formatMoney(purchase.total_amount)}</strong></span></div>
+        {purchase.status === 'draft' && <div style={{ marginTop: 12 }}>{draftActions(purchase)}</div>}
       </>} />
     </Card>
     <Modal
