@@ -8,8 +8,29 @@
 .payment-split-editor.is-compact .payment-split-row > .ant-btn:nth-of-type(1) { grid-column: 1 / 3; justify-self: end; height: 18px; margin-top: -5px; padding: 0; font-size: 9px; }
 .payment-split-editor.is-compact .payment-split-row > .ant-btn:last-child { grid-column: 3; grid-row: 1; width: 25px; min-width: 25px; }
 .payment-split-editor.is-compact .payment-split-footer .ant-btn { min-height: 24px; font-size: 9px; }
+.payment-quick-editor { display: grid; gap: 8px; }
+.payment-quick-buttons { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+.payment-quick-buttons .ant-btn { min-width: 0; height: 34px; padding-inline: 4px; font-size: 10px; }
+.payment-quick-buttons .ant-btn .anticon { font-size: 13px; }
+.payment-quick-splits { display: grid; gap: 5px; padding: 7px; border: 1px solid var(--color-border); border-radius: 7px; background: var(--color-bg-primary); }
+.payment-quick-split { display: grid; grid-template-columns: minmax(75px, 1fr) 96px 46px; align-items: center; gap: 4px; }
+.payment-quick-split > span { display: flex; min-width: 0; align-items: center; gap: 5px; overflow: hidden; color: var(--color-text-primary); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.payment-quick-split .ant-input-number { width: 100%; }
+.payment-quick-split .ant-btn { height: 24px; padding-inline: 2px; font-size: 9px; }
+.payment-quick-status { display: flex; justify-content: flex-end; padding-top: 2px; border-top: 1px solid var(--color-border); }
+.payment-quick-status .ant-tag { margin: 0; font-size: 9px; }
+.payment-cash-tendered { display: grid; grid-template-columns: minmax(0, 1fr) minmax(110px, .8fr); gap: 6px; }
+.payment-cash-tendered label { display: grid; gap: 3px; color: var(--color-text-secondary); font-size: 9px; }
+.payment-cash-tendered label .ant-input-number { width: 100%; }
+.payment-cash-tendered > div { display: flex; flex-direction: column; justify-content: center; padding: 5px 8px; border-radius: 6px; }
+.payment-cash-tendered > div span { font-size: 9px; }
+.payment-cash-tendered > div strong { font-size: 14px; }
+.payment-cash-tendered .has-change { background: #edf9f2; color: #166534; }
+.payment-cash-tendered .is-short { background: #fff1f0; color: #b42318; }
 @media (max-width: 640px) {
   .payment-split-row { grid-template-columns: minmax(0, 1fr) 105px 28px; }
   .payment-split-row > .ant-btn:nth-of-type(1) { grid-column: 1 / 3; justify-self: end; }
   .payment-split-row > .ant-btn:last-child { grid-column: 3; grid-row: 1; }
+  .payment-quick-buttons { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .payment-cash-tendered { grid-template-columns: 1fr 1fr; }
 }

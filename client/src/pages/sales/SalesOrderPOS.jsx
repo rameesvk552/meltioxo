@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Button, Card, Divider, Form, Input, InputNumber, Modal, Radio, Select, Space, Tag, Typography, message } from 'antd';
-import { ArrowLeftOutlined, CheckCircleOutlined, DeleteOutlined, InfoCircleOutlined, PlusOutlined, SearchOutlined, ShoppingCartOutlined, UserAddOutlined, UserOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, CheckCircleOutlined, CreditCardOutlined, DeleteOutlined, InfoCircleOutlined, PlusOutlined, PrinterOutlined, SearchOutlined, ShoppingCartOutlined, UserAddOutlined, UserOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import client from '../../api/client';
 import useApiData from '../../hooks/useApiData';
@@ -11,6 +11,7 @@ const { Text } = Typography;
 const { Option } = Select;
 const { TextArea } = Input;
 const money = value => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(Number(value || 0));
+const quantityLabel = value => Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 4 });
 
 export default function SalesOrderPOS() {
   const [form] = Form.useForm();
@@ -25,6 +26,9 @@ export default function SalesOrderPOS() {
   const [discount, setDiscount] = useState(0);
   const [discountMode, setDiscountMode] = useState('percentage');
   const [paymentSplits, setPaymentSplits] = useState([]);
+  const [cashTendered, setCashTendered] = useState(0);
+  const [confirmationOpen, setConfirmationOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [items, setItems] = useState([{ key: '1', product: null, qty: 1, price: 0, discount: 0, tax: 18 }]);
 
   const products = finishedGoods.map(item => ({ ...item, price: Number(item.selling_price || 0), tax: Number(item.tax_rate || 0) }));
@@ -36,6 +40,12 @@ export default function SalesOrderPOS() {
   const discountPct = subtotal ? discountAmount / subtotal * 100 : 0;
   const tax = items.reduce((sum, item) => sum + item.price * item.qty * (1 - discountPct / 100) * item.tax / 100, 0);
   const total = subtotal - discountAmount + tax;
+  const saleItems = items.filter(item => item.product);
+  const validPayments = paymentSplits.filter(row => row.payment_method_id && Number(row.amount) > 0);
+  const paidCents = validPayments.reduce((sum, row) => sum + Math.round(Number(row.amount) * 100), 0);
+  const cashMethodIds = new Set(paymentMethods.filter(method => String(method.method_type || '').toUpperCase() === 'CASH' || String(method.name || '').toLowerCase().includes('cash')).map(method => method.id));
+  const cashPaymentAmount = validPayments.filter(row => cashMethodIds.has(row.payment_method_id)).reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  const changeAmount = Math.max(0, Number(cashTendered || 0) - cashPaymentAmount);
 
   const updateProduct = (productId, key) => {
     const product = products.find(item => item.id === productId);
@@ -70,13 +80,28 @@ export default function SalesOrderPOS() {
     message.success('Customer selected');
   };
 
+  const validateSale = () => {
+    if (!saleItems.length) {
+      message.error('Add at least one product.');
+      return false;
+    }
+    if (!validPayments.length) {
+      message.error('Select a payment method.');
+      return false;
+    }
+    if (paidCents !== Math.round(total * 100)) {
+      message.error('Split payments must equal the total due.');
+      return false;
+    }
+    if (cashPaymentAmount > 0 && Math.round(Number(cashTendered || 0) * 100) < Math.round(cashPaymentAmount * 100)) {
+      message.error(`Cash received is ${money(cashPaymentAmount - Number(cashTendered || 0))} short.`);
+      return false;
+    }
+    return true;
+  };
+
   const submitSale = async (allowNegativeMaterials = false) => {
-    const saleItems = items.filter(item => item.product);
-    if (!saleItems.length) return message.error('Add at least one product.');
-    const validPayments = paymentSplits.filter(row => row.payment_method_id && Number(row.amount) > 0);
-    const paidCents = validPayments.reduce((sum, row) => sum + Math.round(Number(row.amount) * 100), 0);
-    if (!validPayments.length) return message.error('Select a payment method.');
-    if (paidCents !== Math.round(total * 100)) return message.error('Split payments must equal the total due.');
+    if (!validateSale()) return null;
     const response = await client.post('/retail-sales', {
       customer_id: selectedCustomer?.id,
       payments: validPayments.map(row => ({ payment_method_id: row.payment_method_id, amount: row.amount })),
@@ -96,10 +121,12 @@ export default function SalesOrderPOS() {
 
   const finishSale = async () => {
     try {
-      await submitSale(false);
+      const response = await submitSale(false);
+      return Boolean(response);
     } catch (error) {
       const data = error.response?.data;
       if (error.response?.status === 409 && data?.code === 'NEGATIVE_STOCK_CONFIRMATION_REQUIRED') {
+        setConfirmationOpen(false);
         Modal.confirm({
           title: 'Materials will go below zero',
           width: 500,
@@ -111,14 +138,29 @@ export default function SalesOrderPOS() {
             catch (submitError) { message.error(submitError.response?.data?.message || 'Could not complete the sale'); throw submitError; }
           },
         });
-        return;
+        return false;
       }
       message.error(data?.message || 'Could not complete the sale');
+      return false;
+    }
+  };
+
+  const openSaleConfirmation = () => {
+    if (validateSale()) setConfirmationOpen(true);
+  };
+
+  const confirmSale = async () => {
+    setSubmitting(true);
+    try {
+      const completed = await finishSale();
+      if (completed) setConfirmationOpen(false);
+    } finally {
+      setSubmitting(false);
     }
   };
 
   return <div className="pos-page">
-    <Form form={form} onFinish={finishSale} className="pos-form">
+    <Form form={form} onFinish={openSaleConfirmation} className="pos-form">
       <header className="pos-topbar">
         <Button type="text" icon={<ArrowLeftOutlined />} aria-label="Back" onClick={() => navigate('/app/retail-sales')} />
         <span className="pos-title-icon"><ShoppingCartOutlined /></span>
@@ -183,7 +225,7 @@ export default function SalesOrderPOS() {
             <div className="pos-discount"><Radio.Group value={discountMode} onChange={event => { setDiscountMode(event.target.value); setDiscount(0); }} optionType="button" buttonStyle="solid" size="small"><Radio.Button value="percentage">%</Radio.Button><Radio.Button value="amount">₹</Radio.Button></Radio.Group><InputNumber min={0} max={discountMode === 'percentage' ? 100 : subtotal} value={discount} onChange={value => setDiscount(value || 0)} suffix={discountMode === 'percentage' ? '%' : undefined} prefix={discountMode === 'amount' ? '₹' : undefined} /></div>
             <div className="pos-total"><span>Total due</span><strong>{money(total)}</strong></div>
             <Form.Item label="Payment" required className="pos-payment">
-              <PaymentSplitEditor paymentMethods={paymentMethods} total={total} value={paymentSplits} onChange={setPaymentSplits} compact />
+              <PaymentSplitEditor paymentMethods={paymentMethods} total={total} value={paymentSplits} onChange={setPaymentSplits} cashTendered={cashTendered} onCashTenderedChange={setCashTendered} compact quick />
             </Form.Item>
             <Button type="primary" htmlType="submit" icon={<CheckCircleOutlined />} block className="pos-complete">Complete sale · {money(total)}</Button>
             <Button type="text" size="small" block onClick={() => navigate('/app/retail-sales')}>Cancel</Button>
@@ -201,6 +243,66 @@ export default function SalesOrderPOS() {
         <Form.Item name="address" label="Address (optional)"><TextArea rows={3} placeholder="Address" /></Form.Item>
         <Space className="pos-modal-actions"><Button onClick={() => setCustomerModalOpen(false)}>Cancel</Button><Button type="primary" htmlType="submit">Save & select</Button></Space>
       </Form>
+    </Modal>
+
+    <Modal
+      className="pos-confirm-modal"
+      title={<Space><CheckCircleOutlined />Confirm sale</Space>}
+      open={confirmationOpen}
+      width={720}
+      centered
+      destroyOnHidden
+      confirmLoading={submitting}
+      okText={`Confirm sale & print · ${money(total)}`}
+      cancelText="Review sale"
+      onOk={confirmSale}
+      onCancel={() => !submitting && setConfirmationOpen(false)}
+      maskClosable={!submitting}
+      keyboard={!submitting}
+    >
+      <div className="pos-confirm-customer">
+        <span className="pos-confirm-icon"><UserOutlined /></span>
+        <div><small>CUSTOMER</small><strong>{selectedCustomer?.name || 'Walk-in customer'}</strong><span>{selectedCustomer?.phone || 'No phone number'}</span></div>
+        <Tag color="success">Ready</Tag>
+      </div>
+
+      <section className="pos-confirm-section">
+        <div className="pos-confirm-heading"><strong>Products</strong><span>{saleItems.length} item{saleItems.length === 1 ? '' : 's'}</span></div>
+        <div className="pos-confirm-items">
+          {saleItems.map((item, index) => {
+            const product = products.find(row => row.id === item.product);
+            const base = Number(item.price || 0) * Number(item.qty || 0);
+            const discounted = base * (1 - discountPct / 100);
+            const lineTotal = discounted * (1 + Number(item.tax || 0) / 100);
+            const isReadyMade = product?.source_type === 'ready_made';
+            return <div className="pos-confirm-item" key={item.key}>
+              <span className="pos-confirm-number">{index + 1}</span>
+              <div><strong>{product?.product?.name || product?.name || 'Product'}</strong><span>{product?.size_label || product?.sku || 'Variant'} · {quantityLabel(item.qty)} × {money(item.price)}</span></div>
+              <Tag color={isReadyMade ? 'blue' : 'gold'}>{isReadyMade ? 'Stock' : 'Make live'}</Tag>
+              <strong>{money(lineTotal)}</strong>
+            </div>;
+          })}
+        </div>
+      </section>
+
+      <div className="pos-confirm-bottom">
+        <section className="pos-confirm-section">
+          <div className="pos-confirm-heading"><strong><CreditCardOutlined /> Payment</strong><span>{validPayments.length} method{validPayments.length === 1 ? '' : 's'}</span></div>
+          <div className="pos-confirm-payments">
+            {validPayments.map(payment => <div key={payment.payment_method_id}><span>{paymentMethods.find(method => method.id === payment.payment_method_id)?.name || 'Payment'}</span><strong>{money(payment.amount)}</strong></div>)}
+            {cashPaymentAmount > 0 && <><div className="pos-confirm-cash-received"><span>Cash received</span><strong>{money(cashTendered)}</strong></div><div className="pos-confirm-change"><span>Change to customer</span><strong>{money(changeAmount)}</strong></div></>}
+          </div>
+        </section>
+
+        <section className="pos-confirm-totals">
+          <div><span>Subtotal</span><strong>{money(subtotal)}</strong></div>
+          <div><span>Discount</span><strong>− {money(discountAmount)}</strong></div>
+          {tax > 0 && <div><span>Tax</span><strong>+ {money(tax)}</strong></div>}
+          <div className="pos-confirm-grand"><span>Total</span><strong>{money(total)}</strong></div>
+        </section>
+      </div>
+
+      <div className="pos-confirm-print-note"><PrinterOutlined /><span>After confirmation, stock and accounts will update and the invoice will print automatically.</span></div>
     </Modal>
   </div>;
 }
