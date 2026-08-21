@@ -88,6 +88,8 @@
   line-height: 1.45;
 }
 
+.invoice-company .invoice-company-phone { color: #302a25; font-weight: 650; }
+
 .invoice-identity {
   display: flex;
   min-width: 280px;

@@ -167,13 +167,13 @@ const CompanySettings = () => {
                   </Form.Item>
                 </Col>
                 <Col xs={24} sm={12}>
-                  <Form.Item name="email" label={<span >Email Address</span>}>
-                    <Input />
+                  <Form.Item name="email" label={<span>Email Address</span>} extra="For company contact only. It is not shown on invoices.">
+                    <Input placeholder="Company contact email" />
                   </Form.Item>
                 </Col>
                 <Col xs={24} sm={12}>
-                  <Form.Item name="phone" label={<span >Phone Number</span>}>
-                    <Input />
+                  <Form.Item name="phone" label={<span>Invoice Phone Number</span>} extra="Shown beneath the company name on invoice headers.">
+                    <Input placeholder="Phone number for invoices" />
                   </Form.Item>
                 </Col>
                 <Col xs={24} sm={12}>
@@ -182,8 +182,8 @@ const CompanySettings = () => {
                   </Form.Item>
                 </Col>
                 <Col xs={24}>
-                  <Form.Item name="address" label={<span >Registered Address</span>}>
-                    <TextArea rows={4} />
+                  <Form.Item name="address" label={<span>Invoice Address</span>} extra="Shown beneath the company name on invoice headers.">
+                    <TextArea rows={4} placeholder="Full company address for invoices" />
                   </Form.Item>
                 </Col>
               </Row>

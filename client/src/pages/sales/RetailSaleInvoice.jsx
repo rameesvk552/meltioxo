@@ -95,7 +95,7 @@ export default function RetailSaleInvoice() {
             <div>
               <Title level={2}>{company.name || 'Company'}</Title>
               {company.address && <Text>{company.address}</Text>}
-              <Text>{[company.phone, company.email].filter(Boolean).join(' · ') || ' '}</Text>
+              {company.phone && <Text className="invoice-company-phone">Phone: {company.phone}</Text>}
               {hasTax && company.tax_id && <Text>GSTIN: {company.tax_id}</Text>}
             </div>
           </section>
