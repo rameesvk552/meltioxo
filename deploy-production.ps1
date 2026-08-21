@@ -41,7 +41,7 @@ try {
   & tar.exe -czf $dependenciesArchive server/node_modules
   if ($LASTEXITCODE -ne 0) { throw 'Dependency packaging failed.' }
 
-  & scp.exe -i $KeyPath -o StrictHostKeyChecking=no $releaseArchive $dependenciesArchive (Join-Path $projectRoot 'deploy-perfume-erp.sh') "$remote`:$remoteIncoming"
+  & scp.exe -i $KeyPath -o StrictHostKeyChecking=no $releaseArchive $dependenciesArchive (Join-Path $projectRoot 'deploy-perfume-erp.sh') (Join-Path $projectRoot 'perfume.wayon.in.conf') "$remote`:$remoteIncoming"
   if ($LASTEXITCODE -ne 0) { throw 'Upload to EC2 failed.' }
 
   & ssh.exe -i $KeyPath -o StrictHostKeyChecking=no $remote 'bash /mnt/recovery/perfume-erp/incoming/deploy-perfume-erp.sh'
