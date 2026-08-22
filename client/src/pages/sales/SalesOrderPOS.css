@@ -350,3 +350,15 @@
   .pos-payment .ant-form-item-row { display: block; }
   .pos-payment .ant-form-item-control { width: 100%; max-width: none; }
 }
+
+/* Keep product names readable on phones instead of clipping them with an ellipsis. */
+@media (max-width: 767px) {
+  .pos-product-field .ant-select-selector { height: auto !important; min-height: 44px; }
+  .pos-product-field .ant-select-selection-item { overflow: hidden; padding-block: 6px; line-height: 1.3; white-space: nowrap; text-overflow: ellipsis; }
+  .pos-item-grid { grid-template-columns: minmax(0, 1fr) 76px 104px; column-gap: 6px; row-gap: 8px; }
+  .pos-product-field { grid-column: 1 / -1; }
+  .pos-field > span { font-size: 10px; }
+  .ant-select-dropdown { min-width: calc(100vw - 16px) !important; max-width: calc(100vw - 16px); }
+  .ant-select-dropdown .ant-select-item { height: auto; min-height: 42px; }
+  .ant-select-dropdown .ant-select-item-option-content { overflow: visible; font-size: 14px; line-height: 1.4; white-space: nowrap; text-overflow: clip; }
+}
