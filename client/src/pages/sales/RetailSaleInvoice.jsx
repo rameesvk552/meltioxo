@@ -34,6 +34,7 @@ export default function RetailSaleInvoice() {
   const items = sale.retailSaleItems || [];
   const customer = sale.customer || {};
   const hasTax = Number(sale.tax_amount || 0) > 0 || items.some(item => Number(item.tax_rate || 0) > 0 || Number(item.tax_amount || 0) > 0);
+  const hasDiscount = Number(sale.discount_amount || 0) > 0 || items.some(item => Number(item.discount_pct || 0) > 0);
 
   const handlePrint = () => printInvoice(sale.sale_number || id);
 
@@ -130,7 +131,7 @@ export default function RetailSaleInvoice() {
                 <th>Product</th>
                 <th className="numeric">Qty</th>
                 <th className="numeric">Rate</th>
-                <th className="numeric">Disc.</th>
+                {hasDiscount && <th className="numeric">Disc.</th>}
                 {hasTax && <th className="numeric">Tax</th>}
                 <th className="numeric">Amount</th>
               </tr>
@@ -146,7 +147,7 @@ export default function RetailSaleInvoice() {
                     <td><strong>{productName}</strong>{variantName && <small>{variantName}{variant.sku && variantName !== variant.sku ? ` · ${variant.sku}` : ''}</small>}</td>
                     <td className="numeric">{quantity(item.quantity)}</td>
                     <td className="numeric">{money(item.unit_price)}</td>
-                    <td className="numeric">{Number(item.discount_pct || 0).toLocaleString('en-IN')}%</td>
+                    {hasDiscount && <td className="numeric">{Number(item.discount_pct || 0).toLocaleString('en-IN')}%</td>}
                     {hasTax && <td className="numeric">{Number(item.tax_rate || 0).toLocaleString('en-IN')}%</td>}
                     <td className="numeric"><strong>{money(item.total)}</strong></td>
                   </tr>
@@ -162,7 +163,7 @@ export default function RetailSaleInvoice() {
           </div>
           <dl className="invoice-totals">
             <div><dt>Subtotal</dt><dd>{money(sale.subtotal)}</dd></div>
-            <div><dt>Discount</dt><dd>− {money(sale.discount_amount)}</dd></div>
+            {hasDiscount && <div><dt>Discount</dt><dd>− {money(sale.discount_amount)}</dd></div>}
             {hasTax && <div><dt>{company.tax_system || 'GST'}</dt><dd>{money(sale.tax_amount)}</dd></div>}
             <div className="invoice-grand-total"><dt>Total paid</dt><dd>{money(sale.total_amount)}</dd></div>
           </dl>
