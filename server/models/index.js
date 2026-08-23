@@ -36,7 +36,7 @@ Object.keys(db).forEach(modelName => {
 
 // Define Associations based on requirements
 // Tenant associations
-const tenantHasMany = ['user', 'rawMaterial', 'packagingMaterial', 'product', 'finishedGood', 'supplier', 'purchaseOrder', 'formula', 'productionOrder', 'customer', 'salesOrder', 'account', 'journalEntry', 'paymentMethod', 'payment', 'expense'];
+const tenantHasMany = ['user', 'rawMaterial', 'packagingMaterial', 'product', 'finishedGood', 'supplier', 'purchaseOrder', 'formula', 'productionOrder', 'customer', 'salesOrder', 'account', 'journalEntry', 'paymentMethod', 'payment', 'expense', 'businessDay'];
 tenantHasMany.forEach(model => {
     if(db.tenant && db[model]) {
         db.tenant.hasMany(db[model], { foreignKey: 'tenant_id' });
@@ -97,6 +97,18 @@ if(db.paymentMethod && db.account) db.account.hasMany(db.paymentMethod, { foreig
 if(db.payment && db.paymentMethod) db.payment.belongsTo(db.paymentMethod, { foreignKey: 'payment_method_id' });
 if(db.expense && db.paymentMethod) db.expense.belongsTo(db.paymentMethod, { foreignKey: 'payment_method_id' });
 if(db.retailSale && db.paymentMethod) db.retailSale.belongsTo(db.paymentMethod, { foreignKey: 'payment_method_id' });
+if (db.businessDay && db.retailSale) {
+    db.businessDay.hasMany(db.retailSale, { foreignKey: 'business_day_id' });
+    db.retailSale.belongsTo(db.businessDay, { foreignKey: 'business_day_id' });
+}
+if (db.businessDay && db.payment) {
+    db.businessDay.hasMany(db.payment, { foreignKey: 'business_day_id' });
+    db.payment.belongsTo(db.businessDay, { foreignKey: 'business_day_id' });
+}
+if (db.businessDay && db.user) {
+    db.businessDay.belongsTo(db.user, { as: 'openedBy', foreignKey: 'opened_by' });
+    db.businessDay.belongsTo(db.user, { as: 'closedBy', foreignKey: 'closed_by' });
+}
 
 if(db.account) {
     db.account.belongsTo(db.account, { as: 'Parent', foreignKey: 'parent_id' });

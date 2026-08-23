@@ -32,7 +32,7 @@ export default function Header({ collapsed, setCollapsed, setMobileDrawerOpen })
       ['/app/suppliers', 'Suppliers'], ['/app/purchases', 'Purchases'],
       ['/app/direct-purchases', 'Purchases'], ['/app/formulas', 'Formulas'],
       ['/app/production', 'Production Orders'], ['/app/customers', 'Customers'],
-      ['/app/retail-sales/new', 'POS'], ['/app/retail-sales', 'Sales & Invoices'], ['/app/accounts', 'Accounts'],
+      ['/app/retail-sales/new', 'POS'], ['/app/retail-sales', 'Sales & Invoices'], ['/app/day-register', 'Day Register'], ['/app/accounts', 'Accounts'],
       ['/app/journal-entries', 'Journal Entries'], ['/app/payables', 'Accounts Payable'],
       ['/app/receivables', 'Accounts Receivable'], ['/app/payments', 'Payments'],
       ['/app/expenses', 'Expenses'], ['/app/reports/profit-loss', 'Owner Profit & Loss'],

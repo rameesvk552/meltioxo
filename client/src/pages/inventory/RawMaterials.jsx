@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Table, Card, Row, Col, Tag, Button, Input, Select, Space, Typography, Progress, Modal, Form, message } from 'antd';
-import { PlusOutlined, SearchOutlined, EyeOutlined, EditOutlined, ToolOutlined } from '@ant-design/icons';
+import { PlusOutlined, SearchOutlined, EyeOutlined, EditOutlined, ToolOutlined, DeleteOutlined } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
 import useApiData from '../../hooks/useApiData';
 import client from '../../api/client';
@@ -71,6 +71,15 @@ export default function RawMaterials() {
     form.setFieldsValue({ sku: material.sku, name: material.name, category: material.category, unit: material.unit, stock: material.stock, reorder: material.reorder, avgCost: material.avgCost });
     setIsModalOpen(true);
   };
+  const deleteMaterial = material => Modal.confirm({
+    title: `Delete ${material.name}?`,
+    content: 'A raw material must be removed from every formula before it can be deleted.',
+    okText: 'Delete material', okButtonProps: { danger: true },
+    onOk: async () => {
+      try { await client.delete(`/raw-materials/${material.id}`); message.success('Raw material deleted successfully.'); await reload(); }
+      catch (error) { message.error(error.response?.data?.message || 'Could not delete raw material.'); }
+    }
+  });
 
   const filteredMaterials = materials.filter(m => {
     const matchesSearch = m.name.toLowerCase().includes(searchText.toLowerCase()) || 
@@ -123,6 +132,7 @@ export default function RawMaterials() {
           <Button type="text" icon={<EyeOutlined />} style={{ color: '#4299e1' }} />
         </Link>
         <Button type="text" icon={<EditOutlined />} style={{ color: 'var(--color-gold)' }} onClick={() => openEditMaterial(r)} />
+        <Button type="text" danger icon={<DeleteOutlined />} aria-label={`Delete ${r.name}`} onClick={() => deleteMaterial(r)} />
         <Button type="text" icon={<ToolOutlined />} style={{ color: 'var(--color-text-secondary)' }} />
       </Space>
     )}
@@ -213,6 +223,7 @@ export default function RawMaterials() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 12 }}>
                 <Link to={`/app/raw-materials/${material.id}`}><Button block icon={<EyeOutlined />}>View</Button></Link>
                 <Button type="primary" icon={<EditOutlined />} onClick={() => openEditMaterial(material)}>Edit</Button>
+                <Button danger icon={<DeleteOutlined />} onClick={() => deleteMaterial(material)}>Delete</Button>
               </div>
             </>
           )} />

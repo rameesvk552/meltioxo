@@ -39,18 +39,22 @@ export default function RetailSaleDetail() {
       <Row gutter={[16, 16]}>
         {(sale.retailSaleItems || []).map(item => {
           const variant = item.finishedGood;
+          const isMeasured = Boolean(variant?.product?.sell_by_measurement);
           const order = item.productionOrder;
           const deficits = order?.inventoryDeficits || [];
           const columns = [
             { title: 'Material', dataIndex: 'material_name' },
             { title: 'Type', dataIndex: 'material_type', render: value => <Tag>{value}</Tag> },
-            { title: 'Used', render: (_, row) => `${Number(row.consumed_qty || row.required_qty).toLocaleString()} ${row.material_unit}` },
+            { title: 'Used', render: (_, row) => {
+              const used = Number(row.consumed_qty ?? row.required_qty);
+              return Number.isFinite(used) ? `${used.toLocaleString()} ${row.material_unit || 'units'}` : '—';
+            } },
             { title: 'Cost', dataIndex: 'consumed_cost', align: 'right', render: money }
           ];
           return <Col span={24} key={item.id}>
-            <Card title={`${variant?.product?.name || variant?.name || 'Product'} · ${variant?.size_label || variant?.sku || 'Variant'}`} extra={<Tag color={item.fulfillment_mode === 'make_now' ? 'gold' : 'blue'}>{item.fulfillment_mode === 'make_now' ? 'Make Now' : 'Finished Stock'}</Tag>}>
+            <Card title={isMeasured ? (variant?.product?.name || variant?.name || 'Product') : `${variant?.product?.name || variant?.name || 'Product'} · ${variant?.size_label || variant?.sku || 'Variant'}`} extra={<Tag color={item.fulfillment_mode === 'make_now' ? 'gold' : 'blue'}>{isMeasured ? 'Measured · Make Now' : item.fulfillment_mode === 'make_now' ? 'Make Now' : 'Finished Stock'}</Tag>}>
               <Descriptions column={{ xs: 1, sm: 3 }} size="small">
-                <Descriptions.Item label="Quantity">{Number(item.quantity)}</Descriptions.Item>
+                <Descriptions.Item label="Quantity">{Number(item.quantity)}{isMeasured ? ` ${variant.product.measurement_unit || 'ml'}` : ''}</Descriptions.Item>
                 <Descriptions.Item label="Sale amount">{money(item.total)}</Descriptions.Item>
                 <Descriptions.Item label="Cost">{money(item.cost_amount)}</Descriptions.Item>
                 {order && <Descriptions.Item label="Formula">{order.formula?.name || '—'}</Descriptions.Item>}

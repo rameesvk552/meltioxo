@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Button, Card, Divider, Form, Input, InputNumber, Modal, Radio, Select, Space, Tag, Typography, message } from 'antd';
-import { ArrowLeftOutlined, CheckCircleOutlined, CreditCardOutlined, DeleteOutlined, InfoCircleOutlined, PlusOutlined, PrinterOutlined, SearchOutlined, ShoppingCartOutlined, UserAddOutlined, UserOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, CheckCircleOutlined, CreditCardOutlined, DeleteOutlined, FieldTimeOutlined, InfoCircleOutlined, LockOutlined, PlusOutlined, PrinterOutlined, SearchOutlined, ShoppingCartOutlined, UserAddOutlined, UserOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import client from '../../api/client';
 import useApiData from '../../hooks/useApiData';
@@ -20,6 +20,7 @@ export default function SalesOrderPOS() {
   const { data: finishedGoods, loading: productsLoading } = useApiData('/finished-goods');
   const { data: customers } = useApiData('/customers');
   const { data: paymentMethods } = useApiData('/accounts/payment-methods');
+  const { data: dayState, loading: dayLoading, reload: reloadDay } = useApiData('/business-days/current', { initialData: {} });
   const [phone, setPhone] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
@@ -31,7 +32,9 @@ export default function SalesOrderPOS() {
   const [submitting, setSubmitting] = useState(false);
   const [items, setItems] = useState([{ key: '1', product: null, qty: 1, price: 0, discount: 0, tax: 18 }]);
 
-  const products = finishedGoods.map(item => ({ ...item, price: Number(item.selling_price || 0), tax: Number(item.tax_rate || 0) }));
+  const products = finishedGoods
+    .filter(item => item.is_active !== false && item.product?.is_active !== false)
+    .map(item => ({ ...item, price: Number(item.selling_price || 0), tax: Number(item.tax_rate || 0) }));
   const normalizedPhone = phone.replace(/\D/g, '');
   const matchingCustomers = customers.filter(customer => normalizedPhone.length >= 3 && (customer.phone || '').replace(/\D/g, '').includes(normalizedPhone));
   const selectedCount = items.filter(item => item.product).length;
@@ -50,7 +53,8 @@ export default function SalesOrderPOS() {
   const updateProduct = (productId, key) => {
     const product = products.find(item => item.id === productId);
     if (!product) return;
-    setItems(current => current.map(item => item.key === key ? { ...item, product: productId, price: product.price, tax: product.tax } : item));
+    const minimum = product.product?.sell_by_measurement ? Number(product.product.measurement_min_qty || 1) : 1;
+    setItems(current => current.map(item => item.key === key ? { ...item, product: productId, qty: minimum, price: product.price, tax: product.tax } : item));
   };
 
   const updateItem = (value, field, key) => setItems(current => current.map(item => item.key === key ? { ...item, [field]: value } : item));
@@ -159,13 +163,26 @@ export default function SalesOrderPOS() {
     }
   };
 
+  if (dayLoading && !dayState.business_date) return <div className="pos-day-loading"><Card loading /></div>;
+
+  if (!dayState.current) return <div className="pos-day-gate">
+    <Card>
+      <span className="pos-day-gate-icon"><LockOutlined /></span>
+      <h1>{dayState.today_record?.status === 'closed' ? 'Today’s register is closed' : 'Open the register to start selling'}</h1>
+      <p>{dayState.today_record?.status === 'closed' ? 'This business day has been reconciled and cannot accept more POS sales.' : 'Enter the opening cash in the Day Register before completing the first sale.'}</p>
+      {dayState.can_open && <Button type="primary" size="large" icon={<FieldTimeOutlined />} onClick={() => navigate('/app/day-register')}>Open business day</Button>}
+      {!dayState.can_open && <Button size="large" icon={<FieldTimeOutlined />} onClick={() => navigate('/app/day-register')}>View day register</Button>}
+      <Button type="text" onClick={reloadDay}>Check again</Button>
+    </Card>
+  </div>;
+
   return <div className="pos-page">
     <Form form={form} onFinish={openSaleConfirmation} className="pos-form">
       <header className="pos-topbar">
         <Button type="text" icon={<ArrowLeftOutlined />} aria-label="Back to sales" onClick={() => navigate('/app/retail-sales')} />
         <span className="pos-title-icon"><ShoppingCartOutlined /></span>
         <div className="pos-title"><h1>New retail sale</h1><span>Build the order, then collect payment</span></div>
-        <div className="pos-order-status"><span className="pos-status-dot" />Draft order</div>
+        <button type="button" className="pos-order-status pos-day-status" onClick={() => navigate('/app/day-register')}><span className="pos-status-dot" />Day open · {dayState.current.business_date}</button>
         <Tag>{selectedCount} {selectedCount === 1 ? 'product' : 'products'}</Tag>
       </header>
 
@@ -192,23 +209,27 @@ export default function SalesOrderPOS() {
                 const selected = products.find(product => product.id === item.product);
                 const packages = selected ? (selected.variantPackagings || []).map(row => `${Number(row.quantity) * item.qty} ${row.packagingMaterial?.name || 'packaging'}`).join(' + ') : '';
                 const isReadyMade = selected?.source_type === 'ready_made';
+                const isMeasured = Boolean(selected?.product?.sell_by_measurement);
+                const unit = isMeasured ? selected.product.measurement_unit || 'ml' : selected?.uom || 'pcs';
                 const hasStock = selected && Number(selected.current_stock) >= item.qty;
                 return <section className="pos-item" key={item.key}>
-                  <div className="pos-item-head"><span className="pos-item-index">{index + 1}</span><strong>{selected ? (selected.product?.name || selected.name) : `Product ${index + 1}`}</strong><Text type="secondary">{selected ? `${selected.size_label || selected.name} · ${selected.sku}` : 'Not selected'}</Text><Button type="text" danger size="small" icon={<DeleteOutlined />} disabled={items.length === 1} onClick={() => removeItem(item.key)} /></div>
+                  <div className="pos-item-head"><span className="pos-item-index">{index + 1}</span><strong>{selected ? (selected.product?.name || selected.name) : `Product ${index + 1}`}</strong><Text type="secondary">{selected ? isMeasured ? `Sold per ${unit}` : `${selected.size_label || selected.name} · ${selected.sku}` : 'Not selected'}</Text><Button type="text" danger size="small" icon={<DeleteOutlined />} disabled={items.length === 1} onClick={() => removeItem(item.key)} /></div>
                   <div className="pos-item-grid">
-                    <label className="pos-field pos-product-field"><span>Product / SKU</span><Select showSearch optionFilterProp="label" placeholder="Search product name or SKU" loading={productsLoading} notFoundContent={<span className="pos-select-empty">{productsLoading ? 'Loading products…' : 'No matching product or SKU'}</span>} value={item.product} onChange={value => updateProduct(value, item.key)}>{products.map(product => {
+                    <label className="pos-field pos-product-field"><span>Product / SKU</span><Select showSearch optionFilterProp="label" optionLabelProp="title" placeholder="Search product name, code, or SKU" loading={productsLoading} notFoundContent={<span className="pos-select-empty">{productsLoading ? 'Loading products…' : 'No matching product, code, or SKU'}</span>} value={item.product} onChange={value => updateProduct(value, item.key)}>{products.map(product => {
                       const productName = product.product?.name || product.name;
+                      const productCode = product.product?.code || '';
                       const variantName = product.size_label || product.name;
-                      const searchLabel = `${product.sku || ''} ${productName} ${variantName}`.trim();
-                      return <Option key={product.id} value={product.id} label={searchLabel}>{product.sku ? `${product.sku} · ` : ''}{productName} · {variantName}</Option>;
+                      const searchLabel = `${productCode} ${product.sku || ''} ${productName} ${variantName}`.trim();
+                      const selectedLabel = product.product?.sell_by_measurement ? `${productName} · per ml` : `${productName} · ${variantName}`;
+                      return <Option key={product.id} value={product.id} label={searchLabel} title={selectedLabel}>{product.product?.sell_by_measurement ? `${productName} · Sold per ml${productCode ? ` · ${productCode}` : ''}` : <>{product.sku ? `${product.sku} · ` : ''}{productName} · {variantName}{productCode ? ` · ${productCode}` : ''}</>}</Option>;
                     })}</Select></label>
-                    <label className="pos-field"><span>Quantity</span><InputNumber min={1} value={item.qty} onChange={value => updateItem(value || 1, 'qty', item.key)} /></label>
-                    <label className="pos-field"><span>Unit price</span><InputNumber min={0} prefix="₹" value={item.price} onChange={value => updateItem(value || 0, 'price', item.key)} /></label>
+                    <label className="pos-field"><span>{isMeasured ? `Quantity (${unit})` : 'Quantity'}</span><InputNumber min={isMeasured ? Number(selected.product.measurement_min_qty || 1) : 1} step={isMeasured ? Number(selected.product.measurement_step || 1) : 1} value={item.qty} onChange={value => updateItem(value || 1, 'qty', item.key)} /></label>
+                    <label className="pos-field"><span>{isMeasured ? `Price per ${unit}` : 'Unit price'}</span><InputNumber min={0} prefix="₹" value={item.price} onChange={value => updateItem(value || 0, 'price', item.key)} /></label>
                     <div className="pos-line-total"><span>Line total</span><strong>{money(item.price * item.qty)}</strong></div>
                   </div>
                   <div className="pos-item-bottom">
-                    {selected && <Tag color={isReadyMade ? 'blue' : 'gold'}>{isReadyMade ? 'Ready-made · From stock' : 'Make live · Automatic'}</Tag>}
-                    {selected && <div className={`pos-stock-note ${isReadyMade ? hasStock ? 'success' : 'danger' : 'warning'}`}><InfoCircleOutlined />{isReadyMade ? `${Number(selected.current_stock || 0)} in stock` : `${Number(selected.fill_quantity_ml || 0) * item.qty} ml formula${packages ? ` + ${packages}` : ''}`}</div>}
+                    {selected && <Tag color={isReadyMade ? 'blue' : 'gold'}>{isReadyMade ? 'Ready-made · From stock' : isMeasured ? 'Measured · Make live' : 'Make live · Automatic'}</Tag>}
+                    {selected && <div className={`pos-stock-note ${isReadyMade ? hasStock ? 'success' : 'danger' : 'warning'}`}><InfoCircleOutlined />{isReadyMade ? `${Number(selected.current_stock || 0)} in stock` : isMeasured ? `${quantityLabel(item.qty)} ${unit} prepared from the linked formula` : `${Number(selected.fill_quantity_ml || 0) * item.qty} ml formula${packages ? ` + ${packages}` : ''}`}</div>}
                   </div>
                 </section>;
               })}
@@ -276,9 +297,10 @@ export default function SalesOrderPOS() {
             const discounted = base * (1 - discountPct / 100);
             const lineTotal = discounted * (1 + Number(item.tax || 0) / 100);
             const isReadyMade = product?.source_type === 'ready_made';
+            const isMeasured = Boolean(product?.product?.sell_by_measurement);
             return <div className="pos-confirm-item" key={item.key}>
               <span className="pos-confirm-number">{index + 1}</span>
-              <div><strong>{product?.product?.name || product?.name || 'Product'}</strong><span>{product?.size_label || product?.sku || 'Variant'} · {quantityLabel(item.qty)} × {money(item.price)}</span></div>
+              <div><strong>{product?.product?.name || product?.name || 'Product'}</strong><span>{isMeasured ? `${quantityLabel(item.qty)} ${product.product.measurement_unit || 'ml'}` : `${product?.size_label || product?.sku || 'Variant'} · ${quantityLabel(item.qty)}`} × {money(item.price)}</span></div>
               <Tag color={isReadyMade ? 'blue' : 'gold'}>{isReadyMade ? 'Stock' : 'Make live'}</Tag>
               <strong>{money(lineTotal)}</strong>
             </div>;

@@ -140,12 +140,14 @@ export default function RetailSaleInvoice() {
               {items.map((item, index) => {
                 const variant = item.finishedGood || {};
                 const productName = variant.product?.name || variant.name || 'Product';
-                const variantName = variant.size_label || variant.sku;
+                const isMeasured = Boolean(variant.product?.sell_by_measurement);
+                const variantName = isMeasured ? null : variant.size_label || variant.sku;
+                const quantityUnit = isMeasured ? ` ${variant.product.measurement_unit || 'ml'}` : '';
                 return (
                   <tr key={item.id || index}>
                     <td>{index + 1}</td>
                     <td><strong>{productName}</strong>{variantName && <small>{variantName}{variant.sku && variantName !== variant.sku ? ` · ${variant.sku}` : ''}</small>}</td>
-                    <td className="numeric">{quantity(item.quantity)}</td>
+                    <td className="numeric">{quantity(item.quantity)}{quantityUnit}</td>
                     <td className="numeric">{money(item.unit_price)}</td>
                     {hasDiscount && <td className="numeric">{Number(item.discount_pct || 0).toLocaleString('en-IN')}%</td>}
                     {hasTax && <td className="numeric">{Number(item.tax_rate || 0).toLocaleString('en-IN')}%</td>}

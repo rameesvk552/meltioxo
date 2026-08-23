@@ -16,6 +16,7 @@ import Formulas from './pages/manufacturing/Formulas';
 import ProductionOrders from './pages/manufacturing/ProductionOrders';
 import Customers from './pages/sales/Customers';
 import SalesOrders from './pages/sales/SalesOrders';
+import DayRegister from './pages/sales/DayRegister';
 import AccountsWorkspace from './pages/finance/AccountsWorkspace';
 import JournalEntries from './pages/finance/JournalEntries';
 import Payments from './pages/finance/Payments';
@@ -91,6 +92,7 @@ export default function App() {
         <Route path="customers" element={<Customers />} />
         
         <Route path="retail-sales" element={<SalesOrders />} />
+        <Route path="day-register" element={<DayRegister />} />
         <Route path="retail-sales/new" element={<SalesOrderForm />} />
         <Route path="retail-sales/:id/invoice" element={<RetailSaleInvoice />} />
         <Route path="retail-sales/:id" element={<RetailSaleDetail />} />

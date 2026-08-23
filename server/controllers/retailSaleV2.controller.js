@@ -2,10 +2,10 @@ const db = require('../models');
 const { AppError } = require('../middleware/errorHandler');
 const accounting = require('../services/accounting.service');
 const production = require('../services/production.service');
+const businessDays = require('../services/businessDay.service');
 const { ACCOUNT_CODES } = require('../config/constants');
 
 const number = value => Number(value || 0);
-const today = () => new Date().toISOString().slice(0, 10);
 const fulfillmentModeForVariant = variant => variant?.source_type === 'ready_made' ? 'stock' : 'make_now';
 
 const loadVariant = (tenantId, id, transaction) => db.finishedGood.findOne({
@@ -28,6 +28,14 @@ const buildPreview = async (tenantId, items, transaction) => {
     if (!row.finished_good_id || quantity <= 0) throw new AppError(`Sale item ${index + 1} requires a product and positive quantity`, 400);
     const variant = await loadVariant(tenantId, row.finished_good_id, transaction);
     if (!variant || !variant.product || !variant.product.is_active) throw new AppError('Select an active product variant', 400);
+    if (variant.product.sell_by_measurement) {
+      const minimum = number(variant.product.measurement_min_qty || 1);
+      const step = number(variant.product.measurement_step || 1);
+      const steps = (quantity - minimum) / step;
+      if (quantity < minimum || Math.abs(steps - Math.round(steps)) > 0.000001) {
+        throw new AppError(`${variant.product.name} must be sold from ${minimum} ml in steps of ${step} ml`, 400);
+      }
+    }
     const fulfillmentMode = fulfillmentModeForVariant(variant);
     const line = {
       index,
@@ -52,7 +60,7 @@ const buildPreview = async (tenantId, items, transaction) => {
     const formulaId = production.resolveVariantFormulaId(variant);
     const formula = formulaId ? await db.formula.findOne({ where: { id: formulaId, tenant_id: tenantId, is_active: true }, include: [db.formulaIngredient], transaction }) : null;
     if (!formula || !formula.formulaIngredients.length) throw new AppError(`${variant.name} is missing an active formula with ingredients`, 400);
-    if (!variant.variantPackagings.length) throw new AppError(`${variant.name} is missing its packaging BOM`, 400);
+    if (!variant.product.sell_by_measurement && !variant.variantPackagings.length) throw new AppError(`${variant.name} is missing its packaging BOM`, 400);
     line.formula = { id: formula.id, name: formula.name, inherited: !variant.formula_id || variant.formula_id === variant.product.formula_id };
     line.packaging = variant.variantPackagings.map(pkg => ({ id: pkg.packaging_material_id, name: pkg.packagingMaterial?.name || 'Packaging', quantity: number(pkg.quantity) * quantity }));
     const requirements = production.combineMaterialRequirements(await production.calculateMaterialRequirements(tenantId, formula.id, quantity, variant.id, transaction));
@@ -98,6 +106,22 @@ const saleListInclude = [db.customer, db.retailSaleItem, db.paymentMethod, { mod
 const enrichSaleMaterials = async (tenantId, sale) => {
   const data = sale.toJSON();
   const orders = (data.retailSaleItems || []).map(item => item.productionOrder).filter(Boolean);
+  const orderIds = orders.map(order => order.id);
+  // Reload the polymorphic material rows directly. Deep nested Sequelize
+  // includes can retain wrapper objects, causing their stored fields to vanish
+  // when the sale response is serialized.
+  const savedMaterials = orderIds.length ? await db.productionMaterial.findAll({
+    where: { production_order_id: orderIds },
+    order: [['created_at', 'ASC']]
+  }) : [];
+  const materialsByOrder = new Map();
+  savedMaterials.forEach(instance => {
+    const material = instance.toJSON();
+    const rows = materialsByOrder.get(material.production_order_id) || [];
+    rows.push(material);
+    materialsByOrder.set(material.production_order_id, rows);
+  });
+  orders.forEach(order => { order.productionMaterials = materialsByOrder.get(order.id) || []; });
   const rawIds = new Set(), packagingIds = new Set();
   orders.forEach(order => (order.productionMaterials || []).forEach(material => (material.material_type === 'raw' ? rawIds : packagingIds).add(material.material_id)));
   const [raw, packaging] = await Promise.all([
@@ -149,8 +173,9 @@ const consumeStockLine = async ({ tenantId, saleId, variant, line, createdBy, tr
 exports.create = async (req, res, next) => {
   const transaction = await db.sequelize.transaction();
   try {
-    const { items = [], customer_id = null, sale_date = today(), notes, allow_negative_materials = false } = req.body;
-    if (String(sale_date).slice(0, 10) > today()) throw new AppError('Future-dated sales are not allowed', 400);
+    const { items = [], customer_id = null, notes, allow_negative_materials = false } = req.body;
+    const businessDay = await businessDays.requireOpen(req.tenantId, transaction);
+    const sale_date = businessDay.business_date;
     if (customer_id) {
       const customer = await db.customer.findOne({ where: { id: customer_id, tenant_id: req.tenantId, is_active: true }, transaction });
       if (!customer) throw new AppError('Customer not found', 400);
@@ -175,7 +200,7 @@ exports.create = async (req, res, next) => {
     const totalAmount = accounting.money(subtotal - discountAmount + taxAmount);
     const paymentSplits = await accounting.resolvePaymentSplits(req.tenantId, req.body, totalAmount, transaction);
     const primaryPayment = paymentSplits[0];
-    const sale = await db.retailSale.create({ tenant_id: req.tenantId, sale_number: `RS-${new Date(sale_date).getFullYear()}-${String(sequence).padStart(4, '0')}`, sale_date, customer_id, payment_account_id: primaryPayment.method.account.id, payment_method_id: primaryPayment.method.id, notes, subtotal, discount_amount: discountAmount, tax_amount: taxAmount, total_amount: totalAmount, created_by: req.user.id }, { transaction });
+    const sale = await db.retailSale.create({ tenant_id: req.tenantId, business_day_id: businessDay.id, sale_number: `RS-${new Date(sale_date).getFullYear()}-${String(sequence).padStart(4, '0')}`, sale_date, customer_id, payment_account_id: primaryPayment.method.account.id, payment_method_id: primaryPayment.method.id, notes, subtotal, discount_amount: discountAmount, tax_amount: taxAmount, total_amount: totalAmount, created_by: req.user.id }, { transaction });
     let cogs = 0;
     for (const line of calculated) {
       const variant = await loadVariant(req.tenantId, line.finished_good_id, transaction);
@@ -210,7 +235,7 @@ exports.create = async (req, res, next) => {
     const paymentSequence = await db.payment.count({ where: { tenant_id: req.tenantId, payment_type: 'incoming' }, transaction }) + 1;
     const paymentRecords = [];
     for (const [index, split] of paymentSplits.entries()) {
-      paymentRecords.push(await db.payment.create({ tenant_id: req.tenantId, payment_number: `PAY-IN-${new Date(sale_date).getFullYear()}-${String(paymentSequence + index).padStart(4, '0')}`, payment_type: 'incoming', party_type: 'customer', party_id: customer_id, payment_method_id: split.method.id, payment_mode: accounting.paymentModeForType(split.method.method_type), bank_account_id: split.method.account.id, amount: split.amount, payment_date: sale_date, notes: `Retail sale ${sale.sale_number}`, journal_entry_id: revenueJournal.id, created_by: req.user.id }, { transaction }));
+      paymentRecords.push(await db.payment.create({ tenant_id: req.tenantId, business_day_id: businessDay.id, payment_number: `PAY-IN-${new Date(sale_date).getFullYear()}-${String(paymentSequence + index).padStart(4, '0')}`, payment_type: 'incoming', party_type: 'customer', party_id: customer_id, payment_method_id: split.method.id, payment_mode: accounting.paymentModeForType(split.method.method_type), bank_account_id: split.method.account.id, amount: split.amount, payment_date: sale_date, notes: `Retail sale ${sale.sale_number}`, journal_entry_id: revenueJournal.id, created_by: req.user.id }, { transaction }));
     }
     await sale.update({ cogs_amount: cogs, journal_entry_id: revenueJournal.id, cogs_journal_id: cogsJournal?.id || null }, { transaction });
     await transaction.commit();

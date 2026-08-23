@@ -1,4 +1,4 @@
-const { supplier, purchaseOrder } = require('../models');
+const { supplier, purchaseOrder, purchaseInvoice } = require('../models');
 const { AppError } = require('../middleware/errorHandler');
 
 exports.getAll = async (req, res, next) => {
@@ -33,6 +33,11 @@ exports.update = async (req, res, next) => {
 
 exports.delete = async (req, res, next) => {
   try {
+    const purchaseCount = await purchaseInvoice.count({ where: { supplier_id: req.params.id, tenant_id: req.tenantId } });
+    const orderCount = await purchaseOrder.count({ where: { supplier_id: req.params.id, tenant_id: req.tenantId } });
+    if (purchaseCount || orderCount) {
+      throw new AppError(`Delete this supplier's ${purchaseCount ? `${purchaseCount} purchase(s)` : ''}${purchaseCount && orderCount ? ' and ' : ''}${orderCount ? `${orderCount} purchase order(s)` : ''} first`, 409);
+    }
     const deleted = await supplier.destroy({ where: { id: req.params.id, tenant_id: req.tenantId } });
     if (!deleted) throw new AppError('Not found', 404);
     res.status(200).json({ message: 'Deleted successfully' });

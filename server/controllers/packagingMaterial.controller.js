@@ -1,4 +1,4 @@
-const { packagingMaterial, stockBatch, stockMovement } = require('../models');
+const { packagingMaterial, stockBatch, stockMovement, formulaPackaging, variantPackaging } = require('../models');
 const { AppError } = require('../middleware/errorHandler');
 
 // The database enum uses singular machine-friendly values; older clients send
@@ -55,6 +55,16 @@ exports.update = async (req, res, next) => {
 
 exports.delete = async (req, res, next) => {
   try {
+    const [formulaCount, variantCount] = await Promise.all([
+      formulaPackaging.count({ where: { packaging_material_id: req.params.id } }),
+      variantPackaging.count({ where: { packaging_material_id: req.params.id } })
+    ]);
+    if (formulaCount || variantCount) {
+      const uses = [];
+      if (variantCount) uses.push(`${variantCount} variant(s)`);
+      if (formulaCount) uses.push(`${formulaCount} formula(s)`);
+      throw new AppError(`Remove this packaging material from ${uses.join(' and ')} before deleting it.`, 409);
+    }
     const deleted = await packagingMaterial.destroy({
       where: { id: req.params.id, tenant_id: req.tenantId }
     });

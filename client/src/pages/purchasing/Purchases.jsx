@@ -252,6 +252,24 @@ export default function Purchases() {
       message.error(error.response?.data?.message || 'Could not post the purchase.');
     } finally { setPostingId(null); }
   };
+  const deletePurchase = purchase => {
+    const remove = async confirmed => {
+      try {
+        await client.delete(`/purchases/${purchase.id}${confirmed ? '?confirm=true' : ''}`);
+        if (editingId === purchase.id) reset();
+        message.success('Purchase deleted. Inventory and accounting were updated.');
+        await Promise.all([reload(), reloadRawMaterials(), reloadPackagingMaterials(), reloadFinishedGoods()]);
+      } catch (error) {
+        const data = error.response?.data;
+        if (error.response?.status === 409 && data?.code === 'PURCHASE_DELETE_CONFIRMATION_REQUIRED') {
+          const stockText = (data.stock || []).map(row => `${row.quantity} ${row.material_type} stock`).join(', ');
+          const usedText = data.sold_or_consumed?.length ? ` ${data.sold_or_consumed.length} lot movement(s) were already sold or consumed; those records will remain.` : '';
+          Modal.confirm({ title: 'Delete purchase and its stock?', content: `This purchase added ${stockText || 'inventory'}. Deleting it will remove that stock.${usedText}`, okText: 'Delete purchase', okButtonProps: { danger: true }, onOk: () => remove(true) });
+        } else message.error(data?.message || 'Could not delete the purchase.');
+      }
+    };
+    Modal.confirm({ title: `Delete ${purchase.invoice_number || 'this purchase'}?`, content: 'The purchase, receipt, stock added by it, and related accounting records will be deleted or reversed.', okText: 'Continue', okButtonProps: { danger: true }, onOk: () => remove(false) });
+  };
   const itemColumns = [
     { title: 'Type', width: 154, render: (_, item) => <Select aria-label="Purchase item type" value={item.materialType} onChange={value => update(item.key, 'materialType', value)} options={purchaseTypeOptions} /> },
     { title: 'Item', width: 274, render: (_, item) => <Space.Compact className="purchase-material-picker"><Select aria-label="Purchase item" showSearch optionFilterProp="label" value={item.materialId} onChange={value => update(item.key, 'materialId', value)} placeholder={item.materialType === 'finished' ? 'Choose a ready-made variant' : 'Choose a material'} options={materialOptions(item.materialType).map(material => ({ value: material.id, label: material.purchaseLabel || material.name }))} /><Button icon={<PlusOutlined />} title={item.materialType === 'finished' ? 'Create ready-made product or variant' : `Create ${item.materialType === 'raw' ? 'raw material' : 'packaging material'}`} aria-label={item.materialType === 'finished' ? 'Create ready-made product or variant' : `Create ${item.materialType === 'raw' ? 'raw material' : 'packaging material'}`} onClick={() => item.materialType === 'finished' ? openQuickFinished(item) : openQuickMaterial(item)} /></Space.Compact> },
@@ -268,7 +286,7 @@ export default function Purchases() {
       <Button size="small" type="primary" icon={<SendOutlined />} loading={postingId === purchase.id}>Post</Button>
     </Popconfirm>
   </Space> : null;
-  const columns = [{ title: 'Invoice #', dataIndex: 'invoice_number' }, { title: 'Supplier', render: (_, purchase) => purchase.supplier?.name || '—' }, { title: 'Date', dataIndex: 'invoice_date', render: value => value ? dayjs(value).format('DD MMM YYYY') : '—' }, { title: 'Amount', dataIndex: 'total_amount', align: 'right', render: value => formatMoney(value) }, { title: 'Status', dataIndex: 'status', render: statusTag }, { title: 'Actions', width: 170, render: (_, purchase) => draftActions(purchase) }];
+  const columns = [{ title: 'Invoice #', dataIndex: 'invoice_number' }, { title: 'Supplier', render: (_, purchase) => purchase.supplier?.name || '—' }, { title: 'Date', dataIndex: 'invoice_date', render: value => value ? dayjs(value).format('DD MMM YYYY') : '—' }, { title: 'Amount', dataIndex: 'total_amount', align: 'right', render: value => formatMoney(value) }, { title: 'Status', dataIndex: 'status', render: statusTag }, { title: 'Actions', width: 240, render: (_, purchase) => <Space size="small">{purchase.status === 'draft' && draftActions(purchase)}<Button size="small" danger icon={<DeleteOutlined />} onClick={() => deletePurchase(purchase)}>Delete</Button></Space> }];
 
   const mobileItemFields = item => <>
     <div className="purchase-mobile-item__field purchase-mobile-item__field--wide">
@@ -349,7 +367,7 @@ export default function Purchases() {
         <div className="mobile-data-list__title-row"><strong>{purchase.invoice_number || 'Purchase'}</strong>{statusTag(purchase.status)}</div>
         <span className="mobile-data-list__code">{purchase.supplier?.name || '—'} · {purchase.invoice_date ? dayjs(purchase.invoice_date).format('DD MMM YYYY') : '—'}</span>
         <div className="mobile-data-list__metrics"><span>Amount <strong>{formatMoney(purchase.total_amount)}</strong></span></div>
-        {purchase.status === 'draft' && <div style={{ marginTop: 12 }}>{draftActions(purchase)}</div>}
+        <div style={{ marginTop: 12 }}><Space size="small">{purchase.status === 'draft' && draftActions(purchase)}<Button size="small" danger icon={<DeleteOutlined />} onClick={() => deletePurchase(purchase)}>Delete</Button></Space></div>
       </>} />
     </Card>
     <Modal
@@ -430,8 +448,8 @@ export default function Purchases() {
             </Form.Item>
           </Col>
           <Col xs={24} sm={12}>
-            <Form.Item name="sku" label="SKU" extra="Auto-generated if blank">
-              <Input placeholder="IWO-100" />
+            <Form.Item name="sku" label="Variant code / SKU" extra="Auto-generated as product-code-1 if blank; you can type your own.">
+              <Input placeholder="IWO-1" />
             </Form.Item>
           </Col>
         </Row>

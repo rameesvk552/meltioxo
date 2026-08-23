@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Table, Card, Row, Col, Tag, Button, Input, Select, Space, Typography, Progress, Modal, Form, message } from 'antd';
-import { PlusOutlined, SearchOutlined, EyeOutlined, EditOutlined, ToolOutlined } from '@ant-design/icons';
+import { PlusOutlined, SearchOutlined, EyeOutlined, EditOutlined, ToolOutlined, DeleteOutlined } from '@ant-design/icons';
 import useApiData from '../../hooks/useApiData';
 import client from '../../api/client';
 import MobileDataList from '../../components/common/MobileDataList';
@@ -81,6 +81,15 @@ export default function PackagingMaterials() {
     });
     setIsModalOpen(true);
   };
+  const deleteMaterial = material => Modal.confirm({
+    title: `Delete ${material.name}?`,
+    content: 'Remove this packaging material from every variant and formula before deleting it.',
+    okText: 'Delete material', okButtonProps: { danger: true },
+    onOk: async () => {
+      try { await client.delete(`/packaging-materials/${material.id}`); message.success('Packaging material deleted successfully.'); await reload(); }
+      catch (error) { message.error(error.response?.data?.message || 'Could not delete packaging material.'); }
+    }
+  });
 
   const saveMaterial = async values => {
     const category = Array.isArray(values.category) ? values.category[0] : values.category;
@@ -158,6 +167,7 @@ export default function PackagingMaterials() {
       <Space size="small">
         <Button type="text" icon={<EyeOutlined />} style={{ color: '#4299e1' }} />
         <Button type="text" icon={<EditOutlined />} style={{ color: 'var(--color-gold)' }} onClick={() => openEditMaterial(record)} aria-label={`Edit ${record.name}`} />
+        <Button type="text" danger icon={<DeleteOutlined />} aria-label={`Delete ${record.name}`} onClick={() => deleteMaterial(record)} />
         <Button type="text" icon={<ToolOutlined />} style={{ color: 'var(--color-text-secondary)' }} />
       </Space>
     )}
@@ -230,6 +240,7 @@ export default function PackagingMaterials() {
               <span className="mobile-data-list__code">{material.sku} · {material.category || packagingTypeLabel(material.type)}</span>
               <div className="mobile-data-list__metrics"><span>Stock <strong>{material.stock} {material.unit}</strong></span><span>Value <strong>₹{(material.stock * material.avgCost).toLocaleString()}</strong></span></div>
               <Button block icon={<EditOutlined />} onClick={() => openEditMaterial(material)} style={{ marginTop: 12 }}>Edit Material</Button>
+              <Button danger block icon={<DeleteOutlined />} onClick={() => deleteMaterial(material)} style={{ marginTop: 8 }}>Delete Material</Button>
             </>
           )} />
         </div>

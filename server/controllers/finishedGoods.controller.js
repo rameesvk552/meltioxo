@@ -2,7 +2,31 @@ const db = require('../models');
 const { finishedGood } = db;
 const { AppError } = require('../middleware/errorHandler');
 
+const generateVariantSku = async ({ product, tenantId, transaction }) => {
+  const base = String(product.code || '').trim();
+  if (!base) return null;
+  const variants = await finishedGood.findAll({ where: { tenant_id: tenantId, product_id: product.id }, attributes: ['sku'], transaction });
+  const escapedBase = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`^${escapedBase}-(\\d+)$`, 'i');
+  let suffix = variants.reduce((highest, variant) => {
+    const match = String(variant.sku || '').match(pattern);
+    return match ? Math.max(highest, Number(match[1])) : highest;
+  }, 0) + 1;
+  let candidate = `${base}-${suffix}`;
+  while (await finishedGood.findOne({ where: { tenant_id: tenantId, sku: candidate }, attributes: ['id'], transaction })) {
+    candidate = `${base}-${++suffix}`;
+  }
+  return candidate;
+};
+
 const SOURCE_TYPES = ['live_make', 'ready_made'];
+const ALLOWED_UOMS = ['pcs', 'ml', 'L', 'g', 'kg', 'box', 'bottle', 'pack', 'set'];
+
+const validateUom = value => {
+  const uom = String(value || 'pcs').trim();
+  if (!ALLOWED_UOMS.includes(uom)) throw new AppError('Select a valid unit of measure', 400);
+  return uom;
+};
 
 const validateConfiguration = async ({ tenantId, product, sourceType, formulaId, fillQuantity, transaction }) => {
   if (!SOURCE_TYPES.includes(sourceType)) throw new AppError('Select Ready-made or Make live for this variant', 400);
@@ -62,6 +86,47 @@ exports.getById = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
+exports.delete = async (req, res, next) => {
+  const transaction = await db.sequelize.transaction();
+  try {
+    const item = await finishedGood.findOne({
+      where: { id: req.params.id, tenant_id: req.tenantId },
+      transaction,
+      lock: transaction.LOCK.UPDATE
+    });
+    if (!item) throw new AppError('Product variant not found', 404);
+    if (item.is_measurement_item) throw new AppError('Measurement settings are managed on the product', 400);
+
+    if (Math.abs(Number(item.current_stock || 0)) > 0.0001) {
+      throw new AppError('Cannot delete this variant because it has stock. Reduce its stock to zero first.', 409);
+    }
+
+    const usageChecks = await Promise.all([
+      db.retailSaleItem.count({ where: { finished_good_id: item.id }, transaction }),
+      db.salesOrderItem.count({ where: { finished_good_id: item.id }, transaction }),
+      db.purchaseOrderItem.count({ where: { material_type: 'finished', material_id: item.id }, transaction }),
+      db.purchaseReceiptItem.count({ where: { material_type: 'finished', material_id: item.id }, transaction }),
+      db.productionOrder.count({ where: { finished_good_id: item.id }, transaction }),
+      db.productionOutput.count({ where: { finished_good_id: item.id }, transaction }),
+      db.stockBatch.count({ where: { tenant_id: req.tenantId, material_type: 'finished', material_id: item.id }, transaction }),
+      db.stockMovement.count({ where: { tenant_id: req.tenantId, material_type: 'finished', material_id: item.id }, transaction })
+    ]);
+    const labels = ['retail sales', 'sales orders', 'purchases', 'purchase receipts', 'production orders', 'production outputs', 'stock batches', 'stock movements'];
+    const usedBy = labels.filter((_, index) => usageChecks[index] > 0);
+    if (usedBy.length) {
+      throw new AppError(`Cannot delete this variant because it is used in ${usedBy.join(', ')}.`, 409);
+    }
+
+    await db.variantPackaging.destroy({ where: { finished_good_id: item.id }, transaction });
+    await item.destroy({ transaction });
+    await transaction.commit();
+    res.json({ message: 'Product variant deleted successfully' });
+  } catch (error) {
+    await transaction.rollback();
+    next(error);
+  }
+};
+
 exports.createReadyMade = async (req, res, next) => {
   const transaction = await db.sequelize.transaction();
   try {
@@ -74,6 +139,7 @@ exports.createReadyMade = async (req, res, next) => {
     const costPrice = Number(req.body.cost_price || 0);
     const sellingPrice = Number(req.body.selling_price || 0);
     const reorderLevel = Number(req.body.reorder_level || 0);
+    const uom = validateUom(req.body.uom);
 
     if (!productId && !productName) throw new AppError('Enter a product name', 400);
     if (!sizeLabel) throw new AppError('Enter a variant label', 400);
@@ -85,6 +151,7 @@ exports.createReadyMade = async (req, res, next) => {
     if (productId) {
       product = await db.product.findOne({ where: { id: productId, tenant_id: req.tenantId, is_active: true }, transaction });
       if (!product) throw new AppError('Select an active product', 400);
+      if (product.sell_by_measurement) throw new AppError('Measured products do not use variants', 400);
     } else {
       if (productCode) {
         const duplicateProduct = await db.product.findOne({ where: { tenant_id: req.tenantId, code: productCode }, transaction });
@@ -106,6 +173,7 @@ exports.createReadyMade = async (req, res, next) => {
       if (duplicateVariant) throw new AppError('That SKU is already in use', 400);
     }
     const variantSequence = await finishedGood.count({ where: { tenant_id: req.tenantId }, transaction }) + 1;
+    const generatedSku = sku || await generateVariantSku({ product, tenantId: req.tenantId, transaction });
     const item = await finishedGood.create({
       tenant_id: req.tenantId,
       product_id: product.id,
@@ -113,7 +181,8 @@ exports.createReadyMade = async (req, res, next) => {
       formula_id: null,
       name: displayName || `${product.name} ${sizeLabel}`,
       size_label: sizeLabel,
-      sku: sku || `FG-${String(variantSequence).padStart(4, '0')}`,
+      uom,
+      sku: generatedSku || `FG-${String(variantSequence).padStart(4, '0')}`,
       fill_quantity_ml: null,
       cost_price: costPrice,
       selling_price: sellingPrice,
@@ -134,11 +203,13 @@ exports.create = async (req, res, next) => {
   const transaction = await db.sequelize.transaction();
   try {
     const { packaging = [], ...variantData } = req.body;
+    variantData.uom = validateUom(variantData.uom);
     const product = await db.product.findOne({
       where: { id: variantData.product_id, tenant_id: req.tenantId },
       transaction
     });
     if (!product) throw new AppError('Select a valid product for this variant', 400);
+    if (product.sell_by_measurement) throw new AppError('Measured products do not use variants', 400);
 
     const sourceType = variantData.source_type || 'live_make';
     const configuration = await validateConfiguration({ tenantId: req.tenantId, product, sourceType, formulaId: variantData.formula_id || null, fillQuantity: variantData.fill_quantity_ml, transaction });
@@ -149,13 +220,19 @@ exports.create = async (req, res, next) => {
       where: { tenant_id: req.tenantId },
       transaction
     }) + 1;
+    const requestedSku = String(variantData.sku || '').trim();
+    if (requestedSku) {
+      const duplicateVariant = await finishedGood.findOne({ where: { tenant_id: req.tenantId, sku: requestedSku }, transaction });
+      if (duplicateVariant) throw new AppError('That SKU is already in use', 400);
+    }
+    const generatedSku = requestedSku || await generateVariantSku({ product, tenantId: req.tenantId, transaction });
     const item = await finishedGood.create({
       ...variantData,
       source_type: sourceType,
       name: variantData.name || `${product.name} ${variantData.size_label || (configuration.fillQuantity ? `${configuration.fillQuantity}ml` : 'Standard')}`,
       formula_id: configuration.formulaId,
       fill_quantity_ml: configuration.fillQuantity,
-      sku: variantData.sku || `FG-${String(sequence).padStart(4, '0')}`,
+      sku: generatedSku || `FG-${String(sequence).padStart(4, '0')}`,
       tenant_id: req.tenantId
     }, { transaction });
 
@@ -194,11 +271,13 @@ exports.update = async (req, res, next) => {
   const transaction = await db.sequelize.transaction();
   try {
     const { packaging, ...variantData } = req.body;
+    if (Object.prototype.hasOwnProperty.call(variantData, 'uom')) variantData.uom = validateUom(variantData.uom);
     const item = await finishedGood.findOne({
       where: { id: req.params.id, tenant_id: req.tenantId },
       transaction
     });
     if (!item) throw new AppError('Not found', 404);
+    if (item.is_measurement_item) throw new AppError('Measurement settings are managed on the product', 400);
     const productId = variantData.product_id || item.product_id;
     const product = await db.product.findOne({ where: { id: productId, tenant_id: req.tenantId }, transaction });
     if (!product) throw new AppError('Select a valid product for this variant', 400);
@@ -214,6 +293,17 @@ exports.update = async (req, res, next) => {
       fillQuantity: Object.prototype.hasOwnProperty.call(variantData, 'fill_quantity_ml') ? variantData.fill_quantity_ml : item.fill_quantity_ml,
       transaction
     });
+    const requestedSku = String(variantData.sku || '').trim();
+    if (requestedSku) {
+      const duplicateVariant = await finishedGood.findOne({
+        where: { tenant_id: req.tenantId, sku: requestedSku, id: { [db.Sequelize.Op.ne]: item.id } },
+        transaction
+      });
+      if (duplicateVariant) throw new AppError('That SKU is already in use', 400);
+      variantData.sku = requestedSku;
+    } else if (Object.prototype.hasOwnProperty.call(variantData, 'sku')) {
+      delete variantData.sku;
+    }
     variantData.source_type = sourceType;
     variantData.formula_id = configuration.formulaId;
     variantData.fill_quantity_ml = configuration.fillQuantity;

@@ -8,5 +8,6 @@ router.get('/:id', authenticate, tenantContext, ctrl.getById);
 router.post('/', authenticate, tenantContext, ctrl.create);
 router.put('/:id', authenticate, tenantContext, ctrl.update);
 router.post('/:id/post', authenticate, tenantContext, ctrl.post);
+router.delete('/:id', authenticate, tenantContext, ctrl.delete);
 
 module.exports = router;

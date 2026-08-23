@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Table, Card, Row, Col, Statistic, Tag, Input, Button, Space, Modal, Form, Select, message, Typography } from 'antd';
-import { SearchOutlined, PlusOutlined, UserOutlined, MailOutlined, PhoneOutlined, DollarOutlined, EyeOutlined, EditOutlined } from '@ant-design/icons';
+import { SearchOutlined, PlusOutlined, UserOutlined, MailOutlined, PhoneOutlined, DollarOutlined, EyeOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import client from '../../api/client';
 import useApiData from '../../hooks/useApiData';
@@ -55,6 +55,15 @@ export default function Suppliers() {
     form.setFieldsValue({ name: supplier.name, contact: supplier.contact, email: supplier.email, phone: supplier.phone, terms: supplier.terms, limit: supplier.limit, status: supplier.status });
     setIsModalOpen(true);
   };
+  const deleteSupplier = supplier => Modal.confirm({
+    title: `Delete ${supplier.name}?`,
+    content: 'Delete all purchases and purchase orders for this supplier first.',
+    okText: 'Delete supplier', okButtonProps: { danger: true },
+    onOk: async () => {
+      try { await client.delete(`/suppliers/${supplier.id}`); message.success('Supplier deleted successfully.'); await reload(); }
+      catch (error) { message.error(error.response?.data?.message || 'Could not delete supplier.'); }
+    }
+  });
 
   const filteredSuppliers = suppliers.filter(s => {
     const matchesSearch = s.name.toLowerCase().includes(searchText.toLowerCase()) || 
@@ -115,6 +124,7 @@ export default function Suppliers() {
         <Space>
           <Button type="text" icon={<EyeOutlined />} style={{ color: 'var(--color-gold)' }} onClick={() => navigate(`/app/suppliers/${record.id}`)} />
           <Button type="text" icon={<EditOutlined />} style={{ color: 'var(--color-text-secondary)' }} onClick={() => openEditSupplier(record)} />
+          <Button type="text" danger icon={<DeleteOutlined />} aria-label="Delete supplier" onClick={() => deleteSupplier(record)} />
         </Space>
       )
     }
@@ -198,6 +208,7 @@ export default function Suppliers() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 12 }}>
                 <Button icon={<EyeOutlined />} onClick={() => navigate(`/app/suppliers/${supplier.id}`)}>View</Button>
                 <Button type="primary" icon={<EditOutlined />} onClick={() => openEditSupplier(supplier)}>Edit</Button>
+                <Button danger icon={<DeleteOutlined />} onClick={() => deleteSupplier(supplier)}>Delete</Button>
               </div>
             </>
           )} />

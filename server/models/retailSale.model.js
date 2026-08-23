@@ -1,6 +1,7 @@
 module.exports = (sequelize, DataTypes) => sequelize.define('retailSale', {
   id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
   tenant_id: { type: DataTypes.UUID, allowNull: false },
+  business_day_id: { type: DataTypes.UUID, allowNull: true },
   sale_number: { type: DataTypes.STRING, allowNull: false },
   sale_date: { type: DataTypes.DATEONLY, allowNull: false },
   customer_id: { type: DataTypes.UUID, allowNull: true },

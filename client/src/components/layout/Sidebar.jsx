@@ -13,7 +13,8 @@ import {
   CreditCardOutlined,
   BankOutlined, 
   LineChartOutlined, 
-  SettingOutlined 
+  SettingOutlined,
+  FieldTimeOutlined
 } from '@ant-design/icons';
 
 export default function Sidebar({ onNavigate }) {
@@ -39,6 +40,7 @@ export default function Sidebar({ onNavigate }) {
     { key: '/app/production', icon: <ToolOutlined />, label: 'Production' },
     { key: '/app/customers', icon: <TeamOutlined />, label: 'Customers' },
     { key: '/app/retail-sales/new', icon: <CreditCardOutlined />, label: 'POS' },
+    { key: '/app/day-register', icon: <FieldTimeOutlined />, label: 'Day Register' },
     { key: 'sales', icon: <DollarOutlined />, label: 'Sales', children: [
       { key: '/app/retail-sales', label: 'Retail Sales' },
     ]},

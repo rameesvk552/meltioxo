@@ -1,0 +1,38 @@
+.day-register-page { padding: 28px; display: grid; gap: 18px; max-width: 1440px; margin: 0 auto; }
+.day-register-heading, .day-register-hero { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.day-register-heading h2 { margin: 3px 0 2px; }
+.day-register-eyebrow { color: var(--color-gold); font-size: 11px; font-weight: 800; letter-spacing: .16em; }
+.day-register-hero { color: #fff; border: 0; background: linear-gradient(125deg, #241d1a, #49352c); }
+.day-register-hero .ant-card-body { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.day-register-status { display: flex; align-items: center; gap: 16px; }
+.day-register-status > span { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: rgba(255,255,255,.12); font-size: 22px; }
+.day-register-status .ant-typography { color: #fff; margin: 0; }
+.day-register-status div > .ant-typography:first-child { color: #d9b896; font-size: 10px; font-weight: 800; letter-spacing: .14em; }
+.day-register-status small { color: rgba(255,255,255,.65); }
+.day-register-page .ant-statistic-content { font-weight: 750; }
+.day-register-page .ant-statistic-content-suffix small { margin-left: 8px; color: var(--color-text-muted); font-size: 11px; font-weight: 500; }
+.expected-card { border-color: #d8b58d; background: #fffaf4; }
+.payment-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.payment-summary-grid > div { display: flex; justify-content: space-between; align-items: center; padding: 14px; border: 1px solid var(--color-border); border-radius: 12px; }
+.payment-summary-grid span { font-weight: 650; }
+.payment-summary-grid small { display: block; color: var(--color-text-muted); font-weight: 400; }
+.payment-summary-grid strong { font-size: 16px; }
+.day-register-empty { padding: 24px; color: var(--color-text-muted); text-align: center; }
+.day-register-closed-state .ant-card-body { min-height: 300px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; }
+.day-register-closed-state h3 { margin: 0; }
+.closed-state-icon { width: 64px; height: 64px; display: grid; place-items: center; border-radius: 50%; color: var(--color-gold); background: #fff4e8; font-size: 28px; }
+.day-register-form { margin-top: 18px; }
+.close-reconciliation { margin: 16px 0; border: 1px solid var(--color-border); border-radius: 12px; overflow: hidden; }
+.close-reconciliation > div, .variance-preview { display: flex; justify-content: space-between; padding: 10px 14px; }
+.close-reconciliation .expected { background: #f7f3ef; font-size: 15px; }
+.variance-preview { margin: -8px 0 16px; border-radius: 8px; }
+.variance-preview.balanced { color: #237804; background: #f6ffed; }
+.variance-preview.different { color: #a8071a; background: #fff1f0; }
+.day-register-loading { min-height: 60vh; display: grid; place-items: center; }
+@media (max-width: 700px) {
+  .day-register-page { padding: 16px 12px 88px; }
+  .day-register-heading { align-items: flex-start; }
+  .day-register-heading > button { padding-inline: 10px; }
+  .day-register-hero .ant-card-body { align-items: stretch; flex-direction: column; }
+  .day-register-hero .ant-btn { width: 100%; }
+}
