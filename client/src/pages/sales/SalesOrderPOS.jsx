@@ -282,7 +282,7 @@ export default function SalesOrderPOS() {
                       const selectedLabel = product.product?.sell_by_measurement ? `${productName} · per ml` : `${productName} · ${variantName}`;
                       return <Option key={product.id} value={product.id} label={searchLabel} title={selectedLabel}>{product.product?.sell_by_measurement ? `${productName} · Sold per ml${productCode ? ` · ${productCode}` : ''}` : <>{product.sku ? `${product.sku} · ` : ''}{productName} · {variantName}{productCode ? ` · ${productCode}` : ''}</>}</Option>;
                     })}</Select></label>
-                    <label className="pos-field"><span>{isMeasured ? `Fill per pack (${unit})` : `Quantity (${unit})`}</span><InputNumber min={isPackaging || isMeasured ? 0.0001 : 1} step={isPackaging ? 0.0001 : 1} precision={isPackaging || isMeasured ? 4 : undefined} value={item.qty} onChange={value => { updateItem(value || 1, 'qty', item.key); updateItem(null, 'packingKit', item.key); }} /></label>
+                    <label className="pos-field"><span>{isMeasured ? `Fill per pack (${unit})` : `Quantity (${unit})`}</span><InputNumber min={isMeasured ? 0.01 : isPackaging ? 0.0001 : 1} step={isMeasured ? 0.01 : isPackaging ? 0.0001 : 1} precision={isMeasured ? 2 : isPackaging ? 4 : undefined} value={item.qty} onChange={value => { updateItem(value || 1, 'qty', item.key); updateItem(null, 'packingKit', item.key); }} /></label>
                     {isMeasured && <label className="pos-field"><span>Number of packs</span><InputNumber min={1} precision={0} value={item.packCount} onChange={value => updateItem(value || 1, 'packCount', item.key)} /></label>}
                     {isMeasured && tenantSettings.measured_packaging_enabled && <label className="pos-field pos-product-field"><span>Packing kit</span><Select optionLabelProp="title" placeholder={matchingKits.length ? 'Select packing kit' : `No kit for ${item.qty} ml`} value={selectedKitId} onChange={value => updateItem(value, 'packingKit', item.key)} options={matchingKits.map(kit => ({ value: kit.id, title: kit.name, label: `${kit.name} · ${(kit.packingKitItems || []).map(row => `${row.packagingMaterial?.name || 'Material'} ×${Number(row.quantity)}`).join(' + ')}` }))} /></label>}
                     <label className="pos-field"><span>{isMeasured ? `Price per ${unit}` : 'Unit price'}</span><InputNumber min={0} prefix="₹" value={item.price} onChange={value => updateItem(value || 0, 'price', item.key)} /></label>
@@ -295,7 +295,6 @@ export default function SalesOrderPOS() {
                 </section>;
               })}
             </div>
-            <Space.Compact block className="pos-add-row"><Button type="dashed" size="small" icon={<PlusOutlined />} onClick={() => addItem('finished_good')} block>Add another product</Button>{tenantSettings.packaging_material_sales_enabled && <Button type="dashed" size="small" icon={<PlusOutlined />} onClick={() => addItem('packaging_material')} block>Add packing material</Button>}</Space.Compact>
           </Card>
         </main>
 
