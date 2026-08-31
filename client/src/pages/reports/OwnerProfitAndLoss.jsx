@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Drawer, Empty, Row,
-  Segmented, Select, Space, Spin, Statistic, Table, Tag, Typography
+  Segmented, Select, Space, Spin, Statistic, Table, Tabs, Tag, Typography
 } from 'antd';
 import {
   DownloadOutlined, EyeOutlined, FileTextOutlined, PrinterOutlined,
@@ -183,6 +183,7 @@ export default function OwnerProfitAndLoss() {
   const [preset, setPreset] = useState('today');
   const [range, setRange] = useState(() => presetRange('today'));
   const [salesView, setSalesView] = useState('invoices');
+  const [reportTab, setReportTab] = useState('sales');
   const [selectedInvoiceId, setSelectedInvoiceId] = useState(null);
   const [expenseBreakdownOpen, setExpenseBreakdownOpen] = useState(false);
   const [expenseBreakdownPeriod, setExpenseBreakdownPeriod] = useState(() => presetRange('today'));
@@ -371,6 +372,12 @@ export default function OwnerProfitAndLoss() {
     </div>
 
     <Card style={{ marginBottom: 16, borderRadius: 12 }} bodyStyle={{ padding: 16 }}>
+      <Tabs
+        activeKey={reportTab}
+        onChange={setReportTab}
+        items={[{ key: 'sales', label: 'Sales & profit' }, { key: 'purchases', label: 'Purchases' }]}
+        style={{ marginBottom: 8 }}
+      />
       <Space wrap size={12}>
         <Select value={preset} onChange={selectPreset} style={{ width: 145 }} options={[
           { value: 'today', label: 'Today' }, { value: 'yesterday', label: 'Yesterday' },
@@ -384,6 +391,7 @@ export default function OwnerProfitAndLoss() {
 
     {(reportQuery.error || salesQuery.error || purchaseQuery.error) && <Alert type="error" showIcon style={{ marginBottom: 16 }} message="Could not load the report" description={(reportQuery.error || salesQuery.error || purchaseQuery.error)?.response?.data?.message || (reportQuery.error || salesQuery.error || purchaseQuery.error)?.message} />}
 
+    {reportTab === 'sales' && <>
     <Row gutter={[14, 14]} style={{ marginBottom: 16 }}>
       <Col xs={12} md={8} xl={6} xxl={3}><SummaryCard title="Net sales" value={invoiceSummary.netSales} description="Gross sales − discounts − returned revenue" moneyValue color="#16a34a" /></Col>
       <Col xs={12} md={8} xl={6} xxl={3}><SummaryCard title="Invoices" value={invoices.length} description="Posted invoices in the selected dates" icon={<ShoppingCartOutlined />} color="#2563eb" /></Col>
@@ -419,8 +427,9 @@ export default function OwnerProfitAndLoss() {
         ]}
       />
     </Card>
+    </>}
 
-    <Card
+    {reportTab === 'purchases' && <Card
       title={<Space><ShoppingCartOutlined style={{ color: '#b64232' }} /><span>Detailed purchase report</span></Space>}
       style={{ marginBottom: 16, borderRadius: 12 }}
       extra={<Space wrap><Text type="secondary">Supplier invoices and received items</Text><Button icon={<DownloadOutlined />} onClick={exportPurchases} disabled={!purchaseRows.length}>Export purchases</Button></Space>}
@@ -432,9 +441,9 @@ export default function OwnerProfitAndLoss() {
         <Col xs={12} sm={6}><Statistic title="Balance due" value={purchaseSummary.due || 0} prefix="₹" precision={2} valueStyle={{ color: '#dc2626' }} /></Col>
       </Row>
       <Table rowKey="id" columns={purchaseColumns} dataSource={purchaseRows} loading={purchaseQuery.loading} pagination={{ pageSize: 10, showSizeChanger: true, showTotal: total => `${total} purchase lines` }} scroll={{ x: 1370 }} locale={{ emptyText: <Empty description="No purchases in this period" /> }} />
-    </Card>
+    </Card>}
 
-    <Card
+    {reportTab === 'sales' && <Card
       title={salesView === 'invoices' ? 'Invoice-wise sales' : 'Product-wise sales'}
       style={{ marginBottom: 16, borderRadius: 12 }}
       extra={<Space wrap>
@@ -452,7 +461,7 @@ export default function OwnerProfitAndLoss() {
           scroll={{ x: 1050 }} pagination={{ pageSize: 15, showSizeChanger: true, showTotal: total => `${total} products` }}
           locale={{ emptyText: <Empty description="No products sold in this period" /> }}
         />}
-    </Card>
+    </Card>}
 
     <InvoiceDrawer invoiceId={selectedInvoiceId} onClose={() => setSelectedInvoiceId(null)} />
     <ExpenseBreakdownDrawer
