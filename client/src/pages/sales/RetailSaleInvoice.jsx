@@ -139,10 +139,11 @@ export default function RetailSaleInvoice() {
             <tbody>
               {items.map((item, index) => {
                 const variant = item.finishedGood || {};
-                const productName = variant.product?.name || variant.name || 'Product';
+                const packingMaterial = item.packagingMaterial;
+                const productName = packingMaterial?.name || variant.product?.name || variant.name || 'Product';
                 const isMeasured = Boolean(variant.product?.sell_by_measurement);
-                const variantName = isMeasured ? null : variant.size_label || variant.sku;
-                const quantityUnit = isMeasured ? ` ${variant.product.measurement_unit || 'ml'}` : '';
+                const variantName = packingMaterial?.sku || (isMeasured ? null : variant.size_label || variant.sku);
+                const quantityUnit = packingMaterial ? ` ${packingMaterial.unit || 'pcs'}` : isMeasured ? ` ${variant.product.measurement_unit || 'ml'}` : '';
                 return (
                   <tr key={item.id || index}>
                     <td>{index + 1}</td>

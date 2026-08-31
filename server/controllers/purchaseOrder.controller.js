@@ -118,6 +118,8 @@ exports.receive = async (req, res, next) => {
         material_type: row.material_type,
         material_id: row.material_id,
         quantity,
+        unit_price: unitCost,
+        tax_rate: row.tax_rate,
         batch_number: batch.batch_number
       }, { transaction });
       await row.update({ received_qty: Number(row.quantity) }, { transaction });

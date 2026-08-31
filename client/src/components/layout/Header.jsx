@@ -1,5 +1,5 @@
 import React, { useContext, useMemo, useState } from 'react';
-import { Layout, Button, Badge, Avatar, Dropdown, Input, Tooltip, Typography } from 'antd';
+import { Layout, Button, Badge, Avatar, Dropdown, Input, Tooltip, Typography, Select } from 'antd';
 import { 
   MenuUnfoldOutlined, 
   MenuFoldOutlined, 
@@ -12,6 +12,12 @@ import {
 import { useLocation, useNavigate } from 'react-router-dom';
 import { usePageTitle } from '../../context/PageTitleContext';
 import { AuthContext } from '../../context/AuthContext';
+import {
+  getFirstAllowedPath,
+  getViewPermissionsForPath,
+  hasAnyViewPermission,
+  hasViewPermission,
+} from '../../config/permissions';
 
 const { Header: AntHeader } = Layout;
 const { Title } = Typography;
@@ -20,7 +26,7 @@ export default function Header({ collapsed, setCollapsed, setMobileDrawerOpen })
   const { title } = usePageTitle();
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout } = useContext(AuthContext);
+  const { user, logout, branches, branchId, selectBranch } = useContext(AuthContext);
   const [searchOpen, setSearchOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
@@ -35,7 +41,8 @@ export default function Header({ collapsed, setCollapsed, setMobileDrawerOpen })
       ['/app/retail-sales/new', 'POS'], ['/app/retail-sales', 'Sales & Invoices'], ['/app/day-register', 'Day Register'], ['/app/accounts', 'Accounts'],
       ['/app/journal-entries', 'Journal Entries'], ['/app/payables', 'Accounts Payable'],
       ['/app/receivables', 'Accounts Receivable'], ['/app/payments', 'Payments'],
-      ['/app/expenses', 'Expenses'], ['/app/reports/profit-loss', 'Owner Profit & Loss'],
+      ['/app/expenses', 'Expenses'], ['/app/reports/profit-loss', 'Profit & Loss'],
+      ['/app/reports/sales-profit', 'Daily Sales & Profit'],
       ['/app/reports/balance-sheet', 'Balance Sheet'], ['/app/reports/trial-balance', 'Trial Balance'],
       ['/app/reports/stock', 'Stock Valuation'], ['/app/settings', 'Company Settings']
     ];
@@ -52,15 +59,15 @@ export default function Header({ collapsed, setCollapsed, setMobileDrawerOpen })
       '/app/journal-entries', '/app/payments', '/app/expenses'
     ];
     const parentPath = detailParents.find((route) => location.pathname.startsWith(`${route}/`));
-    if (parentPath) {
+    if (parentPath && hasAnyViewPermission(user, getViewPermissionsForPath(parentPath))) {
       navigate(parentPath);
       return;
     }
-    navigate('/app/dashboard');
+    navigate(getFirstAllowedPath(user) || '/app');
   };
 
   const handleAccountMenu = async ({ key }) => {
-    if (key === 'settings' || key === 'profile') {
+    if ((key === 'settings' || key === 'profile') && hasViewPermission(user, 'settings')) {
       navigate('/app/settings');
       return;
     }
@@ -123,6 +130,16 @@ export default function Header({ collapsed, setCollapsed, setMobileDrawerOpen })
       </div>
 
       <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+        {branches?.length > 0 && (
+          <Select
+            size="small"
+            value={branchId || branches.find(item => item.is_default)?.id}
+            onChange={selectBranch}
+            options={branches.map(item => ({ value: item.id, label: item.name }))}
+            style={{ minWidth: 150 }}
+            aria-label="Current branch"
+          />
+        )}
         <div className="mobile-only mobile-header-search">
           {searchOpen ? (
             <Input
@@ -142,9 +159,11 @@ export default function Header({ collapsed, setCollapsed, setMobileDrawerOpen })
           <BellOutlined style={{ fontSize: '20px', color: 'var(--color-text-primary)', cursor: 'pointer' }} />
         </Badge>
         <Dropdown menu={{ onClick: handleAccountMenu, items: [
-          { key: 'profile', label: 'Profile' },
-          { key: 'settings', label: 'Settings' },
-          { type: 'divider' },
+          ...(hasViewPermission(user, 'settings') ? [
+            { key: 'profile', label: 'Profile' },
+            { key: 'settings', label: 'Settings' },
+            { type: 'divider' },
+          ] : []),
           { key: 'logout', label: loggingOut ? 'Signing out…' : 'Logout', disabled: loggingOut },
         ]}} trigger={['click']}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>

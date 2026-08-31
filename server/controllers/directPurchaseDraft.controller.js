@@ -200,6 +200,7 @@ exports.post = async (req, res, next) => {
     const totalAmount = accounting.money(invoice.total_amount);
     const codes = ACCOUNT_CODES;
     const accounts = await accounting.getAccountsByCode(req.tenantId, [codes.RAW_INVENTORY, codes.PKG_INVENTORY, codes.FG_INVENTORY, codes.INPUT_TAX, codes.AP, codes.PURCHASE_VARIANCE], transaction);
+    const supplierLedger = await accounting.getSupplierLedger(req.tenantId, supplier.id, transaction);
     const inventoryAccountFor = materialType => accounts[materialType === 'raw' ? codes.RAW_INVENTORY : materialType === 'packaging' ? codes.PKG_INVENTORY : codes.FG_INVENTORY];
     const inventoryLines = items.map(row => ({
       account_id: inventoryAccountFor(row.material_type).id,
@@ -217,7 +218,7 @@ exports.post = async (req, res, next) => {
       }
     });
     if (taxAmount) inventoryLines.push({ account_id: accounts[codes.INPUT_TAX].id, debit_amount: taxAmount, description: `Input tax on ${invoice.invoice_number}` });
-    inventoryLines.push({ account_id: accounts[codes.AP].id, credit_amount: totalAmount, description: `Supplier invoice ${invoice.invoice_number}` });
+    inventoryLines.push({ account_id: supplierLedger.id, credit_amount: totalAmount, description: `Supplier invoice ${invoice.invoice_number}` });
 
     let purchaseJournal = null;
     if (totalAmount > 0) {
@@ -260,7 +261,7 @@ exports.post = async (req, res, next) => {
         reference_id: invoice.id,
         narration: `Supplier payment for ${invoice.invoice_number}`,
         lines: [
-          { account_id: accounts[codes.AP].id, debit_amount: totalAmount, description: `Payment for ${invoice.invoice_number}` },
+          { account_id: supplierLedger.id, debit_amount: totalAmount, description: `Payment for ${invoice.invoice_number}` },
           ...paymentSplits.map(split => ({ account_id: split.method.account.id, credit_amount: split.amount, description: `${split.method.name} payment for ${invoice.invoice_number}` }))
         ]
       }, req.user.id, transaction);

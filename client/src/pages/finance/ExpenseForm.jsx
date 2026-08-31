@@ -1,6 +1,7 @@
 ﻿import React from 'react';
-import { Card, Form, Select, DatePicker, Input, Button, Row, Col, Typography, InputNumber } from 'antd';
-import { SaveOutlined, CheckCircleOutlined } from '@ant-design/icons';
+import { useState } from 'react';
+import { Card, Form, Select, DatePicker, Input, Button, Row, Col, Typography, InputNumber, message } from 'antd';
+import { CheckCircleOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import client from '../../api/client';
 import useApiData from '../../hooks/useApiData';
@@ -12,20 +13,27 @@ const { TextArea } = Input;
 const ExpenseForm = () => {
   const [form] = Form.useForm();
   const navigate = useNavigate();
+  const [posting, setPosting] = useState(false);
   const { data: accounts } = useApiData('/accounts');
   const { data: paymentMethods } = useApiData('/accounts/payment-methods');
   const expenseAccounts = accounts.filter(item => item.type === 'expense' && !item.is_group && item.is_active !== false);
 
   const onFinish = async (values) => {
-    await client.post('/expenses', {
-      account_id: values.account,
-      category: values.category,
-      amount: values.amount,
-      expense_date: values.date.format('YYYY-MM-DD'),
-      payment_method_id: values.paymentMethod,
-      description: values.description
-    });
-    navigate('/app/expenses');
+    setPosting(true);
+    try {
+      await client.post('/expenses', {
+        account_id: values.account,
+        category: values.category,
+        amount: values.amount,
+        expense_date: values.date.format('YYYY-MM-DD'),
+        payment_method_id: values.paymentMethod,
+        description: values.description
+      });
+      message.success('Expense posted successfully');
+      navigate('/app/expenses');
+    } finally {
+      setPosting(false);
+    }
   };
 
   return (
@@ -80,11 +88,8 @@ const ExpenseForm = () => {
           </Row>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 16, marginTop: 24 }}>
-            <Button icon={<SaveOutlined />}>
-              Save Draft
-            </Button>
-            <Button type="primary" htmlType="submit" icon={<CheckCircleOutlined />} >
-              Submit for Approval
+            <Button type="primary" htmlType="submit" icon={<CheckCircleOutlined />} loading={posting}>
+              Post Expense
             </Button>
           </div>
         </Card>

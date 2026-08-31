@@ -15,10 +15,10 @@ export default function AppLayout() {
 
   return (
     <PageTitleProvider>
-    <Layout style={{ minHeight: '100vh' }}>
+    <Layout className="app-shell" style={{ minHeight: '100vh' }}>
       {/* Desktop Sider */}
       <Sider 
-        className="desktop-only"
+        className="desktop-only app-desktop-sider"
         theme="light"
         collapsible 
         collapsed={collapsed} 
@@ -47,7 +47,7 @@ export default function AppLayout() {
         <Sidebar onNavigate={() => setMobileDrawerOpen(false)} />
       </Drawer>
 
-      <Layout>
+      <Layout className="app-main-layout">
         <Header 
           collapsed={collapsed} 
           setCollapsed={setCollapsed}

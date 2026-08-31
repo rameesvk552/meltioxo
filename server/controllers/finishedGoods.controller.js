@@ -21,6 +21,7 @@ const generateVariantSku = async ({ product, tenantId, transaction }) => {
 
 const SOURCE_TYPES = ['live_make', 'ready_made'];
 const ALLOWED_UOMS = ['pcs', 'ml', 'L', 'g', 'kg', 'box', 'bottle', 'pack', 'set'];
+const STOCK_EPSILON = 0.00005;
 
 const validateUom = value => {
   const uom = String(value || 'pcs').trim();
@@ -54,6 +55,112 @@ const validatePackaging = async (tenantId, packaging, transaction) => {
     const validMaterials = await db.packagingMaterial.count({ where: { id: materialIds, tenant_id: tenantId }, transaction });
     if (validMaterials !== materialIds.length) throw new AppError('One or more packaging materials are invalid', 400);
   }
+};
+
+const adjustFinishedStock = async ({ item, targetStock, tenantId, userId, transaction }) => {
+  const previousStock = Number(item.current_stock || 0);
+  const delta = targetStock - previousStock;
+  if (Math.abs(delta) <= STOCK_EPSILON) return;
+
+  const batches = await db.stockBatch.findAll({
+    where: { tenant_id: tenantId, material_type: 'finished', material_id: item.id },
+    order: [['received_date', 'ASC'], ['created_at', 'ASC']],
+    transaction,
+    lock: transaction.LOCK.UPDATE
+  });
+  const unitCost = Number(item.cost_price || 0);
+
+  // Older variants may have a current_stock value without a matching batch.
+  // Reconcile that gap first so an edit can still safely reduce the stock and
+  // future FIFO sales have a batch to consume.
+  const trackedStock = batches.reduce((sum, batch) => sum + Number(batch.remaining_qty || 0), 0);
+  if (trackedStock + STOCK_EPSILON < previousStock) {
+    const reconciliationQuantity = previousStock - trackedStock;
+    const reconciliationBatch = await db.stockBatch.create({
+      tenant_id: tenantId,
+      material_type: 'finished',
+      material_id: item.id,
+      batch_number: `RECON-${item.sku}-${Date.now()}`,
+      quantity: reconciliationQuantity,
+      remaining_qty: reconciliationQuantity,
+      cost_per_unit: unitCost,
+      received_date: new Date()
+    }, { transaction });
+    batches.push(reconciliationBatch);
+    await db.stockMovement.create({
+      tenant_id: tenantId,
+      material_type: 'finished',
+      material_id: item.id,
+      movement_type: 'adjustment',
+      direction: 'in',
+      quantity: reconciliationQuantity,
+      batch_id: reconciliationBatch.id,
+      unit_cost: unitCost,
+      total_cost: reconciliationQuantity * unitCost,
+      reference_type: 'finished_stock_adjustment',
+      reference_id: item.id,
+      notes: 'Reconciled finished-product stock before variant edit',
+      created_by: userId
+    }, { transaction });
+  }
+
+  if (delta > 0) {
+    const batch = await db.stockBatch.create({
+      tenant_id: tenantId,
+      material_type: 'finished',
+      material_id: item.id,
+      batch_number: `ADJ-${item.sku}-${Date.now()}`,
+      quantity: delta,
+      remaining_qty: delta,
+      cost_per_unit: unitCost,
+      received_date: new Date()
+    }, { transaction });
+    await db.stockMovement.create({
+      tenant_id: tenantId,
+      material_type: 'finished',
+      material_id: item.id,
+      movement_type: 'adjustment',
+      direction: 'in',
+      quantity: delta,
+      batch_id: batch.id,
+      unit_cost: unitCost,
+      total_cost: delta * unitCost,
+      reference_type: 'finished_stock_adjustment',
+      reference_id: item.id,
+      notes: 'Finished-product stock increased from variant edit',
+      created_by: userId
+    }, { transaction });
+  } else {
+    let remainingToRemove = -delta;
+    for (const batch of batches) {
+      if (remainingToRemove <= STOCK_EPSILON) break;
+      const available = Number(batch.remaining_qty || 0);
+      if (available <= STOCK_EPSILON) continue;
+      const taken = Math.min(available, remainingToRemove);
+      await batch.update({ remaining_qty: available - taken }, { transaction });
+      await db.stockMovement.create({
+        tenant_id: tenantId,
+        material_type: 'finished',
+        material_id: item.id,
+        movement_type: 'adjustment',
+        direction: 'out',
+        quantity: taken,
+        batch_id: batch.id,
+        unit_cost: Number(batch.cost_per_unit || unitCost),
+        total_cost: taken * Number(batch.cost_per_unit || unitCost),
+        reference_type: 'finished_stock_adjustment',
+        reference_id: item.id,
+        notes: 'Finished-product stock decreased from variant edit',
+        created_by: userId
+      }, { transaction });
+      remainingToRemove -= taken;
+    }
+    if (remainingToRemove > STOCK_EPSILON) {
+      throw new AppError('Finished-product stock batches are out of sync. Refresh the stock ledger before reducing this stock.', 409);
+    }
+  }
+
+  await item.update({ current_stock: targetStock }, { transaction });
 };
 
 exports.getAll = async (req, res, next) => {
@@ -270,7 +377,12 @@ exports.create = async (req, res, next) => {
 exports.update = async (req, res, next) => {
   const transaction = await db.sequelize.transaction();
   try {
-    const { packaging, ...variantData } = req.body;
+    const { packaging, current_stock: requestedStock, ...variantData } = req.body;
+    const hasStockUpdate = Object.prototype.hasOwnProperty.call(req.body, 'current_stock');
+    const targetStock = hasStockUpdate ? Number(requestedStock) : null;
+    if (hasStockUpdate && (!Number.isFinite(targetStock) || targetStock < 0)) {
+      throw new AppError('Current stock must be a non-negative number', 400);
+    }
     if (Object.prototype.hasOwnProperty.call(variantData, 'uom')) variantData.uom = validateUom(variantData.uom);
     const item = await finishedGood.findOne({
       where: { id: req.params.id, tenant_id: req.tenantId },
@@ -308,6 +420,9 @@ exports.update = async (req, res, next) => {
     variantData.formula_id = configuration.formulaId;
     variantData.fill_quantity_ml = configuration.fillQuantity;
     await item.update(variantData, { transaction });
+    if (hasStockUpdate) {
+      await adjustFinishedStock({ item, targetStock, tenantId: req.tenantId, userId: req.user.id, transaction });
+    }
 
     const nextPackaging = sourceType === 'ready_made' ? [] : packaging;
     if (Array.isArray(nextPackaging)) {

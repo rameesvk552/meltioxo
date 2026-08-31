@@ -30,7 +30,7 @@ const DEFAULT_ACCOUNTS = [
 
   { code: 'BS-LIAB', name: 'Liabilities', type: 'liability', parent_code: 'BS', is_group: true },
   { code: 'G2200', name: 'Current Liabilities', type: 'liability', parent_code: 'BS-LIAB', is_group: true },
-  { code: '2001', name: 'Trade Creditors', type: 'liability', parent_code: 'G2200' },
+  { code: '2001', name: 'Trade Creditors', type: 'liability', parent_code: 'G2200', is_group: true },
   { code: '2002', name: 'Customer Advances', type: 'liability', parent_code: 'G2200' },
   { code: '2003', name: 'Expense Payable', type: 'liability', parent_code: 'G2200' },
   { code: 'G2300', name: 'Tax Payables', type: 'liability', parent_code: 'BS-LIAB', is_group: true },
@@ -47,6 +47,7 @@ const DEFAULT_ACCOUNTS = [
   { code: '5103', name: 'Purchase Cost Variance', type: 'expense', parent_code: 'G5100' },
   { code: 'G5200', name: 'Indirect Expenses', type: 'expense', parent_code: 'PL-EXPENSE', is_group: true },
   { code: '5201', name: 'Manufacturing Overhead', type: 'expense', parent_code: 'G5200' },
+  { code: '5202', name: 'Discount Allowed', type: 'expense', parent_code: 'G5200' },
   { code: 'PL-INCOME', name: 'Income', type: 'revenue', parent_code: 'PL', is_group: true },
   { code: 'G4100', name: 'Direct Income', type: 'revenue', parent_code: 'PL-INCOME', is_group: true },
   { code: '4102', name: 'Sales', type: 'revenue', parent_code: 'G4100' },

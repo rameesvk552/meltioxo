@@ -29,6 +29,8 @@ export default function PackagingMaterials() {
         stock: Number(item.current_stock || 0),
         reorder: Number(item.reorder_level || 0),
         avgCost: Number(item.avg_cost || 0),
+        sellingPrice: Number(item.selling_price || 0),
+        taxRate: Number(item.tax_rate || 0),
         status: Number(item.current_stock || 0) <= 0 ? 'Out of Stock'
           : Number(item.current_stock || 0) <= Number(item.reorder_level || 0) ? 'Low Stock' : 'In Stock'
       })));
@@ -64,7 +66,7 @@ export default function PackagingMaterials() {
   const openAddMaterial = () => {
     setEditingMaterial(null);
     form.resetFields();
-    form.setFieldsValue({ unit: 'pcs', stock: 0, reorder: 0, avgCost: 0 });
+    form.setFieldsValue({ unit: 'pcs', stock: 0, reorder: 0, avgCost: 0, sellingPrice: 0, taxRate: 0 });
     setIsModalOpen(true);
   };
 
@@ -77,7 +79,9 @@ export default function PackagingMaterials() {
       unit: material.unit || 'pcs',
       stock: material.stock,
       reorder: material.reorder,
-      avgCost: material.avgCost
+      avgCost: material.avgCost,
+      sellingPrice: material.sellingPrice,
+      taxRate: material.taxRate
     });
     setIsModalOpen(true);
   };
@@ -101,7 +105,9 @@ export default function PackagingMaterials() {
       unit: values.unit,
       current_stock: Number(values.stock || 0),
       reorder_level: Number(values.reorder || 0),
-      avg_cost: Number(values.avgCost || 0)
+      avg_cost: Number(values.avgCost || 0),
+      selling_price: Number(values.sellingPrice || 0),
+      tax_rate: Number(values.taxRate || 0)
     };
     setSaving(true);
     try {
@@ -158,6 +164,7 @@ export default function PackagingMaterials() {
       );
     }},
     { title: 'Avg Cost', dataIndex: 'avgCost', key: 'avgCost', render: v => <Text style={{ color: 'inherit' }}>₹{v.toLocaleString()}</Text> },
+    { title: 'Sale Price', dataIndex: 'sellingPrice', key: 'sellingPrice', render: v => <Text style={{ color: 'inherit' }}>₹{v.toLocaleString()}</Text> },
     { title: 'Value', key: 'value', render: (_, r) => <Text style={{ color: 'var(--color-gold)' }}>₹{(r.stock * r.avgCost).toLocaleString()}</Text> },
     { title: 'Status', dataIndex: 'status', key: 'status', render: s => {
       let color = s === 'In Stock' ? 'success' : s === 'Low Stock' ? 'warning' : 'error';
@@ -274,6 +281,18 @@ export default function PackagingMaterials() {
             <Col span={8}>
               <Form.Item name="sku" label="SKU">
                 <Input placeholder="Auto-generated" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="sellingPrice" label="Default Sale Price per Unit (₹)" rules={[{ required: true, message: 'Please enter the sale price' }]}>
+                <Input type="number" step="any" min={0} prefix="₹" placeholder="0" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="taxRate" label="Sale Tax Rate (%)" rules={[{ required: true, message: 'Please enter the tax rate' }]}>
+                <Input type="number" step="any" min={0} max={100} suffix="%" placeholder="0" />
               </Form.Item>
             </Col>
           </Row>

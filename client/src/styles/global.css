@@ -182,8 +182,39 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 @media (min-width: 768px) {
+  .app-shell {
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  .app-desktop-sider {
+    position: sticky !important;
+    top: 0;
+    align-self: flex-start;
+    height: 100vh;
+    height: 100dvh;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .app-main-layout {
+    min-width: 0;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  .app-main-layout > .app-header {
+    flex: 0 0 auto;
+  }
+
   .app-content {
+    min-height: 0;
     padding-bottom: var(--space-lg);
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 }
 

@@ -5,6 +5,7 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const db = require('./models');
 const { errorHandler } = require('./middleware/errorHandler');
+const { requestContext } = require('./middleware/auditContext');
 
 const app = express();
 
@@ -12,12 +13,14 @@ app.use(helmet());
 app.use(cors());
 // A 5 MB logo expands to roughly 6.7 MB when encoded as a data URL.
 app.use(express.json({ limit: '8mb' }));
+app.use(requestContext);
 app.use(morgan('dev'));
 
 // Routes would be mounted here
 app.use('/api/auth', require('./routes/auth.routes'));
 app.use('/api/raw-materials', require('./routes/rawMaterial.routes'));
 app.use('/api/packaging-materials', require('./routes/packagingMaterial.routes'));
+app.use('/api/packing-kits', require('./routes/packingKit.routes'));
 app.use('/api/suppliers', require('./routes/supplier.routes'));
 app.use('/api/purchases', require('./routes/directPurchase.routes'));
 app.use('/api/formulas', require('./routes/formula.routes'));
@@ -33,8 +36,10 @@ app.use('/api/payments', require('./routes/payment.routes'));
 app.use('/api/expenses', require('./routes/expense.routes'));
 app.use('/api/reports', require('./routes/report.routes'));
 app.use('/api/tenant', require('./routes/tenant.routes'));
+app.use('/api/branches', require('./routes/branch.routes'));
 app.use('/api/users', require('./routes/user.routes'));
 app.use('/api/admin', require('./routes/admin.routes'));
+app.use('/api/audit-logs', require('./routes/auditLog.routes'));
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
@@ -118,10 +123,23 @@ const ensureDefaultAccountHierarchy = async () => {
   for (const tenant of tenants) {
     await ensureChartOfAccounts(tenant.id);
     await accounting.ensureDefaultPaymentMethods(tenant.id);
+    await accounting.ensureSupplierLedgers(tenant.id);
   }
 };
 
-migrateRawMaterialCategoryToText().then(migratePaymentModesToText).then(migratePurchaseItemEnums).then(migratePurchaseInvoiceStatus).then(migrateProductsForReadyMade).then(() => db.sequelize.sync({ alter: true })).then(ensureDefaultAccountHierarchy).then(() => {
+const ensureDefaultBranches = async () => {
+  const tenants = await db.tenant.findAll({ attributes: ['id', 'name'] });
+  for (const item of tenants) {
+    let main = await db.branch.findOne({ where: { tenant_id: item.id, is_default: true } });
+    if (!main) main = await db.branch.create({ tenant_id: item.id, name: 'Main Branch', code: 'MAIN', is_default: true });
+    await db.user.update({ branch_id: main.id }, { where: { tenant_id: item.id, branch_id: null } });
+    for (const modelName of ['customer', 'retailSale', 'salesOrder', 'salesInvoice', 'salesReturn', 'businessDay', 'payment', 'expense', 'stockBatch', 'stockMovement', 'purchaseOrder', 'purchaseReceipt', 'purchaseInvoice', 'productionOrder', 'journalEntry']) {
+      if (db[modelName]) await db[modelName].update({ branch_id: main.id }, { where: { tenant_id: item.id, branch_id: null } });
+    }
+  }
+};
+
+migrateRawMaterialCategoryToText().then(migratePaymentModesToText).then(migratePurchaseItemEnums).then(migratePurchaseInvoiceStatus).then(migrateProductsForReadyMade).then(() => db.sequelize.sync({ alter: true })).then(ensureDefaultBranches).then(ensureDefaultAccountHierarchy).then(() => {
   console.log('Database synced');
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);

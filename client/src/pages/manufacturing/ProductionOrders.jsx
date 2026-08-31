@@ -13,7 +13,7 @@ export default function ProductionOrders() {
   const navigate = useNavigate();
   const { data: orderData, loading, reload } = useApiData('/production-orders');
   const { data: finishedGoods } = useApiData('/finished-goods');
-  const variants = finishedGoods.filter(item => item.product_id && item.is_active !== false && item.source_type !== 'ready_made' && !item.is_measurement_item);
+  const variants = finishedGoods.filter(item => item.product_id && item.is_active !== false && item.source_type !== 'ready_made' && (!item.is_measurement_item || item.product?.measurement_source_type === 'bulk_stock'));
   const orders = orderData.map(item => ({
     ...item,
     product: item.finishedGood?.product?.name || '—',

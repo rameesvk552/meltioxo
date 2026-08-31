@@ -25,3 +25,12 @@
   width: 100%;
   border-bottom: 1px solid #f0ece8;
 }
+
+.accounts-page .accounts-nav {
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.accounts-page .accounts-nav::-webkit-scrollbar { display: none; }
+.accounts-page .accounts-nav button { flex: 0 0 auto; }

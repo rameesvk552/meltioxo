@@ -19,7 +19,13 @@ const round = value => Math.round((number(value) + Number.EPSILON) * 100) / 100;
 const percent = (value, base) => base ? round((value / base) * 100) : 0;
 const isoDate = date => date.toISOString().slice(0, 10);
 
-const isCogsAccount = account => account.code === ACCOUNT_CODES.COGS || /cost of goods sold|\bcogs\b/i.test(account.name || '');
+const isCogsAccount = account => {
+  const numericCode = Number(account.code);
+  return (Number.isInteger(numericCode) && numericCode >= 5100 && numericCode < 5200)
+    || account.code === ACCOUNT_CODES.COGS
+    || /cost of goods sold|\bcogs\b|direct cost/i.test(account.name || '');
+};
+const isDiscountAllowedAccount = account => account.code === ACCOUNT_CODES.DISCOUNT_ALLOWED;
 
 const bucketKey = (date, groupBy) => {
   const value = String(date).slice(0, 10);
@@ -87,7 +93,11 @@ const summarizeFinancialLines = (lines, fromDate, toDate, groupBy) => {
       addAccount(revenueAccounts, account, amount);
     } else {
       const amount = number(line.debit) - number(line.credit);
-      if (isCogsAccount(account)) {
+      if (isDiscountAllowedAccount(account)) {
+        revenue -= amount;
+        point.revenue -= amount;
+        addAccount(revenueAccounts, account, -amount);
+      } else if (isCogsAccount(account)) {
         cogs += amount;
         point.cogs += amount;
         addAccount(cogsAccounts, account, amount);
@@ -152,39 +162,53 @@ const getFinancialLines = (tenantId, fromDate, toDate) => db.journalEntryLine.fi
   ]
 });
 
-const productProfitability = (items, operatingExpenses) => {
+exports.profitAndLossStatement = async (tenantId, fromDate, toDate) => {
+  const lines = await getFinancialLines(tenantId, fromDate, toDate);
+  const statement = summarizeFinancialLines(lines, fromDate, toDate, 'month');
+  return {
+    period: { from: fromDate, to: toDate },
+    summary: statement.summary,
+    accounts: statement.accounts
+  };
+};
+
+const productProfitability = (items, returnItems, operatingExpenses) => {
   const products = new Map();
   const variants = new Map();
 
-  const accumulate = (map, key, base, item, revenue, cost) => {
+  const accumulate = (map, key, base, orderId, soldQuantity, revenue, cost) => {
     const row = map.get(key) || { ...base, quantity: 0, revenue: 0, cogs: 0, orders: new Set() };
-    row.quantity += number(item.quantity);
+    row.quantity += soldQuantity;
     row.revenue += revenue;
     row.cogs += cost;
-    row.orders.add(item.retailSale.id);
+    row.orders.add(orderId);
     map.set(key, row);
   };
 
-  items.forEach(item => {
+  const addTransaction = (item, direction, orderId) => {
     const variant = item.finishedGood;
     const product = variant.product;
-    const revenue = number(item.total) - number(item.tax_amount);
-    const cost = number(item.cost_amount);
+    const soldQuantity = direction * number(item.quantity);
+    const revenue = direction * (number(item.total) - number(item.tax_amount));
+    const cost = direction * number(item.cost_amount);
     const productKey = product?.id || `unassigned:${variant.id}`;
     accumulate(products, productKey, {
       id: productKey,
       product_id: product?.id || null,
       product_name: product?.name || variant.name || 'Unassigned product',
       code: product?.code || variant.sku || '—'
-    }, item, revenue, cost);
+    }, orderId, soldQuantity, revenue, cost);
     accumulate(variants, variant.id, {
       id: variant.id,
       product_id: product?.id || null,
       product_name: product?.name || variant.name || 'Unassigned product',
       variant_name: [variant.size_label, variant.name !== product?.name ? variant.name : null].filter(Boolean).join(' · ') || 'Standard',
       sku: variant.sku || '—'
-    }, item, revenue, cost);
-  });
+    }, orderId, soldQuantity, revenue, cost);
+  };
+
+  items.forEach(item => addTransaction(item, 1, item.retailSale.id));
+  returnItems.forEach(item => addTransaction(item, -1, item.salesReturn.retail_sale_id));
 
   const totalProductRevenue = [...products.values()].reduce((sum, row) => sum + row.revenue, 0);
   const finalize = row => {
@@ -228,6 +252,13 @@ exports.profitAndLoss = async (tenantId, fromDate, toDate, groupBy = 'month') =>
   const previousFrom = isoDate(previousStart);
   const previousTo = isoDate(previousEnd);
 
+  const variantInclude = () => ({
+    model: db.finishedGood,
+    attributes: ['id', 'sku', 'name', 'size_label'],
+    where: { tenant_id: tenantId },
+    required: true,
+    include: [{ model: db.product, attributes: ['id', 'code', 'name'], required: false }]
+  });
   const itemInclude = [
     {
       model: db.retailSale,
@@ -235,16 +266,10 @@ exports.profitAndLoss = async (tenantId, fromDate, toDate, groupBy = 'month') =>
       where: { tenant_id: tenantId, sale_date: { [Op.between]: [fromDate, toDate] } },
       required: true
     },
-    {
-      model: db.finishedGood,
-      attributes: ['id', 'sku', 'name', 'size_label'],
-      where: { tenant_id: tenantId },
-      required: true,
-      include: [{ model: db.product, attributes: ['id', 'code', 'name'], required: false }]
-    }
+    variantInclude()
   ];
 
-  const [currentLines, previousLines, sales, previousSales, saleItems] = await Promise.all([
+  const [currentLines, previousLines, sales, previousSales, saleItems, returnedItems] = await Promise.all([
     getFinancialLines(tenantId, fromDate, toDate),
     getFinancialLines(tenantId, previousFrom, previousTo),
     db.retailSale.findAll({
@@ -255,12 +280,27 @@ exports.profitAndLoss = async (tenantId, fromDate, toDate, groupBy = 'month') =>
       where: { tenant_id: tenantId, sale_date: { [Op.between]: [previousFrom, previousTo] } },
       attributes: ['id', 'subtotal', 'discount_amount', 'total_amount']
     }),
-    db.retailSaleItem.findAll({ attributes: ['quantity', 'total', 'tax_amount', 'cost_amount'], include: itemInclude })
+    db.retailSaleItem.findAll({
+      attributes: ['quantity', 'total', 'tax_amount', 'cost_amount'],
+      include: itemInclude
+    }),
+    db.salesReturnItem.findAll({
+      attributes: ['quantity', 'total', 'tax_amount', 'cost_amount'],
+      include: [
+        {
+          model: db.salesReturn,
+          attributes: ['retail_sale_id'],
+          where: { tenant_id: tenantId, return_date: { [Op.between]: [fromDate, toDate] } },
+          required: true
+        },
+        variantInclude()
+      ]
+    })
   ]);
 
   const current = summarizeFinancialLines(currentLines, fromDate, toDate, groupBy);
   const previous = summarizeFinancialLines(previousLines, previousFrom, previousTo, groupBy).summary;
-  const productReport = productProfitability(saleItems, current.summary.operating_expenses);
+  const productReport = productProfitability(saleItems, returnedItems, current.summary.operating_expenses);
   const salesRevenue = rows => rows.reduce((sum, sale) => sum + number(sale.subtotal) - number(sale.discount_amount), 0);
   const currentSalesRevenue = salesRevenue(sales);
   const previousSalesRevenue = salesRevenue(previousSales);

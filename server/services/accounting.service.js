@@ -7,6 +7,35 @@ const PAYMENT_METHOD_TYPES = ['CASH', 'BANK', 'UPI', 'CARD', 'WALLET', 'GATEWAY'
 const ACCOUNT_TYPE_BASES = { asset: 1000, liability: 2000, equity: 3000, revenue: 4000, expense: 5000 };
 const today = () => new Date().toISOString().slice(0, 10);
 
+const supplierLedgerName = supplier => `Vendor - ${String(supplier.name || '').trim()}`;
+
+const ensureSupplierLedger = async (tenantId, supplier, transaction) => {
+  const creditors = await db.account.findOne({ where: { tenant_id: tenantId, code: ACCOUNT_CODES.AP }, transaction });
+  if (!creditors) throw new AppError('Trade Creditors ledger is not configured', 500);
+  if (!creditors.is_group) await creditors.update({ is_group: true }, { transaction });
+  let ledger = await db.account.findOne({ where: { tenant_id: tenantId, supplier_id: supplier.id }, transaction, lock: transaction?.LOCK?.UPDATE });
+  if (!ledger) {
+    const code = await generateNextAccountCode(tenantId, creditors, 'liability', transaction);
+    ledger = await db.account.create({ tenant_id: tenantId, code, name: supplierLedgerName(supplier), supplier_id: supplier.id, type: 'liability', parent_id: creditors.id, is_group: false, is_system: false, is_active: true }, { transaction });
+  } else if (ledger.name !== supplierLedgerName(supplier) || ledger.parent_id !== creditors.id || ledger.type !== 'liability') {
+    await ledger.update({ name: supplierLedgerName(supplier), parent_id: creditors.id, type: 'liability', is_group: false, is_active: true }, { transaction });
+  }
+  return ledger;
+};
+
+const ensureSupplierLedgers = async (tenantId, transaction) => {
+  const suppliers = await db.supplier.findAll({ where: { tenant_id: tenantId }, transaction, order: [['created_at', 'ASC']] });
+  const ledgers = [];
+  for (const supplier of suppliers) ledgers.push(await ensureSupplierLedger(tenantId, supplier, transaction));
+  return ledgers;
+};
+
+const getSupplierLedger = async (tenantId, supplierId, transaction) => {
+  const supplier = await db.supplier.findOne({ where: { id: supplierId, tenant_id: tenantId }, transaction });
+  if (!supplier) throw new AppError('Supplier not found', 404);
+  return ensureSupplierLedger(tenantId, supplier, transaction);
+};
+
 const money = (value, field = 'Amount') => {
   const numeric = Number(value || 0);
   if (!Number.isFinite(numeric)) throw new AppError(`${field} must be a valid number`, 400);
@@ -306,4 +335,4 @@ const reverseJournal = async (tenantId, journalId, userId, reversalDate, narrati
   return reversal;
 };
 
-module.exports = { PAYMENT_METHOD_TYPES, accountCodeRange, generateNextAccountCode, money, paymentModeForType, validateJournalLines, createJournalEntry, postJournal, generateAutoNumber, getAccountsByCode, createAndPost, getCashBankLedgers, assertCashBankLedger, ensureDefaultPaymentMethods, listPaymentMethods, getPaymentMethod, resolvePaymentMethod, normalizePaymentSplits, resolvePaymentSplits, createPaymentMethod, updatePaymentMethod, reverseJournal };
+module.exports = { PAYMENT_METHOD_TYPES, accountCodeRange, generateNextAccountCode, money, paymentModeForType, validateJournalLines, createJournalEntry, postJournal, generateAutoNumber, getAccountsByCode, createAndPost, getCashBankLedgers, assertCashBankLedger, ensureDefaultPaymentMethods, listPaymentMethods, getPaymentMethod, resolvePaymentMethod, normalizePaymentSplits, resolvePaymentSplits, createPaymentMethod, updatePaymentMethod, reverseJournal, ensureSupplierLedger, ensureSupplierLedgers, getSupplierLedger };

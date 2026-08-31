@@ -2,6 +2,7 @@ module.exports = (sequelize, DataTypes) => {
   const PurchaseInvoice = sequelize.define('purchaseInvoice', {
     id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
     tenant_id: { type: DataTypes.UUID },
+    branch_id: { type: DataTypes.UUID, allowNull: true },
     invoice_number: { type: DataTypes.STRING },
     purchase_order_id: { type: DataTypes.UUID },
     receipt_id: { type: DataTypes.UUID, allowNull: true },

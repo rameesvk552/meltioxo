@@ -8,6 +8,7 @@ export default function SupplierDetail() {
   const navigate = useNavigate();
   const { id } = useParams();
   const { data: supplierData } = useApiData(`/suppliers/${id}`, { initialData: {} });
+  const { data: ledgerData } = useApiData(`/suppliers/${id}/ledger`, { initialData: { entries: [] } });
   const supplier = {
     ...supplierData,
     contact: supplierData.contact_person || '—',
@@ -66,6 +67,18 @@ export default function SupplierDetail() {
       key: '3',
       label: 'Materials Supplied',
       children: <Table dataSource={supplier.materials} columns={materialColumns} pagination={false} />
+    },
+    {
+      key: '4',
+      label: 'Vendor Ledger',
+      children: <Table rowKey="id" dataSource={ledgerData.entries || []} pagination={{ pageSize: 10 }} columns={[
+        { title: 'Date', dataIndex: 'date' },
+        { title: 'Reference', dataIndex: 'entry_number' },
+        { title: 'Description', dataIndex: 'description' },
+        { title: 'Debit', align: 'right', render: (_, row) => `₹${Number(row.debit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` },
+        { title: 'Credit', align: 'right', render: (_, row) => `₹${Number(row.credit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` },
+        { title: 'Balance', align: 'right', render: (_, row) => <strong>₹{Number(row.balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong> }
+      ]} />
     }
   ];
 

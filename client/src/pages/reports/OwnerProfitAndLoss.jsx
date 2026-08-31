@@ -1,252 +1,464 @@
 import React, { useMemo, useState } from 'react';
 import {
-  Alert, Button, Card, Col, Collapse, DatePicker, Empty, Row, Segmented,
-  Select, Space, Spin, Statistic, Table, Tag, Typography
+  Alert, Button, Card, Col, DatePicker, Descriptions, Drawer, Empty, Row,
+  Segmented, Select, Space, Spin, Statistic, Table, Tag, Typography
 } from 'antd';
 import {
-  ArrowDownOutlined, ArrowUpOutlined, DownloadOutlined, InfoCircleOutlined,
-  PrinterOutlined, RiseOutlined, TrophyOutlined, WarningOutlined
+  DownloadOutlined, EyeOutlined, FileTextOutlined, PrinterOutlined,
+  ShoppingCartOutlined
 } from '@ant-design/icons';
-import {
-  Area, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer,
-  Tooltip as ChartTooltip, XAxis, YAxis
-} from 'recharts';
+import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 import useApiData from '../../hooks/useApiData';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 
-const money = value => `₹${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
-const preciseMoney = value => `₹${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const money = value => new Intl.NumberFormat('en-IN', {
+  style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2
+}).format(Number(value || 0));
+const quantity = value => Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 4 });
 const percentage = value => `${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 1 })}%`;
+const dateLabel = value => value ? dayjs(value).format('DD MMM YYYY') : '—';
 
 const presetRange = preset => {
   const today = dayjs();
-  if (preset === 'today') return [today, today];
+  if (preset === 'yesterday') return [today.subtract(1, 'day'), today.subtract(1, 'day')];
+  if (preset === 'last_7_days') return [today.subtract(6, 'day'), today];
   if (preset === 'this_month') return [today.startOf('month'), today];
-  if (preset === 'last_30_days') return [today.subtract(29, 'day'), today];
-  if (preset === 'last_year') return [today.subtract(1, 'year').startOf('year'), today.subtract(1, 'year').endOf('year')];
-  if (preset === 'last_5_years') return [today.subtract(4, 'year').startOf('year'), today];
-  return [today.startOf('year'), today];
+  return [today, today];
 };
-
-const comparisonText = (value, positiveIsGood = true) => {
-  if (value == null) return { text: 'No prior-period base', color: '#8c8c8c', icon: null };
-  const improved = positiveIsGood ? value >= 0 : value <= 0;
-  return {
-    text: `${Math.abs(value).toFixed(1)}% vs previous period`,
-    color: improved ? '#16a34a' : '#dc2626',
-    icon: value >= 0 ? <ArrowUpOutlined /> : <ArrowDownOutlined />
-  };
-};
-
-function MetricCard({ title, value, suffix, change, positiveIsGood = true, color = '#172033' }) {
-  const comparison = comparisonText(change, positiveIsGood);
-  return <Card style={{ height: '100%', borderRadius: 14 }} bodyStyle={{ padding: 18 }}>
-    <Statistic
-      title={<Text type="secondary">{title}</Text>}
-      value={value}
-      prefix={suffix ? undefined : '₹'}
-      suffix={suffix}
-      precision={suffix === '%' ? 1 : 0}
-      styles={{ content: { color, fontWeight: 750, fontSize: 25 } }}
-    />
-    <div style={{ color: comparison.color, fontSize: 12, marginTop: 7 }}>
-      {comparison.icon} {comparison.text}
-    </div>
-  </Card>;
-}
-
-function StatementRow({ label, value, tone, strong, inset }) {
-  return <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, padding: strong ? '12px 0' : '7px 0', paddingLeft: inset ? 18 : 0, borderTop: strong ? '1px solid var(--color-border)' : undefined }}>
-    <Text strong={strong} type={inset ? 'secondary' : undefined}>{label}</Text>
-    <Text strong={strong} style={{ color: tone }}>{preciseMoney(value)}</Text>
-  </div>;
-}
 
 const csvValue = value => `"${String(value ?? '').replaceAll('"', '""')}"`;
 
-export default function OwnerProfitAndLoss() {
-  const [preset, setPreset] = useState('this_year');
-  const [range, setRange] = useState(() => presetRange('this_year'));
-  const [groupBy, setGroupBy] = useState('month');
-  const [productView, setProductView] = useState('products');
-  const [pageSize, setPageSize] = useState(10);
+function SummaryCard({ title, value, description, moneyValue = false, icon, color = '#172033', action }) {
+  return <Card style={{ height: '100%', borderRadius: 12 }} bodyStyle={{ padding: 18 }}>
+    <Text type="secondary">{title}</Text>
+    <div style={{ color, fontWeight: 750, fontSize: 24, lineHeight: 1.2, marginTop: 4, whiteSpace: 'nowrap', letterSpacing: '-0.3px' }}>
+      {moneyValue ? money(value) : <><span style={{ marginRight: 7 }}>{icon}</span>{Number(value || 0).toLocaleString('en-IN')}</>}
+    </div>
+    <Text type="secondary" style={{ display: 'block', fontSize: 11, lineHeight: 1.35, marginTop: 7 }}>{description}</Text>
+    {action && <div style={{ marginTop: 8 }}>{action}</div>}
+  </Card>;
+}
 
-  const endpoint = useMemo(() => {
+function ExpenseBreakdownDrawer({ open, onClose, range }) {
+  const endpoint = useMemo(() => open
+    ? `/reports/profit-loss-statement?from=${range[0].format('YYYY-MM-DD')}&to=${range[1].format('YYYY-MM-DD')}`
+    : null, [open, range]);
+  const expenseQuery = useApiData(endpoint, {
+    enabled: open,
+    initialData: { summary: {}, accounts: {} }
+  });
+  const summary = expenseQuery.data.summary || {};
+  const rows = Array.isArray(expenseQuery.data.accounts?.operating_expenses) ? expenseQuery.data.accounts.operating_expenses : [];
+  const operatingExpenses = Number(summary.operating_expenses || 0);
+  const totalCosts = Number(summary.cogs || 0) + operatingExpenses;
+  const columns = [
+    { title: 'Code', dataIndex: 'code', width: 90 },
+    { title: 'Expense ledger', dataIndex: 'name' },
+    {
+      title: 'Share', width: 100, align: 'right',
+      render: (_, row) => operatingExpenses ? percentage(Number(row.amount || 0) / operatingExpenses * 100) : '0%'
+    },
+    { title: 'Amount', dataIndex: 'amount', width: 145, align: 'right', render: value => <Text strong>{money(value)}</Text> }
+  ];
+
+  const exportExpenses = () => {
+    const headers = ['Code', 'Expense ledger', 'Amount'];
+    const exportRows = rows.map(item => [item.code, item.name, Number(item.amount || 0).toFixed(2)]);
+    exportRows.push(['', 'Total operating expenses', operatingExpenses.toFixed(2)]);
+    const csv = [
+      ['Expense breakdown', `${range[0].format('YYYY-MM-DD')} to ${range[1].format('YYYY-MM-DD')}`],
+      [], headers, ...exportRows
+    ].map(row => row.map(csvValue).join(',')).join('\n');
+    const blob = new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `expense-breakdown-${range[0].format('YYYY-MM-DD')}-${range[1].format('YYYY-MM-DD')}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+
+  return <Drawer
+    title="Expense breakdown"
+    open={open}
+    onClose={onClose}
+    width={720}
+    destroyOnHidden
+    extra={<Button icon={<DownloadOutlined />} onClick={exportExpenses} disabled={!rows.length}>Export expenses</Button>}
+  >
+    <Alert
+      type="info"
+      showIcon
+      message={`${range[0].format('DD MMM YYYY')} to ${range[1].format('DD MMM YYYY')}`}
+      description="Only expenses posted to the accounts within the selected dates are included. Draft expenses are excluded."
+      style={{ marginBottom: 16 }}
+    />
+    <Row gutter={[12, 12]} style={{ marginBottom: 18 }}>
+      <Col xs={12}><Card size="small"><Statistic title="Operating expenses" value={operatingExpenses} prefix="₹" precision={2} /></Card></Col>
+      <Col xs={12}><Card size="small"><Statistic title="COGS + expenses" value={totalCosts} prefix="₹" precision={2} /></Card></Col>
+    </Row>
+    <Table
+      rowKey={row => row.id || row.code}
+      columns={columns}
+      dataSource={rows}
+      loading={expenseQuery.loading}
+      pagination={false}
+      size="small"
+      scroll={{ x: 620 }}
+      locale={{ emptyText: <Empty description="No operating expenses posted in this period" /> }}
+      summary={() => rows.length ? <Table.Summary.Row>
+        <Table.Summary.Cell index={0} colSpan={3}><Text strong>Total operating expenses</Text></Table.Summary.Cell>
+        <Table.Summary.Cell index={3} align="right"><Text strong>{money(operatingExpenses)}</Text></Table.Summary.Cell>
+      </Table.Summary.Row> : null}
+    />
+  </Drawer>;
+}
+
+function InvoiceDrawer({ invoiceId, onClose }) {
+  const navigate = useNavigate();
+  const saleQuery = useApiData(invoiceId ? `/retail-sales/${invoiceId}` : null, {
+    enabled: Boolean(invoiceId), initialData: {}
+  });
+  const sale = saleQuery.data;
+  const items = sale.retailSaleItems || [];
+
+  const itemColumns = [
+    {
+      title: 'Product / variant', key: 'product', width: 220,
+      render: (_, item) => {
+        const variant = item.finishedGood || {};
+        const product = variant.product || {};
+        return <div><Text strong>{product.name || variant.name || 'Product'}</Text><div><Text type="secondary" style={{ fontSize: 12 }}>{variant.size_label || variant.sku || 'Standard'}</Text></div></div>;
+      }
+    },
+    { title: 'Qty', dataIndex: 'quantity', align: 'right', width: 80, render: quantity },
+    { title: 'Rate', dataIndex: 'unit_price', align: 'right', width: 110, render: money },
+    {
+      title: 'Discount', key: 'discount', align: 'right', width: 120,
+      render: (_, item) => {
+        const base = Number(item.quantity || 0) * Number(item.unit_price || 0);
+        const discount = Math.max(0, base - (Number(item.total || 0) - Number(item.tax_amount || 0)));
+        return <div>{money(discount)}<div><Text type="secondary" style={{ fontSize: 11 }}>{percentage(item.discount_pct)}</Text></div></div>;
+      }
+    },
+    { title: 'Tax', dataIndex: 'tax_amount', align: 'right', width: 100, render: money },
+    { title: 'Amount', dataIndex: 'total', align: 'right', width: 115, render: value => <Text strong>{money(value)}</Text> }
+  ];
+
+  return <Drawer
+    title={sale.sale_number ? `Invoice ${sale.sale_number}` : 'Invoice details'}
+    open={Boolean(invoiceId)} onClose={onClose} width={860} destroyOnHidden
+    extra={sale.id && <Space>
+      <Button icon={<EyeOutlined />} onClick={() => navigate(`/app/retail-sales/${sale.id}`)}>Full details</Button>
+      <Button type="primary" icon={<PrinterOutlined />} onClick={() => navigate(`/app/retail-sales/${sale.id}/invoice`)}>Print invoice</Button>
+    </Space>}
+  >
+    {saleQuery.loading ? <div style={{ padding: 60, textAlign: 'center' }}><Spin /></div> : !sale.id ? <Empty description="Invoice not found" /> : <>
+      <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }} style={{ marginBottom: 18 }}>
+        <Descriptions.Item label="Date">{dateLabel(sale.sale_date)}</Descriptions.Item>
+        <Descriptions.Item label="Customer">{sale.customer?.name || 'Walk-in customer'}</Descriptions.Item>
+        <Descriptions.Item label="Payment">{sale.paymentMethod?.name || sale.paymentAccount?.name || '—'}</Descriptions.Item>
+        <Descriptions.Item label="Status"><Tag color={sale.return_status === 'none' ? 'success' : 'orange'}>{sale.return_status === 'none' ? 'POSTED' : `${String(sale.return_status).toUpperCase()} RETURN`}</Tag></Descriptions.Item>
+      </Descriptions>
+
+      <Table rowKey="id" columns={itemColumns} dataSource={items} pagination={false} size="small" scroll={{ x: 760 }} />
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
+        <div style={{ width: 330, display: 'grid', gap: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}><Text>Subtotal</Text><Text>{money(sale.subtotal)}</Text></div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}><Text>Discount</Text><Text type="danger">− {money(sale.discount_amount)}</Text></div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}><Text>Tax</Text><Text>{money(sale.tax_amount)}</Text></div>
+          {Number(sale.returned_amount || 0) > 0 && <div style={{ display: 'flex', justifyContent: 'space-between' }}><Text>Returned</Text><Text type="danger">− {money(sale.returned_amount)}</Text></div>}
+          <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--color-border)', paddingTop: 10, fontSize: 17 }}><Text strong>Net sale</Text><Text strong>{money(Number(sale.total_amount || 0) - Number(sale.returned_amount || 0))}</Text></div>
+        </div>
+      </div>
+      {sale.notes && <Alert style={{ marginTop: 18 }} type="info" message="Invoice note" description={sale.notes} />}
+    </>}
+  </Drawer>;
+}
+
+export default function OwnerProfitAndLoss() {
+  const [preset, setPreset] = useState('today');
+  const [range, setRange] = useState(() => presetRange('today'));
+  const [salesView, setSalesView] = useState('invoices');
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState(null);
+  const [expenseBreakdownOpen, setExpenseBreakdownOpen] = useState(false);
+  const [expenseBreakdownPeriod, setExpenseBreakdownPeriod] = useState(() => presetRange('today'));
+
+  const reportEndpoint = useMemo(() => {
     const from = range[0].format('YYYY-MM-DD');
     const to = range[1].format('YYYY-MM-DD');
-    return `/reports/profit-loss?from=${from}&to=${to}&group_by=${groupBy}`;
-  }, [range, groupBy]);
+    return `/reports/profit-loss?from=${from}&to=${to}&group_by=day`;
+  }, [range]);
 
-  const { data: report, loading, error } = useApiData(endpoint, {
-    initialData: { summary: {}, comparison: { changes: {}, previous: {} }, trend: [], accounts: {}, product_profitability: {} }
+  const reportQuery = useApiData(reportEndpoint, {
+    initialData: { summary: {}, trend: [], product_profitability: {} }
   });
+  const salesQuery = useApiData('/retail-sales');
+  const purchaseEndpoint = useMemo(() => `/reports/purchases?from=${range[0].format('YYYY-MM-DD')}&to=${range[1].format('YYYY-MM-DD')}`, [range]);
+  const purchaseQuery = useApiData(purchaseEndpoint, { initialData: { summary: {}, rows: [] } });
 
-  const summary = report.summary || {};
-  const changes = report.comparison?.changes || {};
-  const products = report.product_profitability?.[productView] || [];
-  const ownerSignals = report.owner_signals || {};
+  const invoices = useMemo(() => {
+    const from = range[0].format('YYYY-MM-DD');
+    const to = range[1].format('YYYY-MM-DD');
+    return salesQuery.data.filter(sale => sale.sale_date >= from && sale.sale_date <= to);
+  }, [range, salesQuery.data]);
+
+  const invoiceSummary = useMemo(() => invoices.reduce((totals, sale) => {
+    totals.discount += Number(sale.discount_amount || 0);
+    totals.returns += Number(sale.returned_amount || 0);
+    totals.netSales += Number(sale.subtotal || 0) - Number(sale.discount_amount || 0) - Number(sale.returned_revenue || 0);
+    return totals;
+  }, { discount: 0, returns: 0, netSales: 0 }), [invoices]);
+
+  const dailyRows = useMemo(() => {
+    const trend = Array.isArray(reportQuery.data.trend) ? reportQuery.data.trend : [];
+    const days = new Map(trend.map(point => [point.period, {
+      date: point.period,
+      invoices: 0,
+      gross: 0,
+      discount: 0,
+      returns: 0,
+      net: 0,
+      cogs: Number(point.cogs || 0),
+      expenses: Number(point.operating_expenses || 0),
+      netProfit: Number(point.net_profit || 0)
+    }]));
+    invoices.forEach(sale => {
+      const row = days.get(sale.sale_date) || { date: sale.sale_date, invoices: 0, gross: 0, discount: 0, returns: 0, net: 0, cogs: 0, expenses: 0, netProfit: 0 };
+      row.invoices += 1;
+      row.gross += Number(sale.subtotal || 0);
+      row.discount += Number(sale.discount_amount || 0);
+      row.returns += Number(sale.returned_amount || 0);
+      row.net += Number(sale.subtotal || 0) - Number(sale.discount_amount || 0) - Number(sale.returned_revenue || 0);
+      days.set(sale.sale_date, row);
+    });
+    return [...days.values()].sort((a, b) => b.date.localeCompare(a.date));
+  }, [invoices, reportQuery.data.trend]);
+
+  const summary = reportQuery.data.summary || {};
+  const products = reportQuery.data.product_profitability?.products || [];
+  const purchaseSummary = purchaseQuery.data.summary || {};
+  const purchaseRows = Array.isArray(purchaseQuery.data.rows) ? purchaseQuery.data.rows : [];
+  const averageInvoice = invoices.length ? invoiceSummary.netSales / invoices.length : 0;
 
   const selectPreset = value => {
     setPreset(value);
-    if (value === 'custom') return;
-    setRange(presetRange(value));
-    if (['today', 'this_month', 'last_30_days'].includes(value)) setGroupBy('day');
-    else if (value === 'last_5_years') setGroupBy('year');
-    else setGroupBy('month');
+    if (value !== 'custom') setRange(presetRange(value));
   };
-
   const selectRange = values => {
     if (!values?.[0] || !values?.[1]) return;
     setRange(values);
     setPreset('custom');
   };
 
-  const exportCsv = () => {
-    const headers = ['Product', 'SKU / Code', 'Units', 'Revenue', 'COGS', 'Gross Profit', 'Gross Margin %', 'Allocated Overhead', 'Estimated Net Profit', 'Net Margin %'];
-    const rows = products.map(item => [
-      productView === 'variants' ? `${item.product_name} · ${item.variant_name}` : item.product_name,
-      item.sku || item.code, item.quantity, item.revenue, item.cogs, item.gross_profit,
-      item.gross_margin_pct, item.allocated_expenses, item.net_profit, item.net_margin_pct
+  const exportInvoices = () => {
+    const headers = ['Date', 'Invoice', 'Customer', 'Items', 'Subtotal', 'Discount', 'Tax', 'Returns', 'Net total'];
+    const rows = invoices.map(sale => [
+      sale.sale_date, sale.sale_number, sale.customer?.name || 'Walk-in customer',
+      (sale.retailSaleItems || []).length, sale.subtotal, sale.discount_amount, sale.tax_amount,
+      sale.returned_amount, Number(sale.total_amount || 0) - Number(sale.returned_amount || 0)
     ]);
     const csv = [headers, ...rows].map(row => row.map(csvValue).join(',')).join('\n');
     const blob = new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `profit-and-loss-${range[0].format('YYYY-MM-DD')}-${range[1].format('YYYY-MM-DD')}.csv`;
+    link.download = `sales-report-${range[0].format('YYYY-MM-DD')}-${range[1].format('YYYY-MM-DD')}.csv`;
     link.click();
     URL.revokeObjectURL(link.href);
   };
 
-  const productColumns = [
+  const exportProducts = () => {
+    const headers = ['Product', 'Code', 'Quantity sold', 'Invoices', 'Sales', 'Average price', 'Cost', 'Gross profit', 'Margin %'];
+    const rows = products.map(item => [
+      item.product_name, item.code, item.quantity, item.orders, item.revenue,
+      item.average_selling_price, item.cogs, item.gross_profit, item.gross_margin_pct
+    ]);
+    const csv = [headers, ...rows].map(row => row.map(csvValue).join(',')).join('\n');
+    const blob = new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `product-sales-${range[0].format('YYYY-MM-DD')}-${range[1].format('YYYY-MM-DD')}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+
+  const exportPurchases = () => {
+    const headers = ['Date', 'Invoice', 'Supplier', 'Receipt', 'Item', 'Type', 'Quantity', 'Unit', 'Unit cost', 'Tax %', 'Tax', 'Line total', 'Status'];
+    const rows = purchaseRows.map(item => [item.invoice_date, item.invoice_number, item.supplier, item.receipt_number, item.item_name, item.material_type, item.quantity, item.unit, item.unit_price, item.tax_rate, item.tax_amount, item.line_total, item.status]);
+    const csv = [headers, ...rows].map(row => row.map(csvValue).join(',')).join('\n');
+    const blob = new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' });
+    const link = document.createElement('a'); link.href = URL.createObjectURL(blob);
+    link.download = `purchase-report-${range[0].format('YYYY-MM-DD')}-${range[1].format('YYYY-MM-DD')}.csv`; link.click(); URL.revokeObjectURL(link.href);
+  };
+
+  const invoiceColumns = [
+    { title: 'Date', dataIndex: 'sale_date', width: 120, render: dateLabel },
     {
-      title: productView === 'variants' ? 'Product / Variant' : 'Product', key: 'product', fixed: 'left', width: 230,
-      render: (_, item) => <div><Text strong>{item.product_name}</Text><div><Text type="secondary" style={{ fontSize: 12 }}>{productView === 'variants' ? `${item.variant_name} · ${item.sku}` : item.code}</Text></div></div>
+      title: 'Invoice', dataIndex: 'sale_number', width: 145,
+      render: (value, sale) => <Button type="link" icon={<FileTextOutlined />} style={{ padding: 0, fontWeight: 650 }} onClick={event => { event.stopPropagation(); setSelectedInvoiceId(sale.id); }}>{value}</Button>
     },
-    { title: 'Units', dataIndex: 'quantity', align: 'right', width: 90, sorter: (a, b) => a.quantity - b.quantity },
-    { title: 'Revenue', dataIndex: 'revenue', align: 'right', width: 130, render: money, sorter: (a, b) => a.revenue - b.revenue },
-    { title: 'COGS', dataIndex: 'cogs', align: 'right', width: 120, render: money },
-    { title: 'Gross profit', dataIndex: 'gross_profit', align: 'right', width: 135, render: value => <Text style={{ color: value >= 0 ? '#16a34a' : '#dc2626' }}>{money(value)}</Text>, sorter: (a, b) => a.gross_profit - b.gross_profit },
-    { title: 'Gross margin', dataIndex: 'gross_margin_pct', align: 'right', width: 125, render: value => <Tag color={value >= 40 ? 'green' : value >= 20 ? 'gold' : 'red'}>{percentage(value)}</Tag>, sorter: (a, b) => a.gross_margin_pct - b.gross_margin_pct },
-    { title: 'Allocated overhead', dataIndex: 'allocated_expenses', align: 'right', width: 155, render: money },
-    { title: 'Est. net profit', dataIndex: 'net_profit', align: 'right', width: 145, render: value => <Text strong style={{ color: value >= 0 ? '#16a34a' : '#dc2626' }}>{money(value)}</Text>, sorter: (a, b) => a.net_profit - b.net_profit },
-    { title: 'Net margin', dataIndex: 'net_margin_pct', align: 'right', width: 115, render: percentage, sorter: (a, b) => a.net_margin_pct - b.net_margin_pct }
+    { title: 'Customer', width: 170, render: (_, sale) => sale.customer?.name || 'Walk-in customer' },
+    {
+      title: 'Product / variant', width: 280,
+      render: (_, sale) => <Space direction="vertical" size={2}>
+        {(sale.retailSaleItems || []).map(item => {
+          const variant = item.finishedGood || {};
+          const product = variant.product || {};
+          const variantName = variant.size_label || (variant.name !== product.name ? variant.name : null) || variant.sku;
+          return <div key={item.id}>
+            <Text strong>{product.name || variant.name || 'Product'}</Text>
+            {variantName && <Text type="secondary"> · {variantName}</Text>}
+            <Tag style={{ marginLeft: 7 }}>{quantity(item.quantity)}</Tag>
+          </div>;
+        })}
+      </Space>
+    },
+    { title: 'Items', width: 75, align: 'right', render: (_, sale) => (sale.retailSaleItems || []).length },
+    { title: 'Subtotal', dataIndex: 'subtotal', width: 125, align: 'right', render: money },
+    { title: 'Discount', dataIndex: 'discount_amount', width: 115, align: 'right', render: value => Number(value || 0) ? <Text type="danger">− {money(value)}</Text> : money(0) },
+    { title: 'Tax', dataIndex: 'tax_amount', width: 105, align: 'right', render: money },
+    { title: 'Returned', dataIndex: 'returned_amount', width: 115, align: 'right', render: value => Number(value || 0) ? <Tag color="orange">{money(value)}</Tag> : '—' },
+    { title: 'Net total', width: 130, align: 'right', render: (_, sale) => <Text strong>{money(Number(sale.total_amount || 0) - Number(sale.returned_amount || 0))}</Text> },
+    { title: '', width: 52, render: (_, sale) => <Button type="text" aria-label={`View ${sale.sale_number}`} icon={<EyeOutlined />} onClick={event => { event.stopPropagation(); setSelectedInvoiceId(sale.id); }} /> }
   ];
 
-  const accountPanels = [
-    ['Revenue accounts', report.accounts?.revenue || [], '#16a34a'],
-    ['Cost of goods sold accounts', report.accounts?.cogs || [], '#d97706'],
-    ['Operating expense accounts', report.accounts?.operating_expenses || [], '#dc2626']
-  ].map(([label, rows, color]) => ({
-    key: label,
-    label: `${label} (${rows.length})`,
-    children: rows.length ? rows.map(row => <StatementRow key={row.id} label={`${row.code} · ${row.name}`} value={row.amount} tone={color} inset />) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No postings in this period" />
-  }));
+  const productColumns = [
+    {
+      title: 'Product', dataIndex: 'product_name', width: 230,
+      render: (value, item) => <div><Text strong>{value}</Text><div><Text type="secondary" style={{ fontSize: 12 }}>{item.code || '—'}</Text></div></div>
+    },
+    { title: 'Qty sold', dataIndex: 'quantity', align: 'right', width: 100, render: quantity },
+    { title: 'Invoices', dataIndex: 'orders', align: 'right', width: 95 },
+    { title: 'Sales', dataIndex: 'revenue', align: 'right', width: 130, render: money },
+    { title: 'Average price', dataIndex: 'average_selling_price', align: 'right', width: 130, render: money },
+    { title: 'Cost', dataIndex: 'cogs', align: 'right', width: 125, render: money },
+    { title: 'Gross profit', dataIndex: 'gross_profit', align: 'right', width: 140, render: value => <Text strong style={{ color: Number(value || 0) >= 0 ? '#16a34a' : '#dc2626' }}>{money(value)}</Text> },
+    { title: 'Margin', dataIndex: 'gross_margin_pct', align: 'right', width: 105, render: value => <Tag color={value >= 30 ? 'green' : value >= 15 ? 'gold' : 'red'}>{percentage(value)}</Tag> }
+  ];
+  const purchaseColumns = [
+    { title: 'Date', dataIndex: 'invoice_date', width: 120, render: dateLabel },
+    { title: 'Invoice', dataIndex: 'invoice_number', width: 155, render: value => <Text strong>{value || '—'}</Text> },
+    { title: 'Supplier', dataIndex: 'supplier', width: 170 },
+    { title: 'Receipt', dataIndex: 'receipt_number', width: 145 },
+    { title: 'Purchased item', width: 245, render: (_, item) => <div><Text strong>{item.item_name}</Text><div><Tag color="blue">{item.material_type}</Tag>{item.sku && <Text type="secondary">{item.sku}</Text>}</div></div> },
+    { title: 'Qty', dataIndex: 'quantity', align: 'right', width: 90, render: quantity },
+    { title: 'Unit cost', dataIndex: 'unit_price', align: 'right', width: 120, render: money },
+    { title: 'Tax', width: 115, align: 'right', render: (_, item) => <div>{money(item.tax_amount)}<div><Text type="secondary">{percentage(item.tax_rate)}</Text></div></div> },
+    { title: 'Line total', dataIndex: 'line_total', align: 'right', width: 130, render: value => <Text strong>{money(value)}</Text> },
+    { title: 'Status', dataIndex: 'status', width: 105, render: value => <Tag color={value === 'paid' ? 'green' : value === 'draft' ? 'default' : 'orange'}>{String(value || '').toUpperCase()}</Tag> }
+  ];
 
-  if (loading && !report.period) return <div style={{ display: 'grid', placeItems: 'center', minHeight: 420 }}><Spin size="large" /></div>;
+  if ((reportQuery.loading || salesQuery.loading || purchaseQuery.loading) && !reportQuery.data.period) return <div style={{ display: 'grid', placeItems: 'center', minHeight: 420 }}><Spin size="large" /></div>;
 
   return <div style={{ padding: 24, maxWidth: 1500, margin: '0 auto' }}>
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16, marginBottom: 20 }}>
       <div>
-        <Text type="secondary" style={{ fontSize: 11, letterSpacing: 1.4 }}>OWNER REPORT · PROFITABILITY</Text>
-        <Title level={2} style={{ margin: '3px 0', color: 'var(--color-gold)', fontFamily: "'Playfair Display', serif" }}>Profit & Loss Intelligence</Title>
-        <Text type="secondary">Company P&L, trends, product contribution and owner alerts in one report.</Text>
+        <Text type="secondary" style={{ fontSize: 11, letterSpacing: 1.3 }}>SALES REPORT</Text>
+        <Title level={2} style={{ margin: '3px 0', color: 'var(--color-gold)', fontFamily: "'Playfair Display', serif" }}>Daily Sales & Profit</Title>
+        <Text type="secondary">Invoices, discounts, products and profit in one simple report.</Text>
       </div>
       <Space wrap>
         <Button icon={<PrinterOutlined />} onClick={() => window.print()}>Print</Button>
-        <Button type="primary" icon={<DownloadOutlined />} onClick={exportCsv} disabled={!products.length}>Export products</Button>
+        <Button
+          type="primary" icon={<DownloadOutlined />}
+          onClick={salesView === 'invoices' ? exportInvoices : exportProducts}
+          disabled={salesView === 'invoices' ? !invoices.length : !products.length}
+        >Export {salesView}</Button>
       </Space>
     </div>
 
-    <Card style={{ marginBottom: 16, borderRadius: 14 }} bodyStyle={{ padding: 16 }}>
+    <Card style={{ marginBottom: 16, borderRadius: 12 }} bodyStyle={{ padding: 16 }}>
       <Space wrap size={12}>
-        <Select value={preset} onChange={selectPreset} style={{ width: 150 }} options={[
-          { value: 'today', label: 'Today' }, { value: 'this_month', label: 'This month' },
-          { value: 'last_30_days', label: 'Last 30 days' }, { value: 'this_year', label: 'This year' },
-          { value: 'last_year', label: 'Last year' }, { value: 'last_5_years', label: 'Last 5 years' },
+        <Select value={preset} onChange={selectPreset} style={{ width: 145 }} options={[
+          { value: 'today', label: 'Today' }, { value: 'yesterday', label: 'Yesterday' },
+          { value: 'last_7_days', label: 'Last 7 days' }, { value: 'this_month', label: 'This month' },
           { value: 'custom', label: 'Custom range' }
         ]} />
         <RangePicker value={range} onChange={selectRange} allowClear={false} />
-        <Segmented value={groupBy} onChange={setGroupBy} options={[{ label: 'Daily', value: 'day' }, { label: 'Monthly', value: 'month' }, { label: 'Yearly', value: 'year' }]} />
-        {loading && <Spin size="small" />}
+        {(reportQuery.loading || salesQuery.loading || purchaseQuery.loading) && <Spin size="small" />}
       </Space>
     </Card>
 
-    {error && <Alert type="error" showIcon style={{ marginBottom: 16 }} message="Could not load the profitability report" description={error.response?.data?.message || error.message} />}
+    {(reportQuery.error || salesQuery.error || purchaseQuery.error) && <Alert type="error" showIcon style={{ marginBottom: 16 }} message="Could not load the report" description={(reportQuery.error || salesQuery.error || purchaseQuery.error)?.response?.data?.message || (reportQuery.error || salesQuery.error || purchaseQuery.error)?.message} />}
 
     <Row gutter={[14, 14]} style={{ marginBottom: 16 }}>
-      <Col xs={24} sm={12} xl={4}><MetricCard title="Revenue" value={summary.revenue} change={changes.revenue_pct} color="#2563eb" /></Col>
-      <Col xs={24} sm={12} xl={4}><MetricCard title="Gross profit" value={summary.gross_profit} change={changes.gross_profit_pct} color="#16a34a" /></Col>
-      <Col xs={24} sm={12} xl={4}><MetricCard title="Gross margin" value={summary.gross_margin_pct} suffix="%" color="#0f766e" /></Col>
-      <Col xs={24} sm={12} xl={4}><MetricCard title="Operating expenses" value={summary.operating_expenses} change={changes.operating_expenses_pct} positiveIsGood={false} color="#d97706" /></Col>
-      <Col xs={24} sm={12} xl={4}><MetricCard title="Net profit" value={summary.net_profit} change={changes.net_profit_pct} color={summary.net_profit >= 0 ? '#16a34a' : '#dc2626'} /></Col>
-      <Col xs={24} sm={12} xl={4}><MetricCard title="Net margin" value={summary.net_margin_pct} suffix="%" color={summary.net_margin_pct >= 0 ? '#7c3aed' : '#dc2626'} /></Col>
+      <Col xs={12} md={8} xl={6} xxl={3}><SummaryCard title="Net sales" value={invoiceSummary.netSales} description="Gross sales − discounts − returned revenue" moneyValue color="#16a34a" /></Col>
+      <Col xs={12} md={8} xl={6} xxl={3}><SummaryCard title="Invoices" value={invoices.length} description="Posted invoices in the selected dates" icon={<ShoppingCartOutlined />} color="#2563eb" /></Col>
+      <Col xs={12} md={8} xl={6} xxl={3}><SummaryCard title="Discounts" value={invoiceSummary.discount} description="Total discount given on all invoices" moneyValue color="#dc2626" /></Col>
+      <Col xs={12} md={8} xl={6} xxl={3}><SummaryCard title="Average invoice" value={averageInvoice} description="Net sales ÷ number of invoices" moneyValue color="#7c3aed" /></Col>
+      <Col xs={12} md={8} xl={6} xxl={3}><SummaryCard title="Cost of goods" value={summary.cogs} description="Actual material and product cost, net of returns" moneyValue color="#d97706" /></Col>
+      <Col xs={12} md={8} xl={6} xxl={3}><SummaryCard
+        title="Operating expenses"
+        value={summary.operating_expenses}
+        description="Posted expenses within the selected dates"
+        moneyValue
+        color="#be123c"
+        action={<Button type="link" size="small" style={{ padding: 0 }} onClick={() => { setExpenseBreakdownPeriod(range); setExpenseBreakdownOpen(true); }}>View breakdown</Button>}
+      /></Col>
+      <Col xs={12} md={8} xl={6} xxl={3}><SummaryCard title="Gross profit" value={summary.gross_profit} description="Net sales − cost of goods" moneyValue color={Number(summary.gross_profit || 0) >= 0 ? '#0284c7' : '#dc2626'} /></Col>
+      <Col xs={12} md={8} xl={6} xxl={3}><SummaryCard title="Net profit" value={summary.net_profit} description="Gross profit − operating expenses" moneyValue color={Number(summary.net_profit || 0) >= 0 ? '#16a34a' : '#dc2626'} /></Col>
     </Row>
 
-    <Card style={{ marginBottom: 16, borderRadius: 14, background: 'linear-gradient(135deg, #14213b 0%, #24395f 100%)', border: 0 }} bodyStyle={{ padding: 20 }}>
-      <Row gutter={[20, 16]} align="middle">
-        <Col xs={24} lg={10}>
-          <Text style={{ color: '#9fb0cb', fontSize: 11, letterSpacing: 1 }}>OWNER'S READOUT</Text>
-          <div style={{ color: '#fff', fontSize: 22, fontWeight: 750, marginTop: 4 }}>{ownerSignals.profitable ? 'The business is profitable for this period.' : 'The business is below break-even for this period.'}</div>
-          <Text style={{ color: '#c9d4e6' }}>{summary.break_even_revenue == null ? 'A positive contribution margin is needed before break-even can be calculated.' : `Break-even revenue at the current gross margin is ${money(summary.break_even_revenue)}.`}</Text>
-        </Col>
-        <Col xs={12} md={6} lg={4}><Statistic title={<span style={{ color: '#9fb0cb' }}>Orders</span>} value={summary.orders || 0} styles={{ content: { color: '#fff' } }} /></Col>
-        <Col xs={12} md={6} lg={4}><Statistic title={<span style={{ color: '#9fb0cb' }}>Average order</span>} value={summary.average_order_value || 0} prefix="₹" precision={0} styles={{ content: { color: '#fff' } }} /></Col>
-        <Col xs={12} md={6} lg={3}><Statistic title={<span style={{ color: '#9fb0cb' }}>Loss products</span>} value={ownerSignals.loss_products || 0} prefix={<WarningOutlined />} styles={{ content: { color: ownerSignals.loss_products ? '#ff7875' : '#73d13d' } }} /></Col>
-        <Col xs={12} md={6} lg={3}><Statistic title={<span style={{ color: '#9fb0cb' }}>Low margin</span>} value={ownerSignals.low_margin_products || 0} prefix={<RiseOutlined />} styles={{ content: { color: ownerSignals.low_margin_products ? '#f6cf75' : '#73d13d' } }} /></Col>
-      </Row>
-      {ownerSignals.best_product && <div style={{ marginTop: 14, color: '#f6cf75' }}><TrophyOutlined /> Best product: <strong>{ownerSignals.best_product.name}</strong> · estimated net profit {money(ownerSignals.best_product.net_profit)} · margin {percentage(ownerSignals.best_product.margin_pct)}</div>}
-    </Card>
-
-    <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-      <Col xs={24} xl={15}>
-        <Card title="Profit trend" style={{ height: '100%', borderRadius: 14 }}>
-          {report.trend?.length ? <div style={{ height: 360 }}><ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={report.trend} margin={{ top: 8, right: 12, left: 8, bottom: 8 }}>
-              <defs><linearGradient id="profitFill" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#22c55e" stopOpacity={0.35} /><stop offset="95%" stopColor="#22c55e" stopOpacity={0.02} /></linearGradient></defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" /><XAxis dataKey="label" minTickGap={28} />
-              <YAxis tickFormatter={value => `₹${Math.round(value / 1000)}k`} width={72} />
-              <ChartTooltip formatter={value => money(value)} contentStyle={{ borderRadius: 10 }} /><Legend />
-              <Area type="monotone" dataKey="revenue" name="Revenue" stroke="#2563eb" fill="#2563eb" fillOpacity={0.08} />
-              <Area type="monotone" dataKey="net_profit" name="Net profit" stroke="#16a34a" fill="url(#profitFill)" strokeWidth={2.5} />
-              <Line type="monotone" dataKey="operating_expenses" name="Operating expenses" stroke="#d97706" strokeWidth={2} dot={false} />
-            </ComposedChart>
-          </ResponsiveContainer></div> : <Empty description="No financial postings in this period" />}
-        </Card>
-      </Col>
-      <Col xs={24} xl={9}>
-        <Card title="Profit & loss statement" style={{ height: '100%', borderRadius: 14 }}>
-          <StatementRow label="Revenue" value={summary.revenue} tone="#2563eb" strong />
-          <StatementRow label="Cost of goods sold" value={summary.cogs} inset />
-          <StatementRow label="Gross profit" value={summary.gross_profit} tone="#16a34a" strong />
-          <StatementRow label="Operating expenses" value={summary.operating_expenses} inset />
-          <StatementRow label="Net profit" value={summary.net_profit} tone={summary.net_profit >= 0 ? '#16a34a' : '#dc2626'} strong />
-          <Collapse ghost size="small" items={accountPanels} style={{ marginTop: 10 }} />
-        </Card>
-      </Col>
-    </Row>
-
-    <Card title="Product-wise profit & loss" style={{ borderRadius: 14 }} extra={<Segmented value={productView} onChange={setProductView} options={[{ label: 'By product', value: 'products' }, { label: 'By variant', value: 'variants' }]} />}>
-      <Alert type="info" showIcon icon={<InfoCircleOutlined />} message="How product net profit is calculated" description={report.product_profitability?.allocation_method || 'Operating expenses are allocated by product revenue share. Gross profit uses the actual cost recorded on each sale.'} style={{ marginBottom: 14 }} />
-      {Math.abs(Number(report.product_profitability?.unreconciled_sales_revenue || 0)) > 0.01 && <Alert type="warning" showIcon message={`${money(report.product_profitability.unreconciled_sales_revenue)} of company revenue is not linked to product sale lines (for example, other income or manual journals).`} style={{ marginBottom: 14 }} />}
+    <Card title="Daily totals" style={{ marginBottom: 16, borderRadius: 12 }} extra={<Text type="secondary">Profit and expenses use posted journal dates</Text>}>
       <Table
-        rowKey="id" columns={productColumns} dataSource={products} loading={loading} scroll={{ x: 1320 }}
-        pagination={{ pageSize, showSizeChanger: true, pageSizeOptions: [10, 25, 50, 100], onShowSizeChange: (_, size) => setPageSize(size), showTotal: total => `${total} records` }}
-        locale={{ emptyText: <Empty description="No product sales in this period" /> }}
-        summary={rows => rows.length ? <Table.Summary.Row>
-          <Table.Summary.Cell index={0}><Text strong>All products total</Text></Table.Summary.Cell>
-          <Table.Summary.Cell index={1} align="right"><Text strong>{rows.reduce((sum, row) => sum + row.quantity, 0).toLocaleString('en-IN')}</Text></Table.Summary.Cell>
-          <Table.Summary.Cell index={2} align="right"><Text strong>{money(rows.reduce((sum, row) => sum + row.revenue, 0))}</Text></Table.Summary.Cell>
-          <Table.Summary.Cell index={3} align="right"><Text strong>{money(rows.reduce((sum, row) => sum + row.cogs, 0))}</Text></Table.Summary.Cell>
-          <Table.Summary.Cell index={4} align="right"><Text strong>{money(rows.reduce((sum, row) => sum + row.gross_profit, 0))}</Text></Table.Summary.Cell>
-          <Table.Summary.Cell index={5} />
-          <Table.Summary.Cell index={6} align="right"><Text strong>{money(rows.reduce((sum, row) => sum + row.allocated_expenses, 0))}</Text></Table.Summary.Cell>
-          <Table.Summary.Cell index={7} align="right"><Text strong>{money(rows.reduce((sum, row) => sum + row.net_profit, 0))}</Text></Table.Summary.Cell>
-          <Table.Summary.Cell index={8} />
-        </Table.Summary.Row> : null}
+        rowKey="date" dataSource={dailyRows} pagination={false} size="small" scroll={{ x: 1120 }}
+        locale={{ emptyText: <Empty description="No sales or expenses in this period" /> }}
+        columns={[
+          { title: 'Date', dataIndex: 'date', render: dateLabel },
+          { title: 'Invoices', dataIndex: 'invoices', align: 'right' },
+          { title: 'Gross sales', dataIndex: 'gross', align: 'right', render: money },
+          { title: 'Discounts', dataIndex: 'discount', align: 'right', render: value => <Text type="danger">− {money(value)}</Text> },
+          { title: 'Returns', dataIndex: 'returns', align: 'right', render: money },
+          { title: 'Net sales', dataIndex: 'net', align: 'right', render: value => <Text strong style={{ color: '#16a34a' }}>{money(value)}</Text> },
+          { title: 'Cost of goods', dataIndex: 'cogs', align: 'right', render: money },
+          { title: 'Expenses', dataIndex: 'expenses', align: 'right', render: (value, row) => <Button type="link" style={{ padding: 0, color: '#be123c' }} onClick={() => { const date = dayjs(row.date); setExpenseBreakdownPeriod([date, date]); setExpenseBreakdownOpen(true); }}>{money(value)}</Button> },
+          { title: 'Net profit', dataIndex: 'netProfit', align: 'right', render: value => <Text strong style={{ color: Number(value || 0) >= 0 ? '#16a34a' : '#dc2626' }}>{money(value)}</Text> }
+        ]}
       />
     </Card>
+
+    <Card
+      title={<Space><ShoppingCartOutlined style={{ color: '#b64232' }} /><span>Detailed purchase report</span></Space>}
+      style={{ marginBottom: 16, borderRadius: 12 }}
+      extra={<Space wrap><Text type="secondary">Supplier invoices and received items</Text><Button icon={<DownloadOutlined />} onClick={exportPurchases} disabled={!purchaseRows.length}>Export purchases</Button></Space>}
+    >
+      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+        <Col xs={12} sm={6}><Statistic title="Purchase invoices" value={purchaseSummary.invoices || 0} /></Col>
+        <Col xs={12} sm={6}><Statistic title="Purchased value" value={purchaseSummary.total || 0} prefix="₹" precision={2} /></Col>
+        <Col xs={12} sm={6}><Statistic title="Paid" value={purchaseSummary.paid || 0} prefix="₹" precision={2} valueStyle={{ color: '#16a34a' }} /></Col>
+        <Col xs={12} sm={6}><Statistic title="Balance due" value={purchaseSummary.due || 0} prefix="₹" precision={2} valueStyle={{ color: '#dc2626' }} /></Col>
+      </Row>
+      <Table rowKey="id" columns={purchaseColumns} dataSource={purchaseRows} loading={purchaseQuery.loading} pagination={{ pageSize: 10, showSizeChanger: true, showTotal: total => `${total} purchase lines` }} scroll={{ x: 1370 }} locale={{ emptyText: <Empty description="No purchases in this period" /> }} />
+    </Card>
+
+    <Card
+      title={salesView === 'invoices' ? 'Invoice-wise sales' : 'Product-wise sales'}
+      style={{ marginBottom: 16, borderRadius: 12 }}
+      extra={<Space wrap>
+        <Segmented value={salesView} onChange={setSalesView} options={[{ label: 'Invoice-wise', value: 'invoices' }, { label: 'Product-wise', value: 'products' }]} />
+        {salesView === 'invoices' && <Text type="secondary">Click an invoice to see every item and discount</Text>}
+      </Space>}
+    >
+      {salesView === 'invoices' ? <Table
+          rowKey="id" columns={invoiceColumns} dataSource={invoices} loading={salesQuery.loading}
+          onRow={sale => ({ onClick: () => setSelectedInvoiceId(sale.id), style: { cursor: 'pointer' } })}
+          scroll={{ x: 1430 }} pagination={{ pageSize: 15, showSizeChanger: true, showTotal: total => `${total} invoices` }}
+          locale={{ emptyText: <Empty description="No invoices in this period" /> }}
+        /> : <Table
+          rowKey="id" columns={productColumns} dataSource={products} loading={reportQuery.loading}
+          scroll={{ x: 1050 }} pagination={{ pageSize: 15, showSizeChanger: true, showTotal: total => `${total} products` }}
+          locale={{ emptyText: <Empty description="No products sold in this period" /> }}
+        />}
+    </Card>
+
+    <InvoiceDrawer invoiceId={selectedInvoiceId} onClose={() => setSelectedInvoiceId(null)} />
+    <ExpenseBreakdownDrawer
+      open={expenseBreakdownOpen}
+      onClose={() => setExpenseBreakdownOpen(false)}
+      range={expenseBreakdownPeriod}
+    />
   </div>;
 }

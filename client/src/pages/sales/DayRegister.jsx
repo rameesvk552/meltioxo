@@ -55,7 +55,7 @@ export default function DayRegister() {
     { title: 'Business date', dataIndex: 'business_date', render: value => dateLabel(value) },
     { title: 'Status', dataIndex: 'status', render: value => <Tag color={value === 'open' ? 'processing' : 'success'}>{String(value).toUpperCase()}</Tag> },
     { title: 'Sales', dataIndex: 'sales_count', align: 'right' },
-    { title: 'Sales total', dataIndex: 'total_sales', align: 'right', render: money },
+    { title: 'Net sales', dataIndex: 'total_sales', align: 'right', render: money },
     { title: 'Expected cash', dataIndex: 'expected_cash', align: 'right', render: value => value == null ? '—' : money(value) },
     { title: 'Counted cash', dataIndex: 'counted_cash', align: 'right', render: value => value == null ? '—' : money(value) },
     { title: 'Variance', dataIndex: 'cash_variance', align: 'right', render: value => value == null ? '—' : <Text type={Number(value) === 0 ? 'success' : 'danger'} strong>{money(value)}</Text> },
@@ -78,11 +78,11 @@ export default function DayRegister() {
       </Card>
       <Row gutter={[16, 16]}>
         <Col xs={12} lg={6}><Card><Statistic title="Opening cash" value={Number(current.opening_cash)} precision={2} prefix="₹" /></Card></Col>
-        <Col xs={12} lg={6}><Card><Statistic title="Sales" value={Number(current.total_sales)} precision={2} prefix="₹" suffix={<small>{current.sales_count} bills</small>} /></Card></Col>
+        <Col xs={12} lg={6}><Card><Statistic title="Net sales" value={Number(current.total_sales)} precision={2} prefix="₹" suffix={<small>{current.sales_count} bills · {current.return_count || 0} returns</small>} /></Card></Col>
         <Col xs={12} lg={6}><Card><Statistic title="Cash collected" value={Number(current.cash_movement)} precision={2} prefix="₹" /></Card></Col>
         <Col xs={12} lg={6}><Card className="expected-card"><Statistic title="Expected in drawer" value={expectedCash} precision={2} prefix="₹" /></Card></Col>
       </Row>
-      <Card title="Collections by payment method" className="day-register-payments">
+      <Card title="Net movement by payment method" className="day-register-payments">
         {(current.payment_summary || []).length ? <div className="payment-summary-grid">{current.payment_summary.map(row => <div key={row.payment_method_id || row.name}><span>{row.name}<small>{row.count} payment{row.count === 1 ? '' : 's'}</small></span><strong>{money(row.amount)}</strong></div>)}</div> : <div className="day-register-empty">No sales have been recorded in this register.</div>}
       </Card>
     </> : <Card className="day-register-closed-state">
@@ -106,7 +106,7 @@ export default function DayRegister() {
 
     <Modal title="Close and reconcile day" open={closeVisible} onCancel={() => !saving && setCloseVisible(false)} onOk={() => closeForm.submit()} okText="Close day permanently" okButtonProps={{ danger: true }} confirmLoading={saving} width={560} destroyOnHidden>
       <Alert type="warning" showIcon message="Count the physical cash before closing" description="Closing locks this register. It cannot be reopened." />
-      <div className="close-reconciliation"><div><span>Opening cash</span><strong>{money(current?.opening_cash)}</strong></div><div><span>Cash sales</span><strong>{money(current?.cash_movement)}</strong></div><div className="expected"><span>Expected cash</span><strong>{money(expectedCash)}</strong></div></div>
+      <div className="close-reconciliation"><div><span>Opening cash</span><strong>{money(current?.opening_cash)}</strong></div><div><span>Net cash movement</span><strong>{money(current?.cash_movement)}</strong></div><div className="expected"><span>Expected cash</span><strong>{money(expectedCash)}</strong></div></div>
       <Form form={closeForm} layout="vertical" onFinish={closeDay} className="day-register-form">
         <Form.Item name="counted_cash" label="Cash counted in drawer" rules={[{ required: true, message: 'Enter counted cash' }]}><InputNumber min={0} precision={2} prefix="₹" style={{ width: '100%' }} /></Form.Item>
         <div className={`variance-preview ${variance === 0 ? 'balanced' : 'different'}`}><span>Variance</span><strong>{money(variance)}</strong></div>

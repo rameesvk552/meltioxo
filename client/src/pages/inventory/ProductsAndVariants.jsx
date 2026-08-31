@@ -111,6 +111,7 @@ export default function ProductsAndVariants() {
   const [savingFormula, setSavingFormula] = useState(false);
   const selectedProductSourceType = Form.useWatch('source_type', productForm) || 'live_make';
   const sellByMeasurement = Form.useWatch('sell_by_measurement', productForm) === true;
+  const measurementSourceType = Form.useWatch('measurement_source_type', productForm) || 'formula';
   const isReadyMadeProduct = !sellByMeasurement && selectedProductSourceType === 'ready_made';
   const initialVariants = Form.useWatch('initial_variants', productForm) || EMPTY_LIST;
   const selectedProductFormulaId = Form.useWatch('formula_id', productForm);
@@ -275,7 +276,10 @@ export default function ProductsAndVariants() {
     product_id: product.id,
     productName: product.name,
     sourceType: 'live_make',
-    formulaName: product.formula?.name || '—',
+    measurementSourceType: product.measurement_source_type || 'formula',
+    formulaName: product.measurement_source_type === 'raw_material'
+      ? rawMaterials.find(material => material.id === product.measurement_source_id)?.name || 'Raw material not selected'
+      : product.measurement_source_type === 'bulk_stock' ? 'Own bulk perfume stock' : product.formula?.name || '—',
     formulaOverride: false,
     size: `Sold per ${product.measurement_unit || 'ml'}`,
     fillMl: null,
@@ -283,10 +287,10 @@ export default function ProductsAndVariants() {
     sku: '—',
     sellingPrice: Number(product.measurement_price || 0),
     costPrice: null,
-    stock: null,
+    stock: product.measurement_source_type === 'bulk_stock' ? Number(product.finishedGoods?.find(item => item.is_measurement_item)?.current_stock || 0) : null,
     reorder: 0,
     packagingCount: 0,
-    readyToMake: Boolean(product.formula_id),
+    readyToMake: product.measurement_source_type === 'raw_material' ? Boolean(product.measurement_source_id) : Boolean(product.formula_id),
     isMeasurement: true,
     is_active: product.is_active
   }));
@@ -334,8 +338,8 @@ export default function ProductsAndVariants() {
         formula_id: values.sell_by_measurement || values.source_type !== 'ready_made' ? values.formula_id || null : null,
         measurement_unit: values.sell_by_measurement ? 'ml' : null,
         measurement_price: values.sell_by_measurement ? values.measurement_price : null,
-        measurement_min_qty: values.sell_by_measurement ? values.measurement_min_qty : null,
-        measurement_step: values.sell_by_measurement ? values.measurement_step : null,
+        measurement_source_type: values.sell_by_measurement ? values.measurement_source_type || 'formula' : 'formula',
+        measurement_source_id: values.sell_by_measurement && values.measurement_source_type === 'raw_material' ? values.measurement_source_id : null,
         ...(!editingProduct && !values.sell_by_measurement ? {
           initial_variants: (values.initial_variants || []).map(variant => ({
             ...variant,
@@ -363,8 +367,8 @@ export default function ProductsAndVariants() {
       sell_by_measurement: false,
       measurement_unit: 'ml',
       measurement_price: 0,
-      measurement_min_qty: 1,
-      measurement_step: 1,
+      measurement_source_type: 'formula',
+      measurement_source_id: null,
       initial_variants: [{ uom: 'pcs', fill_quantity_ml: 100, cost_price: 0, selling_price: 0, current_stock: 0, reorder_level: 20, packaging: [] }]
     });
     setProductModalOpen(true);
@@ -381,8 +385,8 @@ export default function ProductsAndVariants() {
       sell_by_measurement: Boolean(product.sell_by_measurement),
       measurement_unit: product.measurement_unit || 'ml',
       measurement_price: Number(product.measurement_price || 0),
-      measurement_min_qty: Number(product.measurement_min_qty || 1),
-      measurement_step: Number(product.measurement_step || 1),
+      measurement_source_type: product.measurement_source_type || 'formula',
+      measurement_source_id: product.measurement_source_id || null,
       formula_id: product.formula_id || null,
       description: product.description
     });
@@ -446,7 +450,7 @@ export default function ProductsAndVariants() {
         fill_quantity_ml: values.source_type === 'ready_made' ? null : values.fill_quantity_ml,
         selling_price: values.selling_price,
         cost_price: values.cost_price,
-        ...(!editingVariant ? { current_stock: values.current_stock || 0 } : {}),
+        current_stock: Number(values.current_stock || 0),
         reorder_level: values.reorder_level || 0,
         packaging: values.source_type === 'ready_made' ? [] : values.packaging || []
       };
@@ -562,10 +566,10 @@ export default function ProductsAndVariants() {
     },
     { title: 'SKU', dataIndex: 'sku', key: 'sku' },
     { title: 'Packaging BOM', dataIndex: 'packagingCount', key: 'packagingCount', render: (value, row) => row.sourceType === 'ready_made' || row.isMeasurement ? 'Not required' : `${value} items` },
-    { title: 'Source', key: 'source', render: (_, row) => row.sourceType === 'ready_made' ? <Tag color="blue">Ready-made</Tag> : row.isMeasurement ? <Tag color="purple">Measured · Make live</Tag> : <Tag color={row.readyToMake ? 'success' : 'warning'}>{row.readyToMake ? 'Make live' : 'Incomplete live setup'}</Tag> },
+    { title: 'Source', key: 'source', render: (_, row) => row.sourceType === 'ready_made' ? <Tag color="blue">Ready-made</Tag> : row.isMeasurement ? <Tag color="purple">{row.measurementSourceType === 'raw_material' ? 'Measured · Raw material' : row.measurementSourceType === 'bulk_stock' ? 'Measured · Bulk stock' : 'Measured · Formula'}</Tag> : <Tag color={row.readyToMake ? 'success' : 'warning'}>{row.readyToMake ? 'Make live' : 'Incomplete live setup'}</Tag> },
     { title: 'Cost', dataIndex: 'costPrice', key: 'costPrice', align: 'right', render: (value, row) => row.isMeasurement ? 'At sale' : `₹${value.toLocaleString('en-IN')}` },
     { title: 'Price', dataIndex: 'sellingPrice', key: 'sellingPrice', align: 'right', render: (value, row) => `₹${value.toLocaleString('en-IN')}${row.isMeasurement ? `/${row.uom}` : ''}` },
-    { title: 'Stock', dataIndex: 'stock', key: 'stock', align: 'right', render: (value, row) => row.isMeasurement ? 'Raw materials' : `${value} ${row.uom}` },
+    { title: 'Stock', dataIndex: 'stock', key: 'stock', align: 'right', render: (value, row) => row.isMeasurement ? row.measurementSourceType === 'bulk_stock' ? `${Number(value || 0)} ml` : row.measurementSourceType === 'raw_material' ? 'Linked material' : 'Formula materials' : `${value} ${row.uom}` },
     {
       title: 'Status',
       key: 'status',
@@ -693,13 +697,28 @@ export default function ProductsAndVariants() {
             />
           </Form.Item>
           {sellByMeasurement && (
-            <Alert
-              type="info"
-              showIcon
-              style={{ marginBottom: 16 }}
-              message="Always made live from the selected formula"
-              description="At sale time the cashier selects this product and enters the required ml. No variant or formula selection is shown in sales."
-            />
+            <Card size="small" title="Measured inventory source" style={{ marginBottom: 16 }}>
+              <Form.Item name="measurement_source_type" label="Deduct sold millilitres from" rules={[{ required: true }]}>
+                <Select options={[
+                  { value: 'formula', label: 'Formula ingredients — make at sale time' },
+                  { value: 'raw_material', label: 'Raw material — prepared liquid stock' },
+                  { value: 'bulk_stock', label: 'Bulk perfume — produce first, then sell from stock' }
+                ]} onChange={value => {
+                  if (value !== 'raw_material') productForm.setFieldValue('measurement_source_id', null);
+                  if (value === 'raw_material') productForm.setFieldValue('formula_id', null);
+                }} />
+              </Form.Item>
+              {measurementSourceType === 'raw_material' && <Form.Item name="measurement_source_id" label="Source raw material" rules={[{ required: true, message: 'Select the prepared perfume/raw material' }]} extra="Only materials stocked in ml or L can be selected.">
+                <Select showSearch optionFilterProp="label" placeholder="Select prepared perfume liquid" options={rawMaterials
+                  .filter(material => ['ml', 'l', 'litre', 'litres', 'liter', 'liters'].includes(String(material.unit || '').toLowerCase()))
+                  .map(material => ({ value: material.id, label: `${material.name} (${material.sku}) · ${Number(material.current_stock || 0)} ${material.unit}` }))} />
+              </Form.Item>}
+              <Alert type="info" showIcon message={measurementSourceType === 'raw_material'
+                ? 'Sales deduct directly from the selected liquid material.'
+                : measurementSourceType === 'bulk_stock'
+                  ? 'Produce this perfume in bulk first; sales deduct its stock in ml.'
+                  : 'Each sale scales the formula and consumes its ingredients immediately.'} />
+            </Card>
           )}
           {!sellByMeasurement && <Form.Item name="source_type" label="How is this product supplied?" rules={[{ required: true }]}>
             <Segmented
@@ -722,9 +741,9 @@ export default function ProductsAndVariants() {
               description="This product is purchased from a supplier as finished stock. Add its cost and selling details when you create the variant."
             />
           )}
-          {!isReadyMadeProduct && <Form.Item label={sellByMeasurement ? 'Formula' : 'Default Formula'} extra={sellByMeasurement ? 'The formula is linked once here and scaled automatically by the ml sold.' : 'Optional. Variants can also select their own formula.'}>
+          {!isReadyMadeProduct && (!sellByMeasurement || measurementSourceType !== 'raw_material') && <Form.Item label={sellByMeasurement ? 'Formula' : 'Default Formula'} extra={measurementSourceType === 'bulk_stock' ? 'Used when producing this perfume into bulk stock.' : sellByMeasurement ? 'The formula is linked once here and scaled automatically by the ml sold.' : 'Optional. Variants can also select their own formula.'}>
             <Space.Compact block>
-              <Form.Item name="formula_id" noStyle rules={sellByMeasurement || (!editingProduct && !isReadyMadeProduct) ? [{ required: true, message: 'Select or create a formula' }] : []}>
+              <Form.Item name="formula_id" noStyle rules={(sellByMeasurement && measurementSourceType !== 'raw_material') || (!editingProduct && !isReadyMadeProduct) ? [{ required: true, message: 'Select or create a formula' }] : []}>
                 <Select
                   allowClear
                   showSearch
@@ -743,19 +762,9 @@ export default function ProductsAndVariants() {
           {sellByMeasurement && (
             <Card size="small" title="Measurement pricing" style={{ marginBottom: 16 }}>
               <Row gutter={16}>
-                <Col xs={24} sm={8}>
+                <Col xs={24} sm={12}>
                   <Form.Item name="measurement_price" label="Price per ml" rules={[{ required: true, message: 'Enter the price per ml' }]}>
                     <InputNumber min={0} precision={2} prefix="₹" style={{ width: '100%' }} />
-                  </Form.Item>
-                </Col>
-                <Col xs={12} sm={8}>
-                  <Form.Item name="measurement_min_qty" label="Minimum ml" rules={[{ required: true }]}>
-                    <InputNumber min={0.0001} precision={4} style={{ width: '100%' }} />
-                  </Form.Item>
-                </Col>
-                <Col xs={12} sm={8}>
-                  <Form.Item name="measurement_step" label="Quantity step (ml)" rules={[{ required: true }]}>
-                    <InputNumber min={0.0001} precision={4} style={{ width: '100%' }} />
                   </Form.Item>
                 </Col>
               </Row>
@@ -1091,8 +1100,8 @@ export default function ProductsAndVariants() {
               </Form.Item>
             </Col>
             <Col xs={12} md={6}>
-              <Form.Item name="current_stock" label="Opening Stock">
-                <InputNumber min={0} disabled={Boolean(editingVariant)} style={{ width: '100%' }} />
+              <Form.Item name="current_stock" label={editingVariant ? 'Current Stock' : 'Opening Stock'} extra={editingVariant ? 'Changes are recorded as a stock adjustment.' : undefined}>
+                <InputNumber min={0} style={{ width: '100%' }} />
               </Form.Item>
             </Col>
             <Col xs={12} md={6}>

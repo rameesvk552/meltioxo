@@ -91,7 +91,7 @@ const createPayment = async (req, res, next, paymentType) => {
       payment_number: req.body.payment_number || `PAY-${paymentType === 'incoming' ? 'IN' : 'OUT'}-${new Date(payment_date).getFullYear()}-${String(sequence).padStart(4, '0')}`, created_by: req.user.id }, { transaction });
     const controlCode = paymentType === 'incoming' ? ACCOUNT_CODES.AR : ACCOUNT_CODES.AP;
     const accounts = await accounting.getAccountsByCode(req.tenantId, [controlCode], transaction);
-    const controlAccount = accounts[controlCode];
+    const controlAccount = partyType === 'supplier' ? await accounting.getSupplierLedger(req.tenantId, party.id, transaction) : accounts[controlCode];
     const journal = await accounting.createAndPost(req.tenantId, { entry_date: payment_date, reference_type: 'payment', reference_id: item.id,
       narration: `${paymentType === 'incoming' ? 'Customer receipt' : 'Supplier payment'} ${item.payment_number}`,
       lines: paymentType === 'incoming'

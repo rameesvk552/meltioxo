@@ -4,6 +4,7 @@ module.exports = (sequelize, DataTypes) => {
     tenant_id: { type: DataTypes.UUID },
     code: { type: DataTypes.STRING },
     name: { type: DataTypes.STRING },
+    supplier_id: { type: DataTypes.UUID, allowNull: true },
     type: { type: DataTypes.ENUM('asset','liability','equity','revenue','expense') },
     parent_id: { type: DataTypes.UUID, allowNull: true },
     // Groups organise the chart; only leaf ledgers may receive journal lines.
@@ -19,6 +20,11 @@ module.exports = (sequelize, DataTypes) => {
       {
         unique: true,
         fields: ['tenant_id', 'code']
+      },
+      {
+        unique: true,
+        fields: ['tenant_id', 'supplier_id'],
+        where: { supplier_id: { [require('sequelize').Op.ne]: null } }
       }
     ]
   });

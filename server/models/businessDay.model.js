@@ -1,6 +1,7 @@
 module.exports = (sequelize, DataTypes) => sequelize.define('businessDay', {
   id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
   tenant_id: { type: DataTypes.UUID, allowNull: false },
+  branch_id: { type: DataTypes.UUID, allowNull: true },
   business_date: { type: DataTypes.DATEONLY, allowNull: false },
   status: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'open', validate: { isIn: [['open', 'closed']] } },
   opening_cash: { type: DataTypes.DECIMAL(15, 2), allowNull: false, defaultValue: 0 },

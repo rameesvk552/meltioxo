@@ -114,7 +114,10 @@ exports.create = async (req, res, next) => {
       order_number: req.body.order_number || `PROD-${new Date().getFullYear()}-${String(sequence).padStart(4, '0')}`
     }, { transaction });
     await productionOutput.bulkCreate(outputSpecs.map(row => ({ ...row, production_order_id: item.id })), { transaction });
-    const requirementRows = await Promise.all(outputSpecs.map(row => productionService.calculateMaterialRequirements(req.tenantId, item.formula_id, row.planned_qty, row.finished_good_id)));
+    const requirementRows = await Promise.all(outputSpecs.map(row => {
+      const outputVariant = variants.find(candidate => candidate.id === row.finished_good_id);
+      return productionService.calculateMaterialRequirements(req.tenantId, item.formula_id, row.planned_qty, row.finished_good_id, transaction, { excludePackaging: Boolean(outputVariant?.is_measurement_item) });
+    }));
     const requirements = productionService.combineMaterialRequirements(requirementRows.flat());
     const availability = await productionService.checkAvailability(req.tenantId, requirements);
     if (availability.length) {

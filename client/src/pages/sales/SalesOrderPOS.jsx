@@ -11,15 +11,20 @@ const { Text } = Typography;
 const { Option } = Select;
 const { TextArea } = Input;
 const money = value => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(Number(value || 0));
+const roundMoney = value => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 const quantityLabel = value => Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 4 });
+const newSaleItem = (itemType = 'finished_good') => ({ key: `${itemType}-${Date.now()}-${Math.random()}`, itemType, product: null, qty: 1, packCount: 1, packingKit: null, price: 0, discount: 0, tax: itemType === 'finished_good' ? 18 : 0 });
 
 export default function SalesOrderPOS() {
   const [form] = Form.useForm();
   const [customerForm] = Form.useForm();
   const navigate = useNavigate();
   const { data: finishedGoods, loading: productsLoading } = useApiData('/finished-goods');
+  const { data: packagingMaterials, loading: packagingLoading } = useApiData('/packaging-materials');
   const { data: customers } = useApiData('/customers');
   const { data: paymentMethods } = useApiData('/accounts/payment-methods');
+  const { data: tenantSettings } = useApiData('/tenant/settings', { initialData: {} });
+  const { data: packingKits } = useApiData('/packing-kits');
   const { data: dayState, loading: dayLoading, reload: reloadDay } = useApiData('/business-days/current', { initialData: {} });
   const [phone, setPhone] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState(null);
@@ -30,20 +35,50 @@ export default function SalesOrderPOS() {
   const [cashTendered, setCashTendered] = useState(0);
   const [confirmationOpen, setConfirmationOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [items, setItems] = useState([{ key: '1', product: null, qty: 1, price: 0, discount: 0, tax: 18 }]);
+  const showFormulaInSales = Boolean(tenantSettings.show_formula_in_sales);
+  const [items, setItems] = useState([{ ...newSaleItem(), key: '1' }]);
 
   const products = finishedGoods
     .filter(item => item.is_active !== false && item.product?.is_active !== false)
     .map(item => ({ ...item, price: Number(item.selling_price || 0), tax: Number(item.tax_rate || 0) }));
+  const packingMaterialsForSale = packagingMaterials.map(item => ({ ...item, price: Number(item.selling_price || 0), tax: Number(item.tax_rate || 0) }));
+  const selectedItemFor = item => item.itemType === 'packaging_material'
+    ? packingMaterialsForSale.find(material => material.id === item.product)
+    : products.find(product => product.id === item.product);
   const normalizedPhone = phone.replace(/\D/g, '');
   const matchingCustomers = customers.filter(customer => normalizedPhone.length >= 3 && (customer.phone || '').replace(/\D/g, '').includes(normalizedPhone));
   const selectedCount = items.filter(item => item.product).length;
-  const subtotal = items.reduce((sum, item) => sum + item.price * item.qty, 0);
-  const discountAmount = discountMode === 'percentage' ? subtotal * discount / 100 : Math.min(Number(discount || 0), subtotal);
-  const discountPct = subtotal ? discountAmount / subtotal * 100 : 0;
-  const tax = items.reduce((sum, item) => sum + item.price * item.qty * (1 - discountPct / 100) * item.tax / 100, 0);
-  const total = subtotal - discountAmount + tax;
   const saleItems = items.filter(item => item.product);
+  const matchingKitsFor = fillMl => packingKits.filter(kit => kit.is_active !== false && Number(kit.minimum_fill_ml) <= Number(fillMl) && Number(kit.maximum_fill_ml) >= Number(fillMl));
+  const selectedKitIdFor = item => {
+    if (item.packingKit) return item.packingKit;
+    const matches = matchingKitsFor(item.qty);
+    return tenantSettings.measured_packaging_auto_select !== false && matches.length === 1 ? matches[0].id : null;
+  };
+  const saleQuantity = item => {
+    const selected = selectedItemFor(item);
+    if (item.itemType === 'packaging_material') return Number(item.qty || 0);
+    return selected?.product?.sell_by_measurement ? Number(item.qty || 0) * Number(item.packCount || 1) : Number(item.qty || 0);
+  };
+  // Keep this calculation identical to retailSaleV2.controller.js. The API
+  // rounds every line's base, discount, taxable value, and tax to cents
+  // before summing, so the payment amount and document total cannot drift by
+  // a cent due to JavaScript floating-point arithmetic.
+  const subtotal = roundMoney(saleItems.reduce((sum, item) => sum + roundMoney(item.price * saleQuantity(item)), 0));
+  const discountInput = Math.max(0, Number(discount || 0));
+  const discountPct = discountMode === 'percentage'
+    ? Math.min(discountInput, 100)
+    : subtotal ? Math.min(discountInput, subtotal) / subtotal * 100 : 0;
+  const saleLineTotals = saleItems.map(item => {
+    const base = roundMoney(Number(item.price || 0) * saleQuantity(item));
+    const lineDiscount = roundMoney(base * discountPct / 100);
+    const taxable = roundMoney(base - lineDiscount);
+    const lineTax = roundMoney(taxable * Number(item.tax || 0) / 100);
+    return { item, total: roundMoney(taxable + lineTax), lineDiscount, lineTax };
+  });
+  const discountAmount = roundMoney(saleLineTotals.reduce((sum, line) => sum + line.lineDiscount, 0));
+  const tax = roundMoney(saleLineTotals.reduce((sum, line) => sum + line.lineTax, 0));
+  const total = roundMoney(subtotal - discountAmount + tax);
   const validPayments = paymentSplits.filter(row => row.payment_method_id && Number(row.amount) > 0);
   const paidCents = validPayments.reduce((sum, row) => sum + Math.round(Number(row.amount) * 100), 0);
   const cashMethodIds = new Set(paymentMethods.filter(method => String(method.method_type || '').toUpperCase() === 'CASH' || String(method.name || '').toLowerCase().includes('cash')).map(method => method.id));
@@ -51,14 +86,17 @@ export default function SalesOrderPOS() {
   const changeAmount = Math.max(0, Number(cashTendered || 0) - cashPaymentAmount);
 
   const updateProduct = (productId, key) => {
-    const product = products.find(item => item.id === productId);
+    const currentItem = items.find(item => item.key === key);
+    const product = currentItem?.itemType === 'packaging_material'
+      ? packingMaterialsForSale.find(item => item.id === productId)
+      : products.find(item => item.id === productId);
     if (!product) return;
-    const minimum = product.product?.sell_by_measurement ? Number(product.product.measurement_min_qty || 1) : 1;
-    setItems(current => current.map(item => item.key === key ? { ...item, product: productId, qty: minimum, price: product.price, tax: product.tax } : item));
+    const minimum = 1;
+    setItems(current => current.map(item => item.key === key ? { ...item, product: productId, qty: minimum, packCount: 1, packingKit: null, price: product.price, tax: product.tax } : item));
   };
 
   const updateItem = (value, field, key) => setItems(current => current.map(item => item.key === key ? { ...item, [field]: value } : item));
-  const addItem = () => setItems(current => [...current, { key: Date.now().toString(), product: null, qty: 1, price: 0, discount: 0, tax: 18 }]);
+  const addItem = (itemType = 'finished_good') => setItems(current => [...current, newSaleItem(itemType)]);
   const removeItem = key => setItems(current => current.length > 1 ? current.filter(item => item.key !== key) : current);
 
   const selectCustomer = customer => {
@@ -86,7 +124,16 @@ export default function SalesOrderPOS() {
 
   const validateSale = () => {
     if (!saleItems.length) {
-      message.error('Add at least one product.');
+      message.error('Add at least one item.');
+      return false;
+    }
+    const missingKit = saleItems.find(item => {
+      const selected = selectedItemFor(item);
+      if (item.itemType === 'packaging_material') return false;
+      return tenantSettings.measured_packaging_enabled && tenantSettings.measured_packaging_required !== false && selected?.product?.sell_by_measurement && !selectedKitIdFor(item);
+    });
+    if (missingKit) {
+      message.error(matchingKitsFor(missingKit.qty).length ? 'Select a packing kit for every measured product.' : `No packing kit supports ${quantityLabel(missingKit.qty)} ml.`);
       return false;
     }
     if (!validPayments.length) {
@@ -111,8 +158,12 @@ export default function SalesOrderPOS() {
       payments: validPayments.map(row => ({ payment_method_id: row.payment_method_id, amount: row.amount })),
       allow_negative_materials: allowNegativeMaterials,
       items: saleItems.map(item => ({
-        finished_good_id: item.product,
-        quantity: item.qty,
+        finished_good_id: item.itemType === 'finished_good' ? item.product : undefined,
+        packaging_material_id: item.itemType === 'packaging_material' ? item.product : undefined,
+        quantity: saleQuantity(item),
+        fill_quantity_ml: item.itemType === 'finished_good' && selectedItemFor(item)?.product?.sell_by_measurement ? Number(item.qty) : undefined,
+        pack_count: item.itemType === 'finished_good' && selectedItemFor(item)?.product?.sell_by_measurement ? Number(item.packCount || 1) : 1,
+        packing_kit_id: item.itemType === 'finished_good' && selectedItemFor(item)?.product?.sell_by_measurement && tenantSettings.measured_packaging_enabled ? selectedKitIdFor(item) : null,
         unit_price: item.price,
         discount_pct: discountPct,
         tax_rate: item.tax,
@@ -183,7 +234,7 @@ export default function SalesOrderPOS() {
         <span className="pos-title-icon"><ShoppingCartOutlined /></span>
         <div className="pos-title"><h1>New retail sale</h1><span>Build the order, then collect payment</span></div>
         <button type="button" className="pos-order-status pos-day-status" onClick={() => navigate('/app/day-register')}><span className="pos-status-dot" />Day open · {dayState.current.business_date}</button>
-        <Tag>{selectedCount} {selectedCount === 1 ? 'product' : 'products'}</Tag>
+        <Tag>{selectedCount} {selectedCount === 1 ? 'item' : 'items'}</Tag>
       </header>
 
       <div className="pos-layout">
@@ -203,19 +254,27 @@ export default function SalesOrderPOS() {
           </Card>
 
           <Card className="pos-items-card">
-            <div className="pos-items-toolbar"><div><strong>Order items</strong><span>{selectedCount ? `${selectedCount} product${selectedCount === 1 ? '' : 's'} in this sale` : 'Search and add products to begin'}</span></div><Button type="primary" icon={<PlusOutlined />} onClick={addItem}>Add product</Button></div>
+            <div className="pos-items-toolbar"><div><strong>Order items</strong><span>{selectedCount ? `${selectedCount} item${selectedCount === 1 ? '' : 's'} in this sale` : 'Search and add items to begin'}</span></div><Space wrap><Button type="primary" icon={<PlusOutlined />} onClick={() => addItem('finished_good')}>Add product</Button>{tenantSettings.packaging_material_sales_enabled && <Button icon={<PlusOutlined />} onClick={() => addItem('packaging_material')}>Add packing material</Button>}</Space></div>
             <div className="pos-items-scroll">
               {items.map((item, index) => {
-                const selected = products.find(product => product.id === item.product);
-                const packages = selected ? (selected.variantPackagings || []).map(row => `${Number(row.quantity) * item.qty} ${row.packagingMaterial?.name || 'packaging'}`).join(' + ') : '';
-                const isReadyMade = selected?.source_type === 'ready_made';
-                const isMeasured = Boolean(selected?.product?.sell_by_measurement);
-                const unit = isMeasured ? selected.product.measurement_unit || 'ml' : selected?.uom || 'pcs';
-                const hasStock = selected && Number(selected.current_stock) >= item.qty;
+                const selected = selectedItemFor(item);
+                const isPackaging = item.itemType === 'packaging_material';
+                const isReadyMade = isPackaging || selected?.source_type === 'ready_made';
+                const isMeasured = !isPackaging && Boolean(selected?.product?.sell_by_measurement);
+                const matchingKits = isMeasured ? matchingKitsFor(item.qty) : [];
+                const selectedKitId = isMeasured ? selectedKitIdFor(item) : null;
+                const selectedKit = matchingKits.find(kit => kit.id === selectedKitId);
+                const packages = selectedKit
+                  ? (selectedKit.packingKitItems || []).map(row => `${Number(row.quantity) * Number(item.packCount || 1)} ${row.packagingMaterial?.name || 'packaging'}`).join(' + ')
+                  : !isPackaging && selected ? (selected.variantPackagings || []).map(row => `${Number(row.quantity) * item.qty} ${row.packagingMaterial?.name || 'packaging'}`).join(' + ') : '';
+                const unit = isPackaging ? selected?.unit || 'pcs' : isMeasured ? selected.product.measurement_unit || 'ml' : selected?.uom || 'pcs';
+                const lineQuantity = saleQuantity(item);
+                const hasStock = selected && Number(selected.current_stock) >= lineQuantity;
+                const projectedStock = selected ? Number(selected.current_stock || 0) - lineQuantity : 0;
                 return <section className="pos-item" key={item.key}>
-                  <div className="pos-item-head"><span className="pos-item-index">{index + 1}</span><strong>{selected ? (selected.product?.name || selected.name) : `Product ${index + 1}`}</strong><Text type="secondary">{selected ? isMeasured ? `Sold per ${unit}` : `${selected.size_label || selected.name} · ${selected.sku}` : 'Not selected'}</Text><Button type="text" danger size="small" icon={<DeleteOutlined />} disabled={items.length === 1} onClick={() => removeItem(item.key)} /></div>
+                  <div className="pos-item-head"><span className="pos-item-index">{index + 1}</span><strong>{selected ? (selected.product?.name || selected.name) : isPackaging ? `Packing material ${index + 1}` : `Product ${index + 1}`}</strong><Text type="secondary">{selected ? isPackaging ? `${selected.sku} · ${selected.unit || 'pcs'}` : isMeasured ? `Sold per ${unit}` : `${selected.size_label || selected.name} · ${selected.sku}` : 'Not selected'}</Text><Button type="text" danger size="small" icon={<DeleteOutlined />} disabled={items.length === 1} onClick={() => removeItem(item.key)} /></div>
                   <div className="pos-item-grid">
-                    <label className="pos-field pos-product-field"><span>Product / SKU</span><Select showSearch optionFilterProp="label" optionLabelProp="title" placeholder="Search product name, code, or SKU" loading={productsLoading} notFoundContent={<span className="pos-select-empty">{productsLoading ? 'Loading products…' : 'No matching product, code, or SKU'}</span>} value={item.product} onChange={value => updateProduct(value, item.key)}>{products.map(product => {
+                    <label className="pos-field pos-product-field"><span>{isPackaging ? 'Packing material / SKU' : 'Product / SKU'}</span><Select showSearch optionFilterProp="label" optionLabelProp="title" placeholder={isPackaging ? 'Search packing material or SKU' : 'Search product name, code, or SKU'} loading={isPackaging ? packagingLoading : productsLoading} notFoundContent={<span className="pos-select-empty">{isPackaging ? packagingLoading ? 'Loading packing materials…' : 'No matching packing material or SKU' : productsLoading ? 'Loading products…' : 'No matching product, code, or SKU'}</span>} value={item.product} onChange={value => updateProduct(value, item.key)}>{isPackaging ? packingMaterialsForSale.map(material => <Option key={material.id} value={material.id} label={`${material.sku || ''} ${material.name}`} title={`${material.name} · ${material.sku || 'No SKU'}`}>{material.sku ? `${material.sku} · ` : ''}{material.name} · {quantityLabel(material.current_stock)} {material.unit || 'pcs'} in stock</Option>) : products.map(product => {
                       const productName = product.product?.name || product.name;
                       const productCode = product.product?.code || '';
                       const variantName = product.size_label || product.name;
@@ -223,18 +282,20 @@ export default function SalesOrderPOS() {
                       const selectedLabel = product.product?.sell_by_measurement ? `${productName} · per ml` : `${productName} · ${variantName}`;
                       return <Option key={product.id} value={product.id} label={searchLabel} title={selectedLabel}>{product.product?.sell_by_measurement ? `${productName} · Sold per ml${productCode ? ` · ${productCode}` : ''}` : <>{product.sku ? `${product.sku} · ` : ''}{productName} · {variantName}{productCode ? ` · ${productCode}` : ''}</>}</Option>;
                     })}</Select></label>
-                    <label className="pos-field"><span>{isMeasured ? `Quantity (${unit})` : 'Quantity'}</span><InputNumber min={isMeasured ? Number(selected.product.measurement_min_qty || 1) : 1} step={isMeasured ? Number(selected.product.measurement_step || 1) : 1} value={item.qty} onChange={value => updateItem(value || 1, 'qty', item.key)} /></label>
+                    <label className="pos-field"><span>{isMeasured ? `Fill per pack (${unit})` : `Quantity (${unit})`}</span><InputNumber min={isPackaging || isMeasured ? 0.0001 : 1} step={isPackaging ? 0.0001 : 1} precision={isPackaging || isMeasured ? 4 : undefined} value={item.qty} onChange={value => { updateItem(value || 1, 'qty', item.key); updateItem(null, 'packingKit', item.key); }} /></label>
+                    {isMeasured && <label className="pos-field"><span>Number of packs</span><InputNumber min={1} precision={0} value={item.packCount} onChange={value => updateItem(value || 1, 'packCount', item.key)} /></label>}
+                    {isMeasured && tenantSettings.measured_packaging_enabled && <label className="pos-field pos-product-field"><span>Packing kit</span><Select optionLabelProp="title" placeholder={matchingKits.length ? 'Select packing kit' : `No kit for ${item.qty} ml`} value={selectedKitId} onChange={value => updateItem(value, 'packingKit', item.key)} options={matchingKits.map(kit => ({ value: kit.id, title: kit.name, label: `${kit.name} · ${(kit.packingKitItems || []).map(row => `${row.packagingMaterial?.name || 'Material'} ×${Number(row.quantity)}`).join(' + ')}` }))} /></label>}
                     <label className="pos-field"><span>{isMeasured ? `Price per ${unit}` : 'Unit price'}</span><InputNumber min={0} prefix="₹" value={item.price} onChange={value => updateItem(value || 0, 'price', item.key)} /></label>
-                    <div className="pos-line-total"><span>Line total</span><strong>{money(item.price * item.qty)}</strong></div>
+                    <div className="pos-line-total"><span>Line total</span><strong>{money(item.price * lineQuantity)}</strong></div>
                   </div>
                   <div className="pos-item-bottom">
-                    {selected && <Tag color={isReadyMade ? 'blue' : 'gold'}>{isReadyMade ? 'Ready-made · From stock' : isMeasured ? 'Measured · Make live' : 'Make live · Automatic'}</Tag>}
-                    {selected && <div className={`pos-stock-note ${isReadyMade ? hasStock ? 'success' : 'danger' : 'warning'}`}><InfoCircleOutlined />{isReadyMade ? `${Number(selected.current_stock || 0)} in stock` : isMeasured ? `${quantityLabel(item.qty)} ${unit} prepared from the linked formula` : `${Number(selected.fill_quantity_ml || 0) * item.qty} ml formula${packages ? ` + ${packages}` : ''}`}</div>}
+                    {selected && <Tag color={isReadyMade ? 'blue' : 'gold'}>{isPackaging ? 'Packing material · From stock' : isReadyMade ? 'Ready-made · From stock' : isMeasured ? selected.product.measurement_source_type === 'raw_material' ? 'Measured · Raw material' : selected.product.measurement_source_type === 'bulk_stock' ? 'Measured · Bulk stock' : showFormulaInSales ? 'Measured · Formula' : 'Measured · Automatic' : 'Make live · Automatic'}</Tag>}
+                    {selected && <div className={`pos-stock-note ${isReadyMade || (isMeasured && selected.product.measurement_source_type === 'bulk_stock') ? hasStock ? 'success' : 'warning' : 'warning'}`}><InfoCircleOutlined />{isPackaging ? hasStock ? `${quantityLabel(selected.current_stock)} ${unit} in stock` : `Will become ${quantityLabel(projectedStock)} ${unit} in stock` : isReadyMade ? hasStock ? `${Number(selected.current_stock || 0)} in stock` : `Will become ${quantityLabel(projectedStock)} in stock` : isMeasured ? `${quantityLabel(lineQuantity)} ${unit} ${selected.product.measurement_source_type === 'raw_material' ? 'deducted from linked raw material' : selected.product.measurement_source_type === 'bulk_stock' ? `deducted from bulk perfume stock${hasStock ? '' : ` (will become ${quantityLabel(projectedStock)} ml)`}` : showFormulaInSales ? 'prepared from the linked formula' : 'prepared automatically'}${packages ? ` + ${packages}` : ''}` : `${Number(selected.fill_quantity_ml || 0) * item.qty} ml ${showFormulaInSales ? 'formula' : 'required'}${packages ? ` + ${packages}` : ''}`}</div>}
                   </div>
                 </section>;
               })}
             </div>
-            <Button className="pos-add-row" type="dashed" size="small" icon={<PlusOutlined />} onClick={addItem} block>Add another product</Button>
+            <Space.Compact block className="pos-add-row"><Button type="dashed" size="small" icon={<PlusOutlined />} onClick={() => addItem('finished_good')} block>Add another product</Button>{tenantSettings.packaging_material_sales_enabled && <Button type="dashed" size="small" icon={<PlusOutlined />} onClick={() => addItem('packaging_material')} block>Add packing material</Button>}</Space.Compact>
           </Card>
         </main>
 
@@ -289,19 +350,17 @@ export default function SalesOrderPOS() {
       </div>
 
       <section className="pos-confirm-section">
-        <div className="pos-confirm-heading"><strong>Products</strong><span>{saleItems.length} item{saleItems.length === 1 ? '' : 's'}</span></div>
+        <div className="pos-confirm-heading"><strong>Items</strong><span>{saleItems.length} item{saleItems.length === 1 ? '' : 's'}</span></div>
         <div className="pos-confirm-items">
-          {saleItems.map((item, index) => {
-            const product = products.find(row => row.id === item.product);
-            const base = Number(item.price || 0) * Number(item.qty || 0);
-            const discounted = base * (1 - discountPct / 100);
-            const lineTotal = discounted * (1 + Number(item.tax || 0) / 100);
-            const isReadyMade = product?.source_type === 'ready_made';
-            const isMeasured = Boolean(product?.product?.sell_by_measurement);
+          {saleLineTotals.map(({ item, total: lineTotal }, index) => {
+            const product = selectedItemFor(item);
+            const isPackaging = item.itemType === 'packaging_material';
+            const isReadyMade = isPackaging || product?.source_type === 'ready_made';
+            const isMeasured = !isPackaging && Boolean(product?.product?.sell_by_measurement);
             return <div className="pos-confirm-item" key={item.key}>
               <span className="pos-confirm-number">{index + 1}</span>
-              <div><strong>{product?.product?.name || product?.name || 'Product'}</strong><span>{isMeasured ? `${quantityLabel(item.qty)} ${product.product.measurement_unit || 'ml'}` : `${product?.size_label || product?.sku || 'Variant'} · ${quantityLabel(item.qty)}`} × {money(item.price)}</span></div>
-              <Tag color={isReadyMade ? 'blue' : 'gold'}>{isReadyMade ? 'Stock' : 'Make live'}</Tag>
+              <div><strong>{product?.product?.name || product?.name || (isPackaging ? 'Packing material' : 'Product')}</strong><span>{isMeasured ? `${quantityLabel(item.qty)} ${product.product.measurement_unit || 'ml'} × ${Number(item.packCount || 1)} pack${Number(item.packCount || 1) === 1 ? '' : 's'} = ${quantityLabel(saleQuantity(item))} ml` : `${product?.size_label || product?.sku || (isPackaging ? product?.unit || 'Material' : 'Variant')} · ${quantityLabel(item.qty)}`} × {money(item.price)}</span>{isMeasured && tenantSettings.measured_packaging_enabled && <span>{packingKits.find(kit => kit.id === selectedKitIdFor(item))?.name || 'No packing kit selected'}</span>}</div>
+              <Tag color={isReadyMade ? 'blue' : 'gold'}>{isPackaging ? 'Packing stock' : isReadyMade ? 'Stock' : 'Make live'}</Tag>
               <strong>{money(lineTotal)}</strong>
             </div>;
           })}

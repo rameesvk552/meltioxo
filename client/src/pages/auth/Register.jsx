@@ -43,7 +43,7 @@ export default function Register() {
         fy_start_month: values.fyStart
       });
       message.success('Company created successfully!');
-      navigate('/app/dashboard');
+      navigate('/app');
     } catch (error) {
       if (error?.errorFields) return;
       message.error(error.response?.data?.message || 'Could not create company');

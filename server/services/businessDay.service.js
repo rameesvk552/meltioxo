@@ -24,15 +24,20 @@ const findOpen = (tenantId, transaction, lock = false) => db.businessDay.findOne
 
 const requireOpen = async (tenantId, transaction) => {
   const day = await findOpen(tenantId, transaction, true);
-  if (!day) throw new AppError('Open the business day before completing a POS sale', 409);
+  if (!day) throw new AppError('Open the business day before completing this transaction', 409);
   return day;
 };
 
 const summarize = async (tenantId, businessDayId, transaction) => {
-  const [sales, payments] = await Promise.all([
+  const [sales, returns, payments] = await Promise.all([
     db.retailSale.findAll({
       where: { tenant_id: tenantId, business_day_id: businessDayId },
       attributes: ['total_amount', 'cogs_amount'],
+      transaction
+    }),
+    db.salesReturn.findAll({
+      where: { tenant_id: tenantId, business_day_id: businessDayId },
+      attributes: ['total_amount', 'restocked_cost'],
       transaction
     }),
     db.payment.findAll({
@@ -61,10 +66,17 @@ const summarize = async (tenantId, businessDayId, transaction) => {
   }
 
   const paymentSummary = [...methods.values()].sort((a, b) => a.name.localeCompare(b.name));
+  const grossSales = money(sales.reduce((sum, sale) => sum + Number(sale.total_amount || 0), 0));
+  const returnTotal = money(returns.reduce((sum, item) => sum + Number(item.total_amount || 0), 0));
+  const grossCogs = money(sales.reduce((sum, sale) => sum + Number(sale.cogs_amount || 0), 0));
+  const returnedCogs = money(returns.reduce((sum, item) => sum + Number(item.restocked_cost || 0), 0));
   return {
     sales_count: sales.length,
-    total_sales: money(sales.reduce((sum, sale) => sum + Number(sale.total_amount || 0), 0)),
-    total_cogs: money(sales.reduce((sum, sale) => sum + Number(sale.cogs_amount || 0), 0)),
+    return_count: returns.length,
+    gross_sales: grossSales,
+    total_returns: returnTotal,
+    total_sales: money(grossSales - returnTotal),
+    total_cogs: money(grossCogs - returnedCogs),
     cash_movement: money(paymentSummary.filter(row => row.method_type === 'CASH').reduce((sum, row) => sum + row.amount, 0)),
     payment_summary: paymentSummary
   };

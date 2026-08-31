@@ -8,6 +8,7 @@ import './styles/global.css';
 import { antdTheme } from './theme/antdTheme';
 import { AuthProvider } from './context/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
+import PWAStatus from './components/pwa/PWAStatus';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
@@ -16,6 +17,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <NotificationProvider>
           <AuthProvider>
             <App />
+            <PWAStatus />
           </AuthProvider>
         </NotificationProvider>
       </ConfigProvider>

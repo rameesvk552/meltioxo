@@ -1,10 +1,14 @@
 ﻿import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useContext } from 'react';
 import { DashboardOutlined, AppstoreOutlined, ToolOutlined, DollarOutlined, EllipsisOutlined } from '@ant-design/icons';
+import { AuthContext } from '../../context/AuthContext';
+import { getViewPermissionsForPath, hasAnyViewPermission } from '../../config/permissions';
 
 export default function MobileBottomNav() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useContext(AuthContext);
 
   const tabs = [
     { key: '/app/dashboard', icon: <DashboardOutlined />, label: 'Dash' },
@@ -12,7 +16,9 @@ export default function MobileBottomNav() {
     { key: '/app/production', icon: <ToolOutlined />, label: 'Prod' },
     { key: '/app/retail-sales', icon: <DollarOutlined />, label: 'Sales' },
     { key: '/app/settings', icon: <EllipsisOutlined />, label: 'More' },
-  ];
+  ].filter(tab => hasAnyViewPermission(user, getViewPermissionsForPath(tab.key)));
+
+  if (!tabs.length) return null;
 
   return (
     <div className="mobile-only mobile-bottom-nav" style={{

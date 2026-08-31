@@ -18,6 +18,54 @@ exports.profitLoss = async (req, res, next) => {
     res.json(await reportService.profitAndLoss(req.tenantId, from, to, groupBy));
   } catch (error) { next(error); }
 };
+exports.profitLossStatement = async (req, res, next) => {
+  try {
+    const now = new Date();
+    const to = req.query.to || now.toISOString().slice(0, 10);
+    const fyStartYear = now.getUTCMonth() >= 3 ? now.getUTCFullYear() : now.getUTCFullYear() - 1;
+    const from = req.query.from || `${fyStartYear}-04-01`;
+    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+    if (!datePattern.test(from) || !datePattern.test(to) || from > to) {
+      return res.status(400).json({ message: 'Choose a valid date range.' });
+    }
+    res.json(await reportService.profitAndLossStatement(req.tenantId, from, to));
+  } catch (error) { next(error); }
+};
+exports.purchaseReport = async (req, res, next) => {
+  try {
+    const db = require('../models');
+    const { Op } = require('sequelize');
+    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+    const to = req.query.to || new Date().toISOString().slice(0, 10);
+    const from = req.query.from || to;
+    if (!datePattern.test(from) || !datePattern.test(to) || from > to) return res.status(400).json({ message: 'Choose a valid date range.' });
+    const invoices = await db.purchaseInvoice.findAll({
+      where: { tenant_id: req.tenantId, invoice_date: { [Op.between]: [from, to] } },
+      include: [db.supplier, { model: db.purchaseReceipt, include: [db.purchaseReceiptItem] }],
+      order: [['invoice_date', 'DESC'], ['created_at', 'DESC']]
+    });
+    const ids = { raw: new Set(), packaging: new Set(), finished: new Set() };
+    invoices.forEach(invoice => (invoice.purchaseReceipt?.purchaseReceiptItems || []).forEach(item => ids[item.material_type]?.add(item.material_id)));
+    const [raw, packaging, finished] = await Promise.all([
+      ids.raw.size ? db.rawMaterial.findAll({ where: { tenant_id: req.tenantId, id: [...ids.raw] }, attributes: ['id', 'name', 'unit'] }) : [],
+      ids.packaging.size ? db.packagingMaterial.findAll({ where: { tenant_id: req.tenantId, id: [...ids.packaging] }, attributes: ['id', 'name'] }) : [],
+      ids.finished.size ? db.finishedGood.findAll({ where: { tenant_id: req.tenantId, id: [...ids.finished] }, include: [db.product], attributes: ['id', 'name', 'sku', 'size_label'] }) : []
+    ]);
+    const names = new Map([
+      ...raw.map(item => [item.id, { name: item.name, unit: item.unit || 'units' }]),
+      ...packaging.map(item => [item.id, { name: item.name, unit: 'pcs' }]),
+      ...finished.map(item => [item.id, { name: `${item.product?.name || item.name}${item.size_label ? ` · ${item.size_label}` : ''}`, unit: 'units', sku: item.sku }])
+    ]);
+    const rows = [];
+    invoices.forEach(invoice => (invoice.purchaseReceipt?.purchaseReceiptItems || []).forEach(item => {
+      const detail = names.get(item.material_id) || { name: 'Item not found', unit: 'units' };
+      const unitPrice = Number(item.unit_price || 0), taxRate = Number(item.tax_rate || 0);
+      const subtotal = Number(item.quantity || 0) * unitPrice;
+      rows.push({ id: item.id, invoice_id: invoice.id, invoice_number: invoice.invoice_number, invoice_date: invoice.invoice_date, supplier: invoice.supplier?.name || '—', receipt_number: invoice.purchaseReceipt?.receipt_number || '—', material_type: item.material_type, item_name: detail.name, sku: detail.sku || null, unit: detail.unit, quantity: Number(item.quantity || 0), unit_price: unitPrice, tax_rate: taxRate, tax_amount: subtotal * taxRate / 100, line_total: subtotal * (1 + taxRate / 100), status: invoice.status, total_amount: Number(invoice.total_amount || 0), paid_amount: Number(invoice.paid_amount || 0) });
+    }));
+    res.json({ summary: { invoices: invoices.length, total: invoices.reduce((sum, item) => sum + Number(item.total_amount || 0), 0), paid: invoices.reduce((sum, item) => sum + Number(item.paid_amount || 0), 0), due: invoices.reduce((sum, item) => sum + Number(item.total_amount || 0) - Number(item.paid_amount || 0), 0) }, rows });
+  } catch (error) { next(error); }
+};
 exports.balanceSheet = async (req, res, next) => {
   try { res.json(await reportService.balanceSheet(req.tenantId, req.query.as_of)); } catch (error) { next(error); }
 };

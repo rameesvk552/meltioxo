@@ -5,6 +5,7 @@ const { tenantContext } = require('../middleware/tenant');
 
 router.get('/', authenticate, tenantContext, ctrl.getAll);
 router.get('/:id', authenticate, tenantContext, ctrl.getById);
+router.get('/:id/ledger', authenticate, tenantContext, ctrl.getLedger);
 router.post('/', authenticate, tenantContext, ctrl.create);
 router.put('/:id', authenticate, tenantContext, ctrl.update);
 router.delete('/:id', authenticate, tenantContext, ctrl.delete);

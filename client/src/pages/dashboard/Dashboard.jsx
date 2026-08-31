@@ -1,20 +1,25 @@
 import React from 'react';
-import { Row, Col, Card, Statistic, Table, Tag, Button, Typography, List, Avatar } from 'antd';
+import { Row, Col, Card, Statistic, Table, Tag, Button, Typography, List, Avatar, Empty } from 'antd';
 import { ExperimentOutlined, AlertOutlined, FallOutlined } from '@ant-design/icons';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import useApiData from '../../hooks/useApiData';
+import { AuthContext } from '../../context/AuthContext';
+import { ALL_DASHBOARD_WIDGET_KEYS } from '../../config/permissions';
 
 const { Title, Text } = Typography;
 
 const COLORS = ['var(--color-gold)', '#8b6b32', '#f3d38c', '#a68241', '#e8c471'];
 
 export default function Dashboard() {
-  const { data: sales } = useApiData('/retail-sales');
-  const { data: productionOrders } = useApiData('/production-orders');
-  const { data: rawMaterials } = useApiData('/raw-materials');
-  const { data: packagingMaterials } = useApiData('/packaging-materials');
-  const { data: finishedGoods } = useApiData('/finished-goods');
-  const revenue = sales.reduce((sum, item) => sum + Number(item.total_amount || 0), 0);
+  const { canViewWidget } = React.useContext(AuthContext);
+  const show = widget => canViewWidget(widget);
+  const needsInventory = show('inventory_value') || show('low_stock_count') || show('low_stock_list');
+  const { data: businessDayState } = useApiData('/business-days/current', { initialData: {}, enabled: show('today_sales') });
+  const { data: productionOrders } = useApiData('/production-orders', { enabled: show('pending_production') });
+  const { data: rawMaterials } = useApiData('/raw-materials', { enabled: needsInventory });
+  const { data: packagingMaterials } = useApiData('/packaging-materials', { enabled: needsInventory });
+  const { data: finishedGoods } = useApiData('/finished-goods', { enabled: needsInventory });
+  const todaysSales = Number(businessDayState.today_record?.total_sales || 0);
   const inventoryValue = [
     ...rawMaterials.map(item => Number(item.current_stock || 0) * Number(item.avg_cost || 0)),
     ...packagingMaterials.map(item => Number(item.current_stock || 0) * Number(item.avg_cost || 0)),
@@ -28,6 +33,15 @@ export default function Dashboard() {
   const activities = [];
   const overdueData = [];
   const cardStyle = { background: '#ffffff', border: '1px solid var(--color-border)', borderRadius: 12 };
+
+  if (!ALL_DASHBOARD_WIDGET_KEYS.some(show)) {
+    return (
+      <div style={{ padding: 24 }}>
+        <Title level={2} style={{ color: 'var(--color-gold)', fontFamily: 'Playfair Display', marginBottom: 24 }}>Dashboard</Title>
+        <Card style={cardStyle}><Empty description="No dashboard widgets are assigned to your account" /></Card>
+      </div>
+    );
+  }
   
   return (
     <div style={{ padding: '24px' }}>
@@ -35,63 +49,51 @@ export default function Dashboard() {
       
       {/* Row 1: Financial KPIs */}
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col xs={24} sm={12} lg={6}>
+        {show('today_sales') && <Col xs={24} sm={12} lg={12}>
           <Card style={cardStyle} bodyStyle={{ padding: 20 }}>
-            <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Total Revenue</Text>} value={revenue} prefix="₹"
+            <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Today's Sales</Text>} value={todaysSales} precision={2} prefix="₹"
                        styles={{ content: { color: '#48bb78', fontWeight: 600 } }} />
           </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
+        </Col>}
+        {show('inventory_value') && <Col xs={24} sm={12} lg={12}>
           <Card style={cardStyle} bodyStyle={{ padding: 20 }}>
-            <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Net Profit</Text>} value={0} prefix="₹"
-                       styles={{ content: { color: '#48bb78', fontWeight: 600 } }} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <Card style={cardStyle} bodyStyle={{ padding: 20 }}>
-            <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Cash & Bank</Text>} value={0} prefix="₹"
-                       styles={{ content: { color: '#4299e1', fontWeight: 600 } }} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <Card style={cardStyle} bodyStyle={{ padding: 20 }}>
-            <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Inventory Value</Text>} value={inventoryValue} prefix="₹"
+            <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Inventory Value</Text>} value={inventoryValue} precision={2} prefix="₹"
                        styles={{ content: { color: 'var(--color-gold)', fontWeight: 600 } }} />
           </Card>
-        </Col>
+        </Col>}
       </Row>
 
       {/* Row 2: Operational KPIs */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col xs={24} sm={12} lg={6}>
+        {show('pending_production') && <Col xs={24} sm={12} lg={6}>
           <Card style={cardStyle} bodyStyle={{ padding: 20 }}>
             <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Pending Production</Text>} value={pendingProduction} prefix={<ExperimentOutlined />}
                        styles={{ content: { color: '#ed8936', fontWeight: 600 } }} />
           </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
+        </Col>}
+        {show('low_stock_count') && <Col xs={24} sm={12} lg={6}>
           <Card style={cardStyle} bodyStyle={{ padding: 20 }}>
             <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Low Stock Alerts</Text>} value={lowStock.length} prefix={<AlertOutlined />}
                        styles={{ content: { color: '#f56565', fontWeight: 600 } }}
                        suffix={<span style={{ fontSize: 14 }}><FallOutlined /> -1</span>} />
           </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
+        </Col>}
+        {show('overdue_payables') && <Col xs={24} sm={12} lg={6}>
           <Card style={cardStyle} bodyStyle={{ padding: 20 }}>
             <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Overdue Payables</Text>} value={0} prefix="₹"
                        styles={{ content: { color: '#f56565', fontWeight: 600 } }} />
           </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
+        </Col>}
+        {show('overdue_receivables') && <Col xs={24} sm={12} lg={6}>
           <Card style={cardStyle} bodyStyle={{ padding: 20 }}>
             <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Overdue Receivables</Text>} value={0} prefix="₹"
                        styles={{ content: { color: '#ed8936', fontWeight: 600 } }} />
           </Card>
-        </Col>
+        </Col>}
       </Row>
 
       <Row gutter={[16, 16]}>
-        <Col xs={24} lg={16}>
+        {show('revenue_trend') && <Col xs={24} lg={16}>
           <Card style={cardStyle} title={<Text style={{ color: 'var(--color-gold)' }}>Revenue Trend</Text>}>
             <div style={{ height: 300 }}>
               <ResponsiveContainer width="100%" height="100%">
@@ -111,8 +113,8 @@ export default function Dashboard() {
               </ResponsiveContainer>
             </div>
           </Card>
-        </Col>
-        <Col xs={24} lg={8}>
+        </Col>}
+        {show('revenue_by_product') && <Col xs={24} lg={8}>
           <Card style={cardStyle} title={<Text style={{ color: 'var(--color-gold)' }}>Revenue by Product</Text>}>
             <div style={{ height: 300 }}>
               <ResponsiveContainer width="100%" height="100%">
@@ -135,11 +137,11 @@ export default function Dashboard() {
               </div>
             </div>
           </Card>
-        </Col>
+        </Col>}
       </Row>
 
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        <Col xs={24} lg={8}>
+        {show('low_stock_list') && <Col xs={24} lg={8}>
           <Card style={cardStyle} title={<Text style={{ color: 'var(--color-gold)' }}>Low Stock Alerts</Text>}>
             <List
               itemLayout="horizontal"
@@ -159,8 +161,8 @@ export default function Dashboard() {
               )}
             />
           </Card>
-        </Col>
-        <Col xs={24} lg={8}>
+        </Col>}
+        {show('recent_activities') && <Col xs={24} lg={8}>
           <Card style={cardStyle} title={<Text style={{ color: 'var(--color-gold)' }}>Recent Activities</Text>}>
             <List
               itemLayout="horizontal"
@@ -175,8 +177,8 @@ export default function Dashboard() {
               )}
             />
           </Card>
-        </Col>
-        <Col xs={24} lg={8}>
+        </Col>}
+        {show('overdue_payments') && <Col xs={24} lg={8}>
           <Card style={cardStyle} title={<Text style={{ color: 'var(--color-gold)' }}>Overdue Payments</Text>}>
             <Table 
               dataSource={overdueData} 
@@ -190,7 +192,7 @@ export default function Dashboard() {
               ]} 
             />
           </Card>
-        </Col>
+        </Col>}
       </Row>
     </div>
   );

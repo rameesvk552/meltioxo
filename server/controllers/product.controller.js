@@ -18,6 +18,7 @@ const generateVariantSku = async ({ product, tenantId, transaction }) => {
   return candidate;
 };
 const SOURCE_TYPES = ['live_make', 'ready_made'];
+const MEASUREMENT_SOURCE_TYPES = ['formula', 'raw_material', 'bulk_stock'];
 const ALLOWED_UOMS = ['pcs', 'ml', 'L', 'g', 'kg', 'box', 'bottle', 'pack', 'set'];
 
 const validatePackaging = async (tenantId, packaging, transaction) => {
@@ -38,13 +39,25 @@ const measurementSettings = body => {
   if (!enabled) return { sell_by_measurement: false, measurement_unit: null, measurement_price: null, measurement_min_qty: null, measurement_step: null };
   const unit = String(body.measurement_unit || 'ml').trim();
   const price = Number(body.measurement_price);
-  const minimum = Number(body.measurement_min_qty ?? 1);
-  const step = Number(body.measurement_step ?? 1);
   if (unit !== 'ml') throw new AppError('Measured perfume products must use millilitres (ml)', 400);
   if (!Number.isFinite(price) || price < 0) throw new AppError('Enter a valid price per ml', 400);
-  if (!Number.isFinite(minimum) || minimum <= 0) throw new AppError('Minimum sale quantity must be greater than zero', 400);
-  if (!Number.isFinite(step) || step <= 0) throw new AppError('Quantity step must be greater than zero', 400);
-  return { sell_by_measurement: true, measurement_unit: unit, measurement_price: price, measurement_min_qty: minimum, measurement_step: step };
+  return { sell_by_measurement: true, measurement_unit: unit, measurement_price: price, measurement_min_qty: null, measurement_step: null };
+};
+
+const resolveMeasurementSource = async (tenantId, body, measurement, transaction, existing = null) => {
+  if (!measurement.sell_by_measurement) return { measurement_source_type: 'formula', measurement_source_id: null };
+  const type = body.measurement_source_type || existing?.measurement_source_type || 'formula';
+  if (!MEASUREMENT_SOURCE_TYPES.includes(type)) throw new AppError('Select formula, raw material, or bulk perfume stock as the measured source', 400);
+  const sourceId = type === 'raw_material' ? (body.measurement_source_id || existing?.measurement_source_id) : null;
+  if (type === 'raw_material') {
+    const material = sourceId ? await db.rawMaterial.findOne({ where: { id: sourceId, tenant_id: tenantId }, transaction }) : null;
+    if (!material) throw new AppError('Select the raw material that supplies this measured perfume', 400);
+    const unit = String(material.unit || '').trim().toLowerCase();
+    if (!['ml', 'millilitre', 'millilitres', 'milliliter', 'milliliters', 'l', 'litre', 'litres', 'liter', 'liters'].includes(unit)) {
+      throw new AppError('The selected raw material must use ml or L as its stock unit', 400);
+    }
+  }
+  return { measurement_source_type: type, measurement_source_id: sourceId };
 };
 
 const syncMeasurementItem = async (tenantId, product, settings, transaction) => {
@@ -105,6 +118,7 @@ exports.create = async (req, res, next) => {
       throw new AppError('Product name is required', 400);
     }
     const measurement = measurementSettings(req.body);
+    const measurementSource = await resolveMeasurementSource(req.tenantId, req.body, measurement, transaction);
     const sourceType = measurement.sell_by_measurement ? 'live_make' : req.body.source_type || 'live_make';
     if (!SOURCE_TYPES.includes(sourceType)) throw new AppError('Select Ready-made or Make live for this product', 400);
     const requestedFormulaId = sourceType === 'ready_made' ? null : req.body.formula_id;
@@ -113,8 +127,8 @@ exports.create = async (req, res, next) => {
       transaction
     }) : null;
     if (requestedFormulaId && !formula) throw new AppError('Formula not found for this company', 400);
-    if (measurement.sell_by_measurement && !formula) throw new AppError('Select the formula used by this measured product', 400);
-    if (measurement.sell_by_measurement && !['ml', 'millilitre', 'millilitres', 'milliliter', 'milliliters', 'l', 'litre', 'litres', 'liter', 'liters'].includes(String(formula.output_unit || '').toLowerCase())) {
+    if (measurement.sell_by_measurement && measurementSource.measurement_source_type !== 'raw_material' && !formula) throw new AppError('Select the formula used by this measured product', 400);
+    if (measurement.sell_by_measurement && formula && !['ml', 'millilitre', 'millilitres', 'milliliter', 'milliliters', 'l', 'litre', 'litres', 'liter', 'liters'].includes(String(formula.output_unit || '').toLowerCase())) {
       throw new AppError('A measured product needs a formula whose output unit is ml or L', 400);
     }
 
@@ -127,6 +141,7 @@ exports.create = async (req, res, next) => {
       source_type: sourceType,
       formula_id: formula?.id || null,
       ...measurement,
+      ...measurementSource,
       is_active: req.body.is_active ?? true
     }, { transaction });
 
@@ -213,10 +228,9 @@ exports.update = async (req, res, next) => {
     const measurement = measurementSettings({
       sell_by_measurement: Object.prototype.hasOwnProperty.call(req.body, 'sell_by_measurement') ? req.body.sell_by_measurement : product.sell_by_measurement,
       measurement_unit: req.body.measurement_unit ?? product.measurement_unit,
-      measurement_price: req.body.measurement_price ?? product.measurement_price,
-      measurement_min_qty: req.body.measurement_min_qty ?? product.measurement_min_qty,
-      measurement_step: req.body.measurement_step ?? product.measurement_step
+      measurement_price: req.body.measurement_price ?? product.measurement_price
     });
+    const measurementSource = await resolveMeasurementSource(req.tenantId, req.body, measurement, transaction, product);
     const sourceType = measurement.sell_by_measurement ? 'live_make' : req.body.source_type || product.source_type || 'live_make';
     if (!SOURCE_TYPES.includes(sourceType)) throw new AppError('Select Ready-made or Make live for this product', 400);
     const requestedFormulaId = sourceType === 'ready_made' ? null : req.body.formula_id;
@@ -228,8 +242,8 @@ exports.update = async (req, res, next) => {
       });
       if (!selectedFormula) throw new AppError('Formula not found for this company', 400);
     }
-    if (measurement.sell_by_measurement && !requestedFormulaId) throw new AppError('Select the formula used by this measured product', 400);
-    if (measurement.sell_by_measurement && !['ml', 'millilitre', 'millilitres', 'milliliter', 'milliliters', 'l', 'litre', 'litres', 'liter', 'liters'].includes(String(selectedFormula.output_unit || '').toLowerCase())) {
+    if (measurement.sell_by_measurement && measurementSource.measurement_source_type !== 'raw_material' && !requestedFormulaId) throw new AppError('Select the formula used by this measured product', 400);
+    if (measurement.sell_by_measurement && selectedFormula && !['ml', 'millilitre', 'millilitres', 'milliliter', 'milliliters', 'l', 'litre', 'litres', 'liter', 'liters'].includes(String(selectedFormula.output_unit || '').toLowerCase())) {
       throw new AppError('A measured product needs a formula whose output unit is ml or L', 400);
     }
     if (measurement.sell_by_measurement && !product.sell_by_measurement) {
@@ -238,7 +252,7 @@ exports.update = async (req, res, next) => {
     }
 
     const { initial_variant: _ignoredInitialVariant, ...bodyUpdates } = req.body;
-    const updates = { ...bodyUpdates, ...measurement, source_type: sourceType };
+    const updates = { ...bodyUpdates, ...measurement, ...measurementSource, source_type: sourceType };
     if (sourceType === 'ready_made') updates.formula_id = null;
     await product.update(updates, { transaction });
     await syncMeasurementItem(req.tenantId, product, measurement, transaction);

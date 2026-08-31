@@ -15,6 +15,9 @@ test('default chart contains the requested BS and PL hierarchy', () => {
   assert.equal(byCode.get('G1300').parent_code, 'BS-ASSET');
   assert.equal(byCode.get('G2200').parent_code, 'BS-LIAB');
   assert.equal(byCode.get('G5100').parent_code, 'PL-EXPENSE');
+  assert.equal(byCode.get('5202').parent_code, 'G5200');
+  assert.equal(byCode.get('5202').name, 'Discount Allowed');
+  assert.equal(byCode.get('5202').type, 'expense');
   assert.equal(byCode.get('G4100').parent_code, 'PL-INCOME');
   assert.equal(byCode.get('G4100').name, 'Direct Income');
   assert.equal(byCode.get('4102').parent_code, 'G4100');

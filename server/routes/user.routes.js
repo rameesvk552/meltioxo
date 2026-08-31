@@ -3,11 +3,11 @@ const ctrl = require('../controllers/user.controller');
 const { authenticate } = require('../middleware/auth');
 const { tenantContext } = require('../middleware/tenant');
 const { authorize } = require('../middleware/permission'); 
-// Assuming a middleware authorize('admin') could be used, skipping here for simplicity
 
-router.get('/', authenticate, tenantContext, ctrl.getAll);
-router.post('/', authenticate, tenantContext, ctrl.create);
-router.put('/:id', authenticate, tenantContext, ctrl.update);
-router.delete('/:id', authenticate, tenantContext, ctrl.deactivate);
+router.use(authenticate, tenantContext, authorize('super_admin', 'admin'));
+router.get('/', ctrl.getAll);
+router.post('/', ctrl.create);
+router.put('/:id', ctrl.update);
+router.delete('/:id', ctrl.deactivate);
 
 module.exports = router;

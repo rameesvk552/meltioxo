@@ -369,6 +369,48 @@
   .pos-item-grid { padding: 11px 9px; }
   .pos-item-bottom { padding-inline: 9px; }
 }
+
+/* Product rows must be allowed to grow the page.  The old fixed-height desktop
+   layout clipped the quantity, price and line-total controls after row one. */
+@media (min-width: 768px) {
+  .pos-page {
+    height: auto;
+    min-height: calc(100dvh - var(--header-height));
+    overflow: visible;
+  }
+
+  .pos-form {
+    height: auto;
+    min-height: calc(100dvh - var(--header-height) - 46px);
+  }
+
+  .pos-layout {
+    flex: none;
+    align-items: start;
+  }
+
+  .pos-main {
+    grid-template-rows: auto auto;
+  }
+
+  .pos-items-scroll {
+    flex: none;
+    overflow: visible;
+  }
+
+  .pos-checkout > .ant-card {
+    position: sticky;
+    top: 16px;
+    height: auto;
+  }
+
+  .pos-checkout > .ant-card > .ant-card-body {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+}
+
 /* Keep product names readable on phones instead of clipping them with an ellipsis. */
 @media (max-width: 767px) {
   .pos-product-field .ant-select-selector { height: auto !important; min-height: 44px; }

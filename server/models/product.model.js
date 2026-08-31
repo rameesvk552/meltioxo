@@ -12,6 +12,10 @@ module.exports = (sequelize, DataTypes) => {
     measurement_price: { type: DataTypes.DECIMAL(15,2), allowNull: true },
     measurement_min_qty: { type: DataTypes.DECIMAL(15,4), allowNull: true },
     measurement_step: { type: DataTypes.DECIMAL(15,4), allowNull: true },
+    // formula keeps the existing make-at-sale flow; raw_material consumes a
+    // selected bulk liquid; bulk_stock consumes this product's measurement FG.
+    measurement_source_type: { type: DataTypes.STRING(30), allowNull: false, defaultValue: 'formula' },
+    measurement_source_id: { type: DataTypes.UUID, allowNull: true },
     is_active: { type: DataTypes.BOOLEAN, defaultValue: true }
   }, {
     tableName: 'products',

@@ -1,14 +1,16 @@
 import React, { useContext } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
-import { Spin } from 'antd';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { Result, Spin } from 'antd';
 import AppLayout from './components/layout/AppLayout';
 import { AuthContext } from './context/AuthContext';
+import { getFirstAllowedPath, getViewPermissionsForPath, hasAnyViewPermission } from './config/permissions';
 
 import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
 import Dashboard from './pages/dashboard/Dashboard';
 import RawMaterials from './pages/inventory/RawMaterials';
 import PackagingMaterials from './pages/inventory/PackagingMaterials';
+import PackingKits from './pages/inventory/PackingKits';
 import FinishedGoods from './pages/inventory/ProductsAndVariants';
 import Suppliers from './pages/purchasing/Suppliers';
 import Purchases from './pages/purchasing/Purchases';
@@ -35,11 +37,13 @@ import JournalEntryForm from './pages/finance/JournalEntryForm';
 import PaymentForm from './pages/finance/PaymentForm';
 import ExpenseForm from './pages/finance/ExpenseForm';
 
-import ProfitAndLoss from './pages/reports/OwnerProfitAndLoss';
+import ProfitAndLoss from './pages/reports/PureProfitAndLoss';
+import SalesProfitReport from './pages/reports/OwnerProfitAndLoss';
 import BalanceSheet from './pages/reports/BalanceSheet';
 import TrialBalance from './pages/reports/TrialBalance';
 import StockReport from './pages/reports/StockReport';
 import ProductionOwnerReport from './pages/reports/ProductionOwnerReport';
+import AuditLog from './pages/reports/AuditLog';
 
 import CompanySettings from './pages/settings/CompanySettings';
 
@@ -51,9 +55,23 @@ function RedirectToRawMaterialDetail() {
 }
 
 function ProtectedApp() {
-  const { isAuthenticated, loading } = useContext(AuthContext);
+  const { isAuthenticated, loading, user } = useContext(AuthContext);
+  const location = useLocation();
   if (loading) return <div style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center' }}><Spin size="large" /></div>;
-  return isAuthenticated ? <AppLayout /> : <Navigate to="/login" replace />;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  const requiredPermissions = getViewPermissionsForPath(location.pathname);
+  if (requiredPermissions.length && !hasAnyViewPermission(user, requiredPermissions)) {
+    return <Navigate to="/app" replace />;
+  }
+  return <AppLayout />;
+}
+
+function AppLanding() {
+  const { user } = useContext(AuthContext);
+  const destination = getFirstAllowedPath(user);
+  return destination
+    ? <Navigate to={destination} replace />
+    : <Result status="403" title="No views assigned" subTitle="Ask an administrator to assign at least one view permission to your account." />;
 }
 
 export default function App() {
@@ -67,12 +85,13 @@ export default function App() {
       <Route path="/inventory/raw-materials/:id" element={<RedirectToRawMaterialDetail />} />
       
       <Route path="/app" element={<ProtectedApp />}>
-        <Route index element={<Navigate to="dashboard" replace />} />
+        <Route index element={<AppLanding />} />
         <Route path="dashboard" element={<Dashboard />} />
         
         <Route path="raw-materials" element={<RawMaterials />} />
         <Route path="raw-materials/:id" element={<RawMaterialDetail />} />
         <Route path="packaging" element={<PackagingMaterials />} />
+        <Route path="packing-kits" element={<PackingKits />} />
         <Route path="finished-goods" element={<FinishedGoods />} />
         
         <Route path="suppliers" element={<Suppliers />} />
@@ -112,10 +131,12 @@ export default function App() {
         <Route path="expenses/new" element={<ExpenseForm />} />
         
         <Route path="reports/profit-loss" element={<ProfitAndLoss />} />
+        <Route path="reports/sales-profit" element={<SalesProfitReport />} />
         <Route path="reports/balance-sheet" element={<BalanceSheet />} />
         <Route path="reports/trial-balance" element={<TrialBalance />} />
         <Route path="reports/stock" element={<StockReport />} />
         <Route path="reports/production" element={<ProductionOwnerReport />} />
+        <Route path="reports/audit-log" element={<AuditLog />} />
         
         <Route path="settings" element={<CompanySettings />} />
       </Route>

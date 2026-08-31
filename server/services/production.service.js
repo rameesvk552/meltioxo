@@ -27,7 +27,7 @@ exports.calculateFormulaOutput = calculateFormulaOutput;
 
 exports.resolveVariantFormulaId = (variant) => variant.formula_id || variant.product?.formula_id;
 
-exports.calculateMaterialRequirements = async (tenantId, formulaId, plannedUnits, finishedGoodId, transaction) => {
+exports.calculateMaterialRequirements = async (tenantId, formulaId, plannedUnits, finishedGoodId, transaction, options = {}) => {
   const formula = await db.formula.findOne({
     where: { id: formulaId, tenant_id: tenantId },
     include: [db.formulaIngredient, db.formulaPackaging],
@@ -60,7 +60,9 @@ exports.calculateMaterialRequirements = async (tenantId, formulaId, plannedUnits
     });
   });
 
-  if (variant.variantPackagings.length) {
+  if (options.excludePackaging) {
+    // Measured sales consume the selected capacity-based kit at checkout.
+  } else if (variant.variantPackagings.length) {
     variant.variantPackagings.forEach(pkg => {
       requirements.push({
         material_type: 'packaging',
@@ -277,7 +279,7 @@ exports.completeProduction = async (tenantId, productionOrderId, actualQty, tran
   return order;
 };
 
-exports.createInstantProduction = async ({ tenantId, retailSaleId, variant, quantity, saleDate, lineNumber, createdBy, transaction }) => {
+exports.createInstantProduction = async ({ tenantId, retailSaleId, variant, quantity, saleDate, lineNumber, createdBy, transaction, excludePackaging = false }) => {
   if (variant.source_type === 'ready_made') throw new AppError(`${variant.name} is ready-made and cannot be produced`, 400);
   const formulaId = exports.resolveVariantFormulaId(variant);
   if (!formulaId) throw new AppError(`${variant.name} does not have a formula`, 400);
@@ -302,7 +304,7 @@ exports.createInstantProduction = async ({ tenantId, retailSaleId, variant, quan
     created_by: createdBy
   }, { transaction });
   await db.productionOutput.create({ production_order_id: order.id, finished_good_id: variant.id, planned_qty: quantity }, { transaction });
-  const requirements = exports.combineMaterialRequirements(await exports.calculateMaterialRequirements(tenantId, formulaId, quantity, variant.id, transaction));
+  const requirements = exports.combineMaterialRequirements(await exports.calculateMaterialRequirements(tenantId, formulaId, quantity, variant.id, transaction, { excludePackaging }));
   const availability = await exports.checkAvailability(tenantId, requirements, transaction);
   if (availability.length) await db.productionMaterial.bulkCreate(availability.map(row => ({
     production_order_id: order.id,

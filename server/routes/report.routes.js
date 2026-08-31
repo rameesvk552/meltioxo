@@ -5,6 +5,8 @@ const { tenantContext } = require('../middleware/tenant');
 
 router.get('/trial-balance', authenticate, tenantContext, ctrl.trialBalance);
 router.get('/profit-loss', authenticate, tenantContext, ctrl.profitLoss);
+router.get('/profit-loss-statement', authenticate, tenantContext, ctrl.profitLossStatement);
+router.get('/purchases', authenticate, tenantContext, ctrl.purchaseReport);
 router.get('/balance-sheet', authenticate, tenantContext, ctrl.balanceSheet);
 router.get('/cash-flow', authenticate, tenantContext, ctrl.cashFlow);
 router.get('/aging-payables', authenticate, tenantContext, ctrl.agingPayables);

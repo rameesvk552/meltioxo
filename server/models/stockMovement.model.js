@@ -2,6 +2,7 @@ module.exports = (sequelize, DataTypes) => {
   const StockMovement = sequelize.define('stockMovement', {
     id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
     tenant_id: { type: DataTypes.UUID },
+    branch_id: { type: DataTypes.UUID, allowNull: true },
     material_type: { type: DataTypes.ENUM('raw','packaging','finished') },
     material_id: { type: DataTypes.UUID },
     movement_type: { type: DataTypes.ENUM('purchase','consumption','production','adjustment','sale','return') },

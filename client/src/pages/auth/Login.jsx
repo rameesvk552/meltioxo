@@ -18,8 +18,8 @@ export default function Login() {
       await login(values.email, values.password);
       hide();
       message.success('Sign in successful!');
-      console.log('Login function completed, navigating to /app/dashboard');
-      navigate('/app/dashboard');
+      console.log('Login function completed, navigating to the first permitted view');
+      navigate('/app');
     } catch (err) {
       hide();
       message.error('Sign in failed!');

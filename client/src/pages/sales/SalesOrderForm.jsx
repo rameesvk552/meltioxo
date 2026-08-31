@@ -15,6 +15,7 @@ const SalesOrderForm = () => {
   const { data: finishedGoods } = useApiData('/finished-goods');
   const { data: customers } = useApiData('/customers');
   const { data: paymentMethods } = useApiData('/accounts/payment-methods');
+  const { data: tenantSettings } = useApiData('/tenant/settings', { initialData: {} });
   const [customerForm] = Form.useForm();
   const [phone, setPhone] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState(null);
@@ -256,7 +257,7 @@ const SalesOrderForm = () => {
                   if (!selected) return null;
                   if (selected.source_type === 'ready_made') return <div style={{ marginBottom: 10 }}><Tag color={Number(selected.current_stock) >= item.qty ? 'success' : 'error'}>Ready-made · {Number(selected.current_stock || 0)} in stock</Tag></div>;
                   const packages = (selected.variantPackagings || []).map(row => `${Number(row.quantity) * item.qty} ${row.packagingMaterial?.name || 'packaging'}`).join(' + ');
-                  return <div style={{ marginBottom: 10, padding: '8px 10px', borderRadius: 8, background: '#fff7e6' }}><Text>Make live automatically · Uses {Number(selected.fill_quantity_ml || 0) * item.qty} ml formula{packages ? ` + ${packages}` : ''}</Text></div>;
+                  return <div style={{ marginBottom: 10, padding: '8px 10px', borderRadius: 8, background: '#fff7e6' }}><Text>Make live automatically · {Number(selected.fill_quantity_ml || 0) * item.qty} ml {tenantSettings.show_formula_in_sales ? 'formula' : 'required'}{packages ? ` + ${packages}` : ''}</Text></div>;
                 })()}
                 <Row gutter={10}>
                   <Col span={12}><Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>Quantity</Text><InputNumber min={1} value={item.qty} onChange={(value) => handleItemChange(value, 'qty', item.key)} style={{ width: '100%' }} /></Col>

@@ -1,7 +1,9 @@
 module.exports = (sequelize, DataTypes) => sequelize.define('retailSale', {
   id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
   tenant_id: { type: DataTypes.UUID, allowNull: false },
+  branch_id: { type: DataTypes.UUID, allowNull: true },
   business_day_id: { type: DataTypes.UUID, allowNull: true },
+  exchange_return_id: { type: DataTypes.UUID, allowNull: true },
   sale_number: { type: DataTypes.STRING, allowNull: false },
   sale_date: { type: DataTypes.DATEONLY, allowNull: false },
   customer_id: { type: DataTypes.UUID, allowNull: true },
@@ -16,4 +18,4 @@ module.exports = (sequelize, DataTypes) => sequelize.define('retailSale', {
   journal_entry_id: { type: DataTypes.UUID, allowNull: true },
   cogs_journal_id: { type: DataTypes.UUID, allowNull: true },
   created_by: { type: DataTypes.UUID, allowNull: true }
-}, { tableName: 'retail_sales', underscored: true, timestamps: true, indexes: [{ unique: true, fields: ['tenant_id', 'sale_number'] }] });
+}, { tableName: 'retail_sales', underscored: true, timestamps: true, indexes: [{ unique: true, fields: ['tenant_id', 'sale_number'] }, { unique: true, fields: ['exchange_return_id'] }] });
