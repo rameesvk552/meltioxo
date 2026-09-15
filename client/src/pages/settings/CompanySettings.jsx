@@ -144,7 +144,10 @@ const CompanySettings = () => {
   const openPermissions = targetUser => {
     setEditingUser(targetUser);
     setSelectedViews(targetUser.permissions?.views || ALL_VIEW_PERMISSION_KEYS);
-    setSelectedWidgets(targetUser.permissions?.dashboard_widgets || ALL_DASHBOARD_WIDGET_KEYS);
+    const savedWidgets = targetUser.permissions?.dashboard_widgets;
+    setSelectedWidgets(Array.isArray(savedWidgets)
+      ? savedWidgets.filter(widget => ALL_DASHBOARD_WIDGET_KEYS.includes(widget))
+      : ALL_DASHBOARD_WIDGET_KEYS);
     setPermissionModalOpen(true);
   };
 

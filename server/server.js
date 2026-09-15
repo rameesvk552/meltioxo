@@ -30,6 +30,7 @@ app.use('/api/finished-goods', require('./routes/finishedGoods.routes'));
 app.use('/api/customers', require('./routes/sales.routes'));
 app.use('/api/retail-sales', require('./routes/retailSale.routes'));
 app.use('/api/business-days', require('./routes/businessDay.routes'));
+app.use('/api/dashboard', require('./routes/dashboard.routes'));
 app.use('/api/accounts', require('./routes/account.routes'));
 app.use('/api/journal-entries', require('./routes/journal.routes'));
 app.use('/api/payments', require('./routes/payment.routes'));

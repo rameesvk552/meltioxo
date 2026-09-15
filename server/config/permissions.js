@@ -11,8 +11,9 @@ const VIEW_PERMISSION_KEYS = [
 
 const DASHBOARD_WIDGET_KEYS = [
   'today_sales', 'inventory_value', 'pending_production', 'low_stock_count',
-  'overdue_payables', 'overdue_receivables', 'revenue_trend',
-  'revenue_by_product', 'low_stock_list', 'recent_activities', 'overdue_payments'
+  'overdue_payables', 'overdue_receivables', 'cash_collected',
+  'bank_collected', 'cash_paid', 'bank_paid', 'cash_balance', 'bank_balance',
+  'low_stock_list', 'recent_activities', 'overdue_payments'
 ];
 
 module.exports = { VIEW_PERMISSION_KEYS, DASHBOARD_WIDGET_KEYS };
