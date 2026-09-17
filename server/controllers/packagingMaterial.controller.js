@@ -1,4 +1,4 @@
-const { packagingMaterial, stockBatch, stockMovement } = require('../models');
+const { packagingMaterial, stockBatch, stockMovement, formulaPackaging, variantPackaging, packingKitItem, retailSaleItem } = require('../models');
 const { AppError } = require('../middleware/errorHandler');
 
 // The database enum uses singular machine-friendly values; older clients send
@@ -55,6 +55,20 @@ exports.update = async (req, res, next) => {
 
 exports.delete = async (req, res, next) => {
   try {
+    const [formulaCount, variantCount, kitCount, saleCount] = await Promise.all([
+      formulaPackaging.count({ where: { packaging_material_id: req.params.id } }),
+      variantPackaging.count({ where: { packaging_material_id: req.params.id } }),
+      packingKitItem.count({ where: { packaging_material_id: req.params.id } }),
+      retailSaleItem.count({ where: { packaging_material_id: req.params.id } })
+    ]);
+    if (formulaCount || variantCount || kitCount || saleCount) {
+      const uses = [];
+      if (variantCount) uses.push(`${variantCount} variant(s)`);
+      if (formulaCount) uses.push(`${formulaCount} formula(s)`);
+      if (kitCount) uses.push(`${kitCount} packing kit(s)`);
+      if (saleCount) uses.push(`${saleCount} historical sale(s)`);
+      throw new AppError(`Remove this packaging material from ${uses.join(' and ')} before deleting it.`, 409);
+    }
     const deleted = await packagingMaterial.destroy({
       where: { id: req.params.id, tenant_id: req.tenantId }
     });

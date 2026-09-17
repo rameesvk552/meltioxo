@@ -2,6 +2,7 @@ module.exports = (sequelize, DataTypes) => {
   const JournalEntry = sequelize.define('journalEntry', {
     id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
     tenant_id: { type: DataTypes.UUID },
+    branch_id: { type: DataTypes.UUID, allowNull: true },
     entry_number: { type: DataTypes.STRING },
     entry_date: { type: DataTypes.DATEONLY },
     reference_type: { type: DataTypes.STRING, allowNull: true },

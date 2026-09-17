@@ -2,6 +2,7 @@ module.exports = (sequelize, DataTypes) => {
   const StockBatch = sequelize.define('stockBatch', {
     id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
     tenant_id: { type: DataTypes.UUID },
+    branch_id: { type: DataTypes.UUID, allowNull: true },
     material_type: { type: DataTypes.ENUM('raw','packaging','finished') },
     material_id: { type: DataTypes.UUID },
     batch_number: { type: DataTypes.STRING },

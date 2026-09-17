@@ -6,7 +6,7 @@ exports.createPurchaseOrderSchema = z.object({
   expected_date: z.string().datetime().optional(),
   notes: z.string().optional(),
   items: z.array(z.object({
-    material_type: z.enum(['raw', 'packaging']),
+    material_type: z.enum(['raw', 'packaging', 'finished']),
     material_id: z.string().uuid(),
     quantity: z.number().positive(),
     unit_price: z.number().nonnegative(),

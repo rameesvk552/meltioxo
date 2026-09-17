@@ -1,0 +1,70 @@
+.profit-loss-page { padding: 24px; max-width: 1180px; margin: 0 auto; }
+.profit-loss-page--embedded { padding: 0; max-width: none; }
+.pl-page-header, .pl-filters, .pl-statement-header, .pl-row, .pl-net-result { display: flex; align-items: center; justify-content: space-between; }
+.pl-page-header { gap: 16px; margin-bottom: 18px; }
+.pl-page-header h2 { margin: 3px 0 0 !important; color: var(--color-gold) !important; }
+.pl-eyebrow, .pl-statement-kicker { color: #9b5f4f; font-size: 10px; font-weight: 800; letter-spacing: .16em; }
+.pl-filter-card { margin-bottom: 16px; }
+.pl-filters { gap: 12px; flex-wrap: wrap; justify-content: flex-start; }
+.pl-embedded-actions { margin-left: auto; }
+.profit-loss-statement { overflow: hidden; border-radius: 16px !important; }
+.pl-statement-header { gap: 20px; padding: 28px 34px; border-bottom: 1px solid #eadfd6; background: linear-gradient(135deg, #fffaf6 0%, #fff 65%); }
+.pl-statement-header h2 { margin: 4px 0 3px; font-size: 27px; color: #28201b; }
+.pl-statement-header p { margin: 0; color: #776b64; font-size: 13px; }
+.pl-basis { min-width: 142px; padding: 10px 14px; border: 1px solid #eadfd6; border-radius: 10px; background: rgba(255,255,255,.82); }
+.pl-basis span, .pl-basis strong { display: block; }
+.pl-basis span { margin-bottom: 2px; color: #8b7d75; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; }
+.pl-basis strong { font-size: 12px; }
+.pl-statement-body { padding: 24px 34px 30px; }
+.pl-section { margin-top: 24px; }
+.pl-section:first-child { margin-top: 0; }
+.pl-section h3 { margin: 0 0 7px; padding-bottom: 8px; border-bottom: 1px solid #ece5df; color: #8f4c3d; font-family: var(--font-family); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+.pl-row { gap: 20px; min-height: 38px; padding: 7px 4px; color: #312b27; border-bottom: 1px solid #f5f1ee; }
+.pl-row__label { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.pl-row__code { width: 66px; flex: 0 0 66px; color: #94867e; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+.pl-row__amount { flex: 0 0 auto; font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; }
+.pl-row__amount.is-negative { color: #b42318; }
+.pl-row--total { margin-top: 2px; padding: 10px 4px; border-bottom: 1px solid #d8cec7; font-weight: 750; }
+.pl-row--result { margin: 10px 0 4px; padding: 12px 14px; border: 1px solid #dce9df; border-radius: 9px; background: #f5faf6; color: #166534; font-size: 15px; font-weight: 800; }
+.pl-row--result.is-loss { border-color: #f3d2cc; background: #fff4f1; color: #9f2318; }
+.pl-empty-row { padding: 12px 4px; color: #9a8e87; font-size: 12px; font-style: italic; }
+.pl-net-result { gap: 20px; margin-top: 28px; padding: 19px 22px; border-radius: 12px; background: #eaf7ee; color: #14532d; }
+.pl-net-result.is-loss { background: #fff0ed; color: #9f2318; }
+.pl-net-result span, .pl-net-result small { display: block; }
+.pl-net-result span { font-size: 18px; font-weight: 800; }
+.pl-net-result small { margin-top: 1px; opacity: .7; font-size: 11px; }
+.pl-net-result strong { font-size: 22px; font-variant-numeric: tabular-nums; }
+.pl-loading { display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 340px; color: #746a64; }
+.pl-statement-footer { padding: 13px 34px; border-top: 1px solid #eee7e2; background: #fbf9f7; color: #8b7f78; font-size: 11px; }
+
+@media (max-width: 767px) {
+  .profit-loss-page { padding: 20px 16px !important; }
+  .profit-loss-page--embedded { padding: 0 !important; }
+  .pl-page-header { align-items: flex-start; }
+  .pl-actions { width: 100%; }
+  .pl-filters { display: grid; grid-template-columns: 1fr auto; }
+  .pl-filters .ant-segmented, .pl-filters .ant-picker, .pl-embedded-actions { grid-column: 1 / -1; width: 100%; }
+  .pl-filters .ant-segmented-group { width: 100%; }
+  .pl-filters .ant-segmented-item { flex: 1; }
+  .pl-embedded-actions { display: flex; margin-left: 0; }
+  .pl-embedded-actions .ant-space-item { flex: 1; }
+  .pl-embedded-actions .ant-btn { width: 100%; }
+  .pl-statement-header { align-items: flex-start; padding: 22px 18px; }
+  .pl-statement-header h2 { white-space: normal !important; font-size: 22px !important; }
+  .pl-basis { display: none; }
+  .pl-statement-body { padding: 18px 16px 22px; }
+  .pl-row__code { width: 48px; flex-basis: 48px; }
+  .pl-row__label { gap: 7px; font-size: 12px; }
+  .pl-row__amount { font-size: 12px; }
+  .pl-net-result { padding: 16px; }
+  .pl-net-result strong { font-size: 17px; }
+  .pl-statement-footer { padding: 12px 18px; }
+}
+
+@media print {
+  body * { visibility: hidden !important; }
+  .profit-loss-statement, .profit-loss-statement * { visibility: visible !important; }
+  .profit-loss-statement { position: absolute !important; inset: 0 auto auto 0 !important; width: 100% !important; border: 0 !important; box-shadow: none !important; }
+  .pl-statement-header { padding-top: 12px; }
+  .pl-statement-body { padding-top: 14px; }
+}

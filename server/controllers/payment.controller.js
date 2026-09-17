@@ -3,6 +3,7 @@ const db = require('../models');
 const { payment, paymentAllocation } = db;
 const { AppError } = require('../middleware/errorHandler');
 const accounting = require('../services/accounting.service');
+const { ACCOUNT_CODES } = require('../config/constants');
 
 // Fetch unpaid / partially-paid invoices for a given party (supplier or customer)
 exports.getUnpaidInvoices = async (req, res, next) => {
@@ -88,8 +89,9 @@ const createPayment = async (req, res, next, paymentType) => {
     const item = await payment.create({ ...req.body, party_type: partyType, payment_type: paymentType, tenant_id: req.tenantId, amount: paymentAmount, payment_date,
       payment_method_id: method.id, bank_account_id: bankLedger.id, payment_mode: accounting.paymentModeForType(method.method_type),
       payment_number: req.body.payment_number || `PAY-${paymentType === 'incoming' ? 'IN' : 'OUT'}-${new Date(payment_date).getFullYear()}-${String(sequence).padStart(4, '0')}`, created_by: req.user.id }, { transaction });
-    const accounts = await accounting.getAccountsByCode(req.tenantId, [paymentType === 'incoming' ? '1100' : '2000'], transaction);
-    const controlAccount = accounts[paymentType === 'incoming' ? '1100' : '2000'];
+    const controlCode = paymentType === 'incoming' ? ACCOUNT_CODES.AR : ACCOUNT_CODES.AP;
+    const accounts = await accounting.getAccountsByCode(req.tenantId, [controlCode], transaction);
+    const controlAccount = partyType === 'supplier' ? await accounting.getSupplierLedger(req.tenantId, party.id, transaction) : accounts[controlCode];
     const journal = await accounting.createAndPost(req.tenantId, { entry_date: payment_date, reference_type: 'payment', reference_id: item.id,
       narration: `${paymentType === 'incoming' ? 'Customer receipt' : 'Supplier payment'} ${item.payment_number}`,
       lines: paymentType === 'incoming'

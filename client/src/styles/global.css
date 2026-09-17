@@ -12,6 +12,39 @@ body {
   min-height: 100vh;
 }
 
+/* Wayon brand lockup */
+.wayon-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--color-gold);
+  line-height: 1;
+}
+
+.wayon-logo__mark {
+  display: block;
+  width: var(--wayon-logo-size, 42px);
+  height: var(--wayon-logo-size, 42px);
+  flex: 0 0 auto;
+  filter: drop-shadow(0 6px 12px rgba(181, 66, 48, 0.18));
+}
+
+.wayon-logo__name {
+  color: var(--color-text-primary);
+  font-family: var(--font-heading);
+  font-size: calc(var(--wayon-logo-size, 42px) * 0.62);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+}
+
+.wayon-logo--inverse .wayon-logo__name {
+  color: #ffffff;
+}
+
+.wayon-logo--compact {
+  gap: 0;
+}
+
 /* Elegant serif headings */
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-heading);
@@ -149,8 +182,39 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 @media (min-width: 768px) {
+  .app-shell {
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  .app-desktop-sider {
+    position: sticky !important;
+    top: 0;
+    align-self: flex-start;
+    height: 100vh;
+    height: 100dvh;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .app-main-layout {
+    min-width: 0;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  .app-main-layout > .app-header {
+    flex: 0 0 auto;
+  }
+
   .app-content {
+    min-height: 0;
     padding-bottom: var(--space-lg);
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 }
 

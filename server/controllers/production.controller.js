@@ -3,6 +3,20 @@ const { productionOrder, productionMaterial, productionOutput } = db;
 const { AppError } = require('../middleware/errorHandler');
 const productionService = require('../services/production.service');
 
+const ensureStandardFinishedGood = async ({ product, tenantId, transaction }) => {
+  const existing = await db.finishedGood.findOne({ where: { tenant_id: tenantId, product_id: product.id, is_measurement_item: false }, transaction });
+  if (existing) return existing;
+  const baseSku = `${product.code}-STD`;
+  const duplicateSku = await db.finishedGood.findOne({ where: { tenant_id: tenantId, sku: baseSku }, transaction });
+  return db.finishedGood.create({
+    tenant_id: tenantId, product_id: product.id, source_type: product.source_type || 'live_make', formula_id: null,
+    name: product.name, size_label: 'Standard', uom: 'pcs',
+    fill_quantity_ml: product.source_type === 'ready_made' ? null : 1,
+    sku: duplicateSku ? `${baseSku}-${String(product.id).slice(0, 6)}` : baseSku,
+    selling_price: 0, cost_price: 0, current_stock: 0, reorder_level: 0, is_measurement_item: false, is_active: true
+  }, { transaction });
+};
+
 exports.getAll = async (req, res, next) => {
   try {
     const items = await productionOrder.findAll({
@@ -70,8 +84,17 @@ exports.create = async (req, res, next) => {
   try {
     const requestedOutputs = Array.isArray(req.body.outputs) && req.body.outputs.length
       ? req.body.outputs : [{ finished_good_id: req.body.finished_good_id, planned_qty: req.body.planned_qty }];
-    const outputSpecs = requestedOutputs.map(row => ({ finished_good_id: row.finished_good_id, planned_qty: Number(row.planned_qty) }));
-    if (outputSpecs.some(row => !row.finished_good_id || !Number.isFinite(row.planned_qty) || row.planned_qty <= 0)) throw new AppError('Every variant needs a planned quantity greater than zero', 400);
+    const outputSpecs = [];
+    for (const row of requestedOutputs) {
+      let finishedGoodId = row.finished_good_id;
+      if (!finishedGoodId && row.product_id) {
+        const product = await db.product.findOne({ where: { id: row.product_id, tenant_id: req.tenantId, is_active: true }, transaction });
+        if (!product) throw new AppError('Select an active product', 400);
+        finishedGoodId = (await ensureStandardFinishedGood({ product, tenantId: req.tenantId, transaction })).id;
+      }
+      outputSpecs.push({ finished_good_id: finishedGoodId, planned_qty: Number(row.planned_qty) });
+    }
+    if (outputSpecs.some(row => !row.finished_good_id || !Number.isFinite(row.planned_qty) || row.planned_qty <= 0)) throw new AppError('Every product needs a planned quantity greater than zero', 400);
     if (new Set(outputSpecs.map(row => row.finished_good_id)).size !== outputSpecs.length) throw new AppError('Add each variant only once', 400);
 
     const variant = await db.finishedGood.findOne({
@@ -86,6 +109,9 @@ exports.create = async (req, res, next) => {
     if (!variant || !variant.product || !variant.product.is_active) {
       throw new AppError('Select an active product variant', 400);
     }
+    if (variant.source_type === 'ready_made') {
+      throw new AppError('Ready-made variants must be purchased and cannot be sent to production', 400);
+    }
 
     const formulaId = variant.formula_id || variant.product.formula_id;
     const formula = await db.formula.findOne({
@@ -99,7 +125,7 @@ exports.create = async (req, res, next) => {
       where: { id: outputSpecs.map(row => row.finished_good_id), tenant_id: req.tenantId, is_active: true },
       include: [db.product], transaction
     });
-    if (variants.length !== outputSpecs.length || variants.some(row => !row.product || !row.product.is_active || (row.formula_id || row.product.formula_id) !== formulaId)) {
+    if (variants.length !== outputSpecs.length || variants.some(row => row.source_type === 'ready_made' || !row.product || !row.product.is_active || (row.formula_id || row.product.formula_id) !== formulaId)) {
       throw new AppError('All variants must be active and use the same product formula', 400);
     }
     const item = await productionOrder.create({
@@ -111,7 +137,10 @@ exports.create = async (req, res, next) => {
       order_number: req.body.order_number || `PROD-${new Date().getFullYear()}-${String(sequence).padStart(4, '0')}`
     }, { transaction });
     await productionOutput.bulkCreate(outputSpecs.map(row => ({ ...row, production_order_id: item.id })), { transaction });
-    const requirementRows = await Promise.all(outputSpecs.map(row => productionService.calculateMaterialRequirements(req.tenantId, item.formula_id, row.planned_qty, row.finished_good_id)));
+    const requirementRows = await Promise.all(outputSpecs.map(row => {
+      const outputVariant = variants.find(candidate => candidate.id === row.finished_good_id);
+      return productionService.calculateMaterialRequirements(req.tenantId, item.formula_id, row.planned_qty, row.finished_good_id, transaction, { excludePackaging: Boolean(outputVariant?.is_measurement_item) });
+    }));
     const requirements = productionService.combineMaterialRequirements(requirementRows.flat());
     const availability = await productionService.checkAvailability(req.tenantId, requirements);
     if (availability.length) {

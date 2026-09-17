@@ -1,7 +1,9 @@
 module.exports = (sequelize, DataTypes) => sequelize.define('retailSaleItem', {
   id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
   retail_sale_id: { type: DataTypes.UUID, allowNull: false },
-  finished_good_id: { type: DataTypes.UUID, allowNull: false },
+  item_type: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'finished_good' },
+  finished_good_id: { type: DataTypes.UUID, allowNull: true },
+  packaging_material_id: { type: DataTypes.UUID, allowNull: true },
   fulfillment_mode: { type: DataTypes.ENUM('stock', 'make_now'), allowNull: false, defaultValue: 'stock' },
   production_order_id: { type: DataTypes.UUID, allowNull: true },
   quantity: { type: DataTypes.DECIMAL(15,4), allowNull: false },
@@ -10,5 +12,12 @@ module.exports = (sequelize, DataTypes) => sequelize.define('retailSaleItem', {
   tax_rate: { type: DataTypes.DECIMAL(5,2), defaultValue: 0 },
   tax_amount: { type: DataTypes.DECIMAL(15,2), defaultValue: 0 },
   total: { type: DataTypes.DECIMAL(15,2), defaultValue: 0 },
-  cost_amount: { type: DataTypes.DECIMAL(15,2), defaultValue: 0 }
+  cost_amount: { type: DataTypes.DECIMAL(15,2), defaultValue: 0 },
+  fill_quantity_ml: { type: DataTypes.DECIMAL(15,4), allowNull: true },
+  pack_count: { type: DataTypes.DECIMAL(15,4), allowNull: false, defaultValue: 1 },
+  packing_kit_id: { type: DataTypes.UUID, allowNull: true },
+  packaging_cost_amount: { type: DataTypes.DECIMAL(15,2), allowNull: false, defaultValue: 0 },
+  measurement_source_type: { type: DataTypes.STRING(30), allowNull: true },
+  measurement_source_id: { type: DataTypes.UUID, allowNull: true },
+  measurement_source_quantity: { type: DataTypes.DECIMAL(15,4), allowNull: true }
 }, { tableName: 'retail_sale_items', underscored: true, timestamps: true });

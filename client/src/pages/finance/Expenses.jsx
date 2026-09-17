@@ -1,6 +1,6 @@
 ﻿import React from 'react';
-import { Table, Card, Row, Col, Statistic, Tag, Button, Space } from 'antd';
-import { PlusOutlined, EyeOutlined, BankOutlined, CheckCircleOutlined, ClockCircleOutlined } from '@ant-design/icons';
+import { Table, Card, Row, Col, Statistic, Tag, Button } from 'antd';
+import { PlusOutlined, BankOutlined, CheckCircleOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import useApiData from '../../hooks/useApiData';
 
@@ -14,7 +14,7 @@ const Expenses = () => {
     account: item.account_id || '—',
     amount: Number(item.amount || 0),
     mode: item.payment_mode || '—',
-    status: item.status ? item.status[0].toUpperCase() + item.status.slice(1) : 'Draft'
+    status: item.status === 'approved' ? 'Posted' : 'Draft'
   }));
 
   const columns = [
@@ -36,20 +36,10 @@ const Expenses = () => {
       dataIndex: 'status', 
       key: 'status',
       render: (status) => (
-        <Tag color={status === 'Approved' ? 'green' : 'gold'}>
-          {status === 'Approved' ? <CheckCircleOutlined /> : <ClockCircleOutlined />} {status}
+        <Tag color={status === 'Posted' ? 'green' : 'gold'}>
+          {status === 'Posted' ? <CheckCircleOutlined /> : <ClockCircleOutlined />} {status}
         </Tag>
       )
-    },
-    {
-      title: 'Action',
-      key: 'action',
-      render: (_, record) => (
-        <Space size="middle">
-          <Button type="text" icon={<EyeOutlined />} style={{ color: 'var(--color-gold)' }} />
-          {record.status === 'Draft' && <Button type="link" size="small">Approve</Button>}
-        </Space>
-      ),
     }
   ];
 
@@ -63,22 +53,17 @@ const Expenses = () => {
       </div>
 
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col xs={24} sm={6}>
+        <Col xs={24} sm={8}>
           <Card >
             <Statistic title={<span style={{ color: 'var(--color-text-secondary)' }}>Total Expenses</span>} value={expenseRows.length} prefix={<BankOutlined />} styles={{ content: { color: 'var(--color-text-primary)' } }} />
           </Card>
         </Col>
-        <Col xs={24} sm={6}>
+        <Col xs={24} sm={8}>
           <Card >
-            <Statistic title={<span style={{ color: 'var(--color-text-secondary)' }}>Draft</span>} value={expenseRows.filter(item => item.status === 'Draft').length} styles={{ content: { color: '#faad14' } }} />
+            <Statistic title={<span style={{ color: 'var(--color-text-secondary)' }}>Posted</span>} value={expenseRows.filter(item => item.status === 'Posted').length} styles={{ content: { color: '#52c41a' } }} />
           </Card>
         </Col>
-        <Col xs={24} sm={6}>
-          <Card >
-            <Statistic title={<span style={{ color: 'var(--color-text-secondary)' }}>Approved</span>} value={expenseRows.filter(item => item.status === 'Approved').length} styles={{ content: { color: '#52c41a' } }} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={6}>
+        <Col xs={24} sm={8}>
           <Card >
             <Statistic title={<span style={{ color: 'var(--color-text-secondary)' }}>Total Amount</span>} value={expenseRows.reduce((sum, item) => sum + item.amount, 0)} prefix="₹" styles={{ content: { color: '#ff4d4f' } }} />
           </Card>

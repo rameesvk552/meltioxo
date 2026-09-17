@@ -46,7 +46,7 @@ const ProfitAndLoss = () => {
           <Card style={{ height: '100%' }}>
             
             <Title level={4} style={{ color: 'var(--color-gold)', borderBottom: '1px solid #30363d', paddingBottom: 8 }}>Revenue</Title>
-            <ItemRow label="Sales Revenue" value={data.revenue.sales} indent />
+            <ItemRow label="Sales" value={data.revenue.sales} indent />
             <ItemRow label="Other Income" value={data.revenue.other} indent />
             <Divider style={{ margin: '8px 0', borderColor: '#30363d' }} />
             <ItemRow label="Total Revenue" value={totalRevenue} bold color="#52c41a" />

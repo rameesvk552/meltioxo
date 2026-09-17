@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const { AppError } = require('./errorHandler');
 const { user } = require('../models');
 const config = require('../config/jwt');
+const { setAuditActor } = require('./auditContext');
 
 exports.authenticate = async (req, res, next) => {
   try {
@@ -20,8 +21,12 @@ exports.authenticate = async (req, res, next) => {
     if (!currentUser) {
       return next(new AppError('The user belonging to this token does no longer exist.', 401));
     }
+    if (!currentUser.is_active) {
+      return next(new AppError('Account is deactivated', 401));
+    }
 
     req.user = currentUser;
+    setAuditActor(currentUser);
     next();
   } catch (err) {
     next(new AppError('Invalid token or token expired', 401));

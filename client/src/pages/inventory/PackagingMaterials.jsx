@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Table, Card, Row, Col, Tag, Button, Input, Select, Space, Typography, Progress, Modal, Form, message } from 'antd';
-import { PlusOutlined, SearchOutlined, EyeOutlined, EditOutlined, ToolOutlined } from '@ant-design/icons';
+import { PlusOutlined, SearchOutlined, EyeOutlined, EditOutlined, ToolOutlined, DeleteOutlined } from '@ant-design/icons';
 import useApiData from '../../hooks/useApiData';
 import client from '../../api/client';
 import MobileDataList from '../../components/common/MobileDataList';
 import PageDrawerControls from '../../components/common/PageDrawerControls';
+import SingleTagSelect from '../../components/common/SingleTagSelect';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -28,6 +29,8 @@ export default function PackagingMaterials() {
         stock: Number(item.current_stock || 0),
         reorder: Number(item.reorder_level || 0),
         avgCost: Number(item.avg_cost || 0),
+        sellingPrice: Number(item.selling_price || 0),
+        taxRate: Number(item.tax_rate || 0),
         status: Number(item.current_stock || 0) <= 0 ? 'Out of Stock'
           : Number(item.current_stock || 0) <= Number(item.reorder_level || 0) ? 'Low Stock' : 'In Stock'
       })));
@@ -38,6 +41,8 @@ export default function PackagingMaterials() {
   const [typeFilter, setTypeFilter] = useState('All Package Types');
   const [stockFilter, setStockFilter] = useState('All Stock');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingMaterial, setEditingMaterial] = useState(null);
+  const [saving, setSaving] = useState(false);
   const [form] = Form.useForm();
 
   const handleSearch = (e) => {
@@ -52,21 +57,70 @@ export default function PackagingMaterials() {
     setStockFilter(value);
   };
 
-  const handleAddMaterial = async (values) => {
-    await client.post('/packaging-materials', {
-      sku: values.sku,
+  const closeMaterialModal = () => {
+    setIsModalOpen(false);
+    setEditingMaterial(null);
+    form.resetFields();
+  };
+
+  const openAddMaterial = () => {
+    setEditingMaterial(null);
+    form.resetFields();
+    form.setFieldsValue({ unit: 'pcs', stock: 0, reorder: 0, avgCost: 0, sellingPrice: 0, taxRate: 0 });
+    setIsModalOpen(true);
+  };
+
+  const openEditMaterial = material => {
+    setEditingMaterial(material);
+    form.setFieldsValue({
+      sku: material.sku,
+      name: material.name,
+      category: [material.category || packagingTypeLabel(material.type)],
+      unit: material.unit || 'pcs',
+      stock: material.stock,
+      reorder: material.reorder,
+      avgCost: material.avgCost,
+      sellingPrice: material.sellingPrice,
+      taxRate: material.taxRate
+    });
+    setIsModalOpen(true);
+  };
+  const deleteMaterial = material => Modal.confirm({
+    title: `Delete ${material.name}?`,
+    content: 'Remove this packaging material from every variant and formula before deleting it.',
+    okText: 'Delete material', okButtonProps: { danger: true },
+    onOk: async () => {
+      try { await client.delete(`/packaging-materials/${material.id}`); message.success('Packaging material deleted successfully.'); await reload(); }
+      catch (error) { message.error(error.response?.data?.message || 'Could not delete packaging material.'); }
+    }
+  });
+
+  const saveMaterial = async values => {
+    const category = Array.isArray(values.category) ? values.category[0] : values.category;
+    const payload = {
+      sku: values.sku || undefined,
       name: values.name,
-      category: Array.isArray(values.category) ? values.category[0] : values.category,
-      type: packagingDatabaseType(Array.isArray(values.category) ? values.category[0] : values.category),
+      category,
+      type: packagingDatabaseType(category),
       unit: values.unit,
       current_stock: Number(values.stock || 0),
       reorder_level: Number(values.reorder || 0),
-      avg_cost: Number(values.avgCost || 0)
-    });
-    await reload();
-    setIsModalOpen(false);
-    form.resetFields();
-    message.success('Packaging material added successfully!');
+      avg_cost: Number(values.avgCost || 0),
+      selling_price: Number(values.sellingPrice || 0),
+      tax_rate: Number(values.taxRate || 0)
+    };
+    setSaving(true);
+    try {
+      if (editingMaterial) await client.put(`/packaging-materials/${editingMaterial.id}`, payload);
+      else await client.post('/packaging-materials', payload);
+      await reload();
+      message.success(editingMaterial ? 'Packaging material updated successfully!' : 'Packaging material added successfully!');
+      closeMaterialModal();
+    } catch (error) {
+      message.error(error.response?.data?.message || `Could not ${editingMaterial ? 'update' : 'add'} packaging material`);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const filteredMaterials = materials.filter(m => {
@@ -110,15 +164,17 @@ export default function PackagingMaterials() {
       );
     }},
     { title: 'Avg Cost', dataIndex: 'avgCost', key: 'avgCost', render: v => <Text style={{ color: 'inherit' }}>₹{v.toLocaleString()}</Text> },
+    { title: 'Sale Price', dataIndex: 'sellingPrice', key: 'sellingPrice', render: v => <Text style={{ color: 'inherit' }}>₹{v.toLocaleString()}</Text> },
     { title: 'Value', key: 'value', render: (_, r) => <Text style={{ color: 'var(--color-gold)' }}>₹{(r.stock * r.avgCost).toLocaleString()}</Text> },
     { title: 'Status', dataIndex: 'status', key: 'status', render: s => {
       let color = s === 'In Stock' ? 'success' : s === 'Low Stock' ? 'warning' : 'error';
       return <Tag color={color}>{s}</Tag>;
     }},
-    { title: 'Actions', key: 'actions', render: () => (
+    { title: 'Actions', key: 'actions', render: (_, record) => (
       <Space size="small">
         <Button type="text" icon={<EyeOutlined />} style={{ color: '#4299e1' }} />
-        <Button type="text" icon={<EditOutlined />} style={{ color: 'var(--color-gold)' }} />
+        <Button type="text" icon={<EditOutlined />} style={{ color: 'var(--color-gold)' }} onClick={() => openEditMaterial(record)} aria-label={`Edit ${record.name}`} />
+        <Button type="text" danger icon={<DeleteOutlined />} aria-label={`Delete ${record.name}`} onClick={() => deleteMaterial(record)} />
         <Button type="text" icon={<ToolOutlined />} style={{ color: 'var(--color-text-secondary)' }} />
       </Space>
     )}
@@ -135,7 +191,7 @@ export default function PackagingMaterials() {
         <div>
           <Title className="mobile-page-title" level={2} style={{ color: 'var(--color-gold)', fontFamily: 'Playfair Display', margin: 0 }}>Packaging Materials</Title>
         </div>
-        <Space><PageDrawerControls title="Packaging materials" summary={summary} filters={filters} activeFilterCount={[searchText, typeFilter !== 'All Package Types', stockFilter !== 'All Stock'].filter(Boolean).length} onReset={() => { setSearchText(''); setTypeFilter('All Package Types'); setStockFilter('All Stock'); }} /><Button type="primary" icon={<PlusOutlined />} onClick={() => setIsModalOpen(true)}>Add Material</Button></Space>
+        <Space><PageDrawerControls title="Packaging materials" summary={summary} filters={filters} activeFilterCount={[searchText, typeFilter !== 'All Package Types', stockFilter !== 'All Stock'].filter(Boolean).length} onReset={() => { setSearchText(''); setTypeFilter('All Package Types'); setStockFilter('All Stock'); }} /><Button type="primary" icon={<PlusOutlined />} onClick={openAddMaterial}>Add Material</Button></Space>
       </div>
 
       <Row className="page-summary-inline" gutter={[16, 16]} style={{ marginBottom: 24 }}>
@@ -190,6 +246,8 @@ export default function PackagingMaterials() {
               <div className="mobile-data-list__title-row"><strong>{material.name}</strong><Tag color={material.status === 'In Stock' ? 'success' : material.status === 'Low Stock' ? 'warning' : 'error'}>{material.status}</Tag></div>
               <span className="mobile-data-list__code">{material.sku} · {material.category || packagingTypeLabel(material.type)}</span>
               <div className="mobile-data-list__metrics"><span>Stock <strong>{material.stock} {material.unit}</strong></span><span>Value <strong>₹{(material.stock * material.avgCost).toLocaleString()}</strong></span></div>
+              <Button block icon={<EditOutlined />} onClick={() => openEditMaterial(material)} style={{ marginTop: 12 }}>Edit Material</Button>
+              <Button danger block icon={<DeleteOutlined />} onClick={() => deleteMaterial(material)} style={{ marginTop: 8 }}>Delete Material</Button>
             </>
           )} />
         </div>
@@ -206,26 +264,42 @@ export default function PackagingMaterials() {
       </Card>
 
       <Modal
-        title="Add New Packaging Material"
+        title={editingMaterial ? 'Edit Packaging Material' : 'Add New Packaging Material'}
         open={isModalOpen}
-        onCancel={() => {
-          setIsModalOpen(false);
-          form.resetFields();
-        }}
+        onCancel={closeMaterialModal}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
         width={720}
       >
-        <Form form={form} layout="vertical" onFinish={handleAddMaterial}>
-          <Form.Item name="name" label="Material Name" rules={[{ required: true, message: 'Please enter material name' }]}>
-            <Input placeholder="e.g. 100ml Gold Cap" />
-          </Form.Item>
+        <Form form={form} layout="vertical" onFinish={saveMaterial}>
+          <Row gutter={16}>
+            <Col span={16}>
+              <Form.Item name="name" label="Material Name" rules={[{ required: true, message: 'Please enter material name' }]}>
+                <Input placeholder="e.g. 100ml Gold Cap" />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="sku" label="SKU">
+                <Input placeholder="Auto-generated" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="sellingPrice" label="Default Sale Price per Unit (₹)" rules={[{ required: true, message: 'Please enter the sale price' }]}>
+                <Input type="number" step="any" min={0} prefix="₹" placeholder="0" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="taxRate" label="Sale Tax Rate (%)" rules={[{ required: true, message: 'Please enter the tax rate' }]}>
+                <Input type="number" step="any" min={0} max={100} suffix="%" placeholder="0" />
+              </Form.Item>
+            </Col>
+          </Row>
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item name="category" label="Package Type" rules={[{ required: true, message: 'Select or create a package type' }]}>
-                <Select
-                  mode="tags"
-                  maxCount={1}
+                <SingleTagSelect
                   showSearch
                   optionFilterProp="label"
                   placeholder="Select or type a new package type"
@@ -264,11 +338,8 @@ export default function PackagingMaterials() {
           </Row>
           <Form.Item style={{ marginBottom: 0, textAlign: 'right', marginTop: 16 }}>
             <Space>
-              <Button onClick={() => {
-                setIsModalOpen(false);
-                form.resetFields();
-              }}>Cancel</Button>
-              <Button type="primary" htmlType="submit">Submit</Button>
+              <Button onClick={closeMaterialModal}>Cancel</Button>
+              <Button type="primary" htmlType="submit" loading={saving}>{editingMaterial ? 'Update Material' : 'Add Material'}</Button>
             </Space>
           </Form.Item>
         </Form>

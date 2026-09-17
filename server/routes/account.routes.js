@@ -8,6 +8,7 @@ router.get('/', authenticate, tenantContext, ctrl.getAll);
 router.get('/cash-bank-ledgers', authenticate, tenantContext, ctrl.getCashBankLedgers);
 router.get('/payment-method-ledgers', authenticate, tenantContext, ctrl.getCashBankLedgers);
 router.get('/payment-methods', authenticate, tenantContext, ctrl.getPaymentMethods);
+router.get('/next-code', authenticate, tenantContext, ctrl.getNextCode);
 router.post('/payment-methods', authenticate, tenantContext, authorize('super_admin', 'admin', 'accountant'), ctrl.createPaymentMethod);
 router.patch('/payment-methods/:id', authenticate, tenantContext, authorize('super_admin', 'admin', 'accountant'), ctrl.updatePaymentMethod);
 router.post('/', authenticate, tenantContext, authorize('super_admin', 'admin', 'accountant'), ctrl.create);

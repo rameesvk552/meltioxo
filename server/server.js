@@ -5,18 +5,25 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const db = require('./models');
 const { errorHandler } = require('./middleware/errorHandler');
+const { requestContext } = require('./middleware/auditContext');
 
 const app = express();
 
 app.use(helmet());
 app.use(cors());
-app.use(express.json());
+// A 5 MB logo expands to roughly 6.7 MB when encoded as a data URL.
+app.use(express.json({ limit: '8mb' }));
+app.use(requestContext);
 app.use(morgan('dev'));
+
+// Used only by WhatsApp to fetch a time-limited signed invoice PDF.
+app.use('/api/public', require('./routes/publicInvoice.routes'));
 
 // Routes would be mounted here
 app.use('/api/auth', require('./routes/auth.routes'));
 app.use('/api/raw-materials', require('./routes/rawMaterial.routes'));
 app.use('/api/packaging-materials', require('./routes/packagingMaterial.routes'));
+app.use('/api/packing-kits', require('./routes/packingKit.routes'));
 app.use('/api/suppliers', require('./routes/supplier.routes'));
 app.use('/api/purchases', require('./routes/directPurchase.routes'));
 app.use('/api/formulas', require('./routes/formula.routes'));
@@ -25,14 +32,18 @@ app.use('/api/products', require('./routes/product.routes'));
 app.use('/api/finished-goods', require('./routes/finishedGoods.routes'));
 app.use('/api/customers', require('./routes/sales.routes'));
 app.use('/api/retail-sales', require('./routes/retailSale.routes'));
+app.use('/api/business-days', require('./routes/businessDay.routes'));
+app.use('/api/dashboard', require('./routes/dashboard.routes'));
 app.use('/api/accounts', require('./routes/account.routes'));
 app.use('/api/journal-entries', require('./routes/journal.routes'));
 app.use('/api/payments', require('./routes/payment.routes'));
 app.use('/api/expenses', require('./routes/expense.routes'));
 app.use('/api/reports', require('./routes/report.routes'));
 app.use('/api/tenant', require('./routes/tenant.routes'));
+app.use('/api/branches', require('./routes/branch.routes'));
 app.use('/api/users', require('./routes/user.routes'));
 app.use('/api/admin', require('./routes/admin.routes'));
+app.use('/api/audit-logs', require('./routes/auditLog.routes'));
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
@@ -75,29 +86,64 @@ const migratePaymentModesToText = async () => {
   }
 };
 
-// Existing tenants were seeded before Cash & Bank became a parent group. Bring those
-// ledgers into the same selectable hierarchy without changing their balances.
-const ensureCashBankHierarchy = async () => {
-  const tenants = await db.tenant.findAll({ attributes: ['id'] });
-  for (const tenant of tenants) {
-    let group = await db.account.findOne({ where: { tenant_id: tenant.id, code: '1000' } });
-    if (!group) group = await db.account.create({ tenant_id: tenant.id, code: '1000', name: 'Cash & Bank', type: 'asset', is_system: true, is_group: true });
-    else await group.update({ name: group.name === 'Cash' ? 'Cash & Bank' : group.name, is_group: true });
-    // Match Travel Bot's lean setup: only Cash exists by default. Tenants add
-    // their real bank/UPI/card ledgers and map payment methods when needed.
-    const defaults = [['1001', 'Cash in Hand']];
-    for (const [code, name] of defaults) {
-      const ledger = await db.account.findOne({ where: { tenant_id: tenant.id, code } });
-      if (ledger) await ledger.update({ parent_id: group.id });
-      else await db.account.create({ tenant_id: tenant.id, code, name, type: 'asset', parent_id: group.id, is_system: true });
-    }
-    const inputTax = await db.account.findOne({ where: { tenant_id: tenant.id, code: '1110' } });
-    if (!inputTax) await db.account.create({ tenant_id: tenant.id, code: '1110', name: 'Input Tax Recoverable', type: 'asset', is_system: true });
-    await require('./services/accounting.service').ensureDefaultPaymentMethods(tenant.id);
+// Existing purchase tables used enums that only allowed raw and packaging
+// materials. Add finished goods before model sync so ready-made SKUs can be
+// received without rebuilding or discarding any historical purchase rows.
+const migratePurchaseItemEnums = async () => {
+  for (const enumName of ['enum_purchase_order_items_material_type', 'enum_purchase_receipt_items_material_type']) {
+    const [types] = await db.sequelize.query('SELECT 1 FROM pg_type WHERE typname = :enumName', { replacements: { enumName } });
+    if (types.length) await db.sequelize.query(`ALTER TYPE "${enumName}" ADD VALUE IF NOT EXISTS 'finished'`);
   }
 };
 
-migrateRawMaterialCategoryToText().then(migratePaymentModesToText).then(() => db.sequelize.sync({ alter: true })).then(ensureCashBankHierarchy).then(() => {
+// Purchases are now saved as editable drafts before they affect inventory or
+// the general ledger. Preserve the existing invoice enum and add the new state.
+const migratePurchaseInvoiceStatus = async () => {
+  const [types] = await db.sequelize.query("SELECT 1 FROM pg_type WHERE typname = 'enum_purchase_invoices_status'");
+  if (types.length) await db.sequelize.query('ALTER TYPE "enum_purchase_invoices_status" ADD VALUE IF NOT EXISTS \'draft\'');
+};
+
+// Products created before ready-made purchasing required a formula at the
+// database level. Ready-made products intentionally have no formula.
+const migrateProductsForReadyMade = async () => {
+  const [columns] = await db.sequelize.query(`
+    SELECT is_nullable
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'products'
+      AND column_name = 'formula_id'
+  `);
+  if (columns[0]?.is_nullable === 'NO') {
+    await db.sequelize.query('ALTER TABLE "products" ALTER COLUMN "formula_id" DROP NOT NULL');
+  }
+};
+
+// Upgrade every tenant to the same BS/PL hierarchy. Legacy ledger codes are
+// renamed in place so historical journals and production balances remain linked.
+const ensureDefaultAccountHierarchy = async () => {
+  const { ensureChartOfAccounts } = require('./seeders/seed-chart-of-accounts');
+  const accounting = require('./services/accounting.service');
+  const tenants = await db.tenant.findAll({ attributes: ['id'] });
+  for (const tenant of tenants) {
+    await ensureChartOfAccounts(tenant.id);
+    await accounting.ensureDefaultPaymentMethods(tenant.id);
+    await accounting.ensureSupplierLedgers(tenant.id);
+  }
+};
+
+const ensureDefaultBranches = async () => {
+  const tenants = await db.tenant.findAll({ attributes: ['id', 'name'] });
+  for (const item of tenants) {
+    let main = await db.branch.findOne({ where: { tenant_id: item.id, is_default: true } });
+    if (!main) main = await db.branch.create({ tenant_id: item.id, name: 'Main Branch', code: 'MAIN', is_default: true });
+    await db.user.update({ branch_id: main.id }, { where: { tenant_id: item.id, branch_id: null } });
+    for (const modelName of ['customer', 'retailSale', 'salesOrder', 'salesInvoice', 'salesReturn', 'businessDay', 'payment', 'expense', 'stockBatch', 'stockMovement', 'purchaseOrder', 'purchaseReceipt', 'purchaseInvoice', 'productionOrder', 'journalEntry']) {
+      if (db[modelName]) await db[modelName].update({ branch_id: main.id }, { where: { tenant_id: item.id, branch_id: null } });
+    }
+  }
+};
+
+migrateRawMaterialCategoryToText().then(migratePaymentModesToText).then(migratePurchaseItemEnums).then(migratePurchaseInvoiceStatus).then(migrateProductsForReadyMade).then(() => db.sequelize.sync({ alter: true })).then(ensureDefaultBranches).then(ensureDefaultAccountHierarchy).then(() => {
   console.log('Database synced');
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);

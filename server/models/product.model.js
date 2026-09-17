@@ -5,7 +5,17 @@ module.exports = (sequelize, DataTypes) => {
     code: { type: DataTypes.STRING, allowNull: false },
     name: { type: DataTypes.STRING, allowNull: false },
     description: { type: DataTypes.TEXT, allowNull: true },
-    formula_id: { type: DataTypes.UUID, allowNull: false },
+    source_type: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'live_make' },
+    formula_id: { type: DataTypes.UUID, allowNull: true },
+    sell_by_measurement: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    measurement_unit: { type: DataTypes.STRING(20), allowNull: true },
+    measurement_price: { type: DataTypes.DECIMAL(15,2), allowNull: true },
+    measurement_min_qty: { type: DataTypes.DECIMAL(15,4), allowNull: true },
+    measurement_step: { type: DataTypes.DECIMAL(15,4), allowNull: true },
+    // formula keeps the existing make-at-sale flow; raw_material consumes a
+    // selected bulk liquid; bulk_stock consumes this product's measurement FG.
+    measurement_source_type: { type: DataTypes.STRING(30), allowNull: false, defaultValue: 'formula' },
+    measurement_source_id: { type: DataTypes.UUID, allowNull: true },
     is_active: { type: DataTypes.BOOLEAN, defaultValue: true }
   }, {
     tableName: 'products',

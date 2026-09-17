@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Table, Card, Row, Col, Statistic, Tag, Input, Button, Space, message } from 'antd';
-import { SearchOutlined, PlusOutlined, ExperimentOutlined, CloseCircleOutlined, CheckCircleOutlined, EyeOutlined, EditOutlined } from '@ant-design/icons';
+import { Table, Card, Row, Col, Statistic, Tag, Input, Button, Modal, Space, message } from 'antd';
+import { SearchOutlined, PlusOutlined, ExperimentOutlined, CloseCircleOutlined, CheckCircleOutlined, DeleteOutlined, EyeOutlined, EditOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import client from '../../api/client';
 import useApiData from '../../hooks/useApiData';
@@ -26,6 +26,24 @@ export default function Formulas() {
     await client.put(`/formulas/${id}`, { is_active: selected?.status !== 'Active' });
     await reload();
     message.success('Formula status updated');
+  };
+
+  const deleteFormula = formula => {
+    Modal.confirm({
+      title: `Delete ${formula.name}?`,
+      content: 'This is allowed only when no product, variant, or production order uses this formula.',
+      okText: 'Delete Formula',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          await client.delete(`/formulas/${formula.id}`);
+          await reload();
+          message.success('Formula deleted successfully.');
+        } catch (error) {
+          message.error(error.response?.data?.message || 'Could not delete formula.');
+        }
+      }
+    });
   };
 
   const filteredFormulas = formulas.filter(f => 
@@ -59,6 +77,7 @@ export default function Formulas() {
           ) : (
             <Button type="text" icon={<CheckCircleOutlined />} style={{ color: '#52c41a' }} onClick={() => toggleStatus(record.id)}>Activate</Button>
           )}
+          <Button type="text" danger icon={<DeleteOutlined />} aria-label="Delete formula" onClick={() => deleteFormula(record)} />
         </Space>
       )
     }
@@ -112,7 +131,7 @@ export default function Formulas() {
         </div>
 
         <ResponsiveDataTable columns={columns} dataSource={filteredFormulas} loading={loading} emptyText="No formulas found" mobileRenderItem={(formula) => (
-          <><div className="mobile-data-list__title-row"><strong>{formula.name}</strong><Tag color={formula.status === 'Active' ? 'success' : 'default'}>{formula.status}</Tag></div><span className="mobile-data-list__code">{formula.code} · {formula.output} {formula.unit}</span><div className="mobile-data-list__metrics"><span>Ingredients <strong>{formula.ingredients}</strong></span><span>Est. cost <strong>₹{formula.cost.toLocaleString()}</strong></span></div><Button type="primary" icon={<EditOutlined />} onClick={() => navigate(`/app/formulas/${formula.id}`)} style={{ width: '100%', marginTop: 12 }}>Edit Formula</Button></>
+          <><div className="mobile-data-list__title-row"><strong>{formula.name}</strong><Tag color={formula.status === 'Active' ? 'success' : 'default'}>{formula.status}</Tag></div><span className="mobile-data-list__code">{formula.code} · {formula.output} {formula.unit}</span><div className="mobile-data-list__metrics"><span>Ingredients <strong>{formula.ingredients}</strong></span><span>Est. cost <strong>₹{formula.cost.toLocaleString()}</strong></span></div><Space.Compact block style={{ marginTop: 12 }}><Button type="primary" icon={<EditOutlined />} onClick={() => navigate(`/app/formulas/${formula.id}`)} style={{ width: '100%' }}>Edit Formula</Button><Button danger icon={<DeleteOutlined />} aria-label="Delete formula" onClick={() => deleteFormula(formula)} /></Space.Compact></>
         )} />
       </Card>
     </div>

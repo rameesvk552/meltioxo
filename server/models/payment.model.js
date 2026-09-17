@@ -2,6 +2,8 @@ module.exports = (sequelize, DataTypes) => {
   const Payment = sequelize.define('payment', {
     id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
     tenant_id: { type: DataTypes.UUID },
+    branch_id: { type: DataTypes.UUID, allowNull: true },
+    business_day_id: { type: DataTypes.UUID, allowNull: true },
     payment_number: { type: DataTypes.STRING },
     payment_type: { type: DataTypes.ENUM('incoming','outgoing') },
     party_type: { type: DataTypes.ENUM('supplier','customer') },

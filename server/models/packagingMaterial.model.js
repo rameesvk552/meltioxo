@@ -12,7 +12,9 @@ module.exports = (sequelize, DataTypes) => {
     current_stock: { type: DataTypes.DECIMAL(15,4), defaultValue: 0 },
     reserved_stock: { type: DataTypes.DECIMAL(15,4), defaultValue: 0 },
     reorder_level: { type: DataTypes.DECIMAL(15,4), defaultValue: 0 },
-    avg_cost: { type: DataTypes.DECIMAL(15,4), defaultValue: 0 }
+    avg_cost: { type: DataTypes.DECIMAL(15,4), defaultValue: 0 },
+    selling_price: { type: DataTypes.DECIMAL(15,2), allowNull: false, defaultValue: 0 },
+    tax_rate: { type: DataTypes.DECIMAL(5,2), allowNull: false, defaultValue: 0 }
   }, {
     tableName: 'packaging_materials',
     underscored: true,

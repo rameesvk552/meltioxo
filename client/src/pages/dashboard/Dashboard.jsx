@@ -1,20 +1,27 @@
 import React from 'react';
-import { Row, Col, Card, Statistic, Table, Tag, Button, Typography, List, Avatar } from 'antd';
-import { ExperimentOutlined, AlertOutlined, FallOutlined } from '@ant-design/icons';
+import { Row, Col, Card, Statistic, Table, Tag, Button, Typography, List, Avatar, Empty, Progress } from 'antd';
+import { ArrowUpOutlined, BankOutlined, CreditCardOutlined, ExperimentOutlined, AlertOutlined, FallOutlined, PlusOutlined, ShoppingCartOutlined, WalletOutlined, WarningOutlined } from '@ant-design/icons';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import useApiData from '../../hooks/useApiData';
+import { AuthContext } from '../../context/AuthContext';
+import { ALL_DASHBOARD_WIDGET_KEYS } from '../../config/permissions';
+import { Link } from 'react-router-dom';
+import './Dashboard.css';
 
 const { Title, Text } = Typography;
 
 const COLORS = ['var(--color-gold)', '#8b6b32', '#f3d38c', '#a68241', '#e8c471'];
 
-export default function Dashboard() {
-  const { data: sales } = useApiData('/retail-sales');
-  const { data: productionOrders } = useApiData('/production-orders');
-  const { data: rawMaterials } = useApiData('/raw-materials');
-  const { data: packagingMaterials } = useApiData('/packaging-materials');
-  const { data: finishedGoods } = useApiData('/finished-goods');
-  const revenue = sales.reduce((sum, item) => sum + Number(item.total_amount || 0), 0);
+function LegacyDashboard() {
+  const { canViewWidget } = React.useContext(AuthContext);
+  const show = widget => canViewWidget(widget);
+  const needsInventory = show('inventory_value') || show('low_stock_count') || show('low_stock_list');
+  const { data: businessDayState } = useApiData('/business-days/current', { initialData: {}, enabled: show('today_sales') });
+  const { data: productionOrders } = useApiData('/production-orders', { enabled: show('pending_production') });
+  const { data: rawMaterials } = useApiData('/raw-materials', { enabled: needsInventory });
+  const { data: packagingMaterials } = useApiData('/packaging-materials', { enabled: needsInventory });
+  const { data: finishedGoods } = useApiData('/finished-goods', { enabled: needsInventory });
+  const todaysSales = Number(businessDayState.today_record?.total_sales || 0);
   const inventoryValue = [
     ...rawMaterials.map(item => Number(item.current_stock || 0) * Number(item.avg_cost || 0)),
     ...packagingMaterials.map(item => Number(item.current_stock || 0) * Number(item.avg_cost || 0)),
@@ -28,6 +35,15 @@ export default function Dashboard() {
   const activities = [];
   const overdueData = [];
   const cardStyle = { background: '#ffffff', border: '1px solid var(--color-border)', borderRadius: 12 };
+
+  if (!ALL_DASHBOARD_WIDGET_KEYS.some(show)) {
+    return (
+      <div style={{ padding: 24 }}>
+        <Title level={2} style={{ color: 'var(--color-gold)', fontFamily: 'Playfair Display', marginBottom: 24 }}>Dashboard</Title>
+        <Card style={cardStyle}><Empty description="No dashboard widgets are assigned to your account" /></Card>
+      </div>
+    );
+  }
   
   return (
     <div style={{ padding: '24px' }}>
@@ -35,63 +51,51 @@ export default function Dashboard() {
       
       {/* Row 1: Financial KPIs */}
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col xs={24} sm={12} lg={6}>
+        {show('today_sales') && <Col xs={24} sm={12} lg={12}>
           <Card style={cardStyle} bodyStyle={{ padding: 20 }}>
-            <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Total Revenue</Text>} value={revenue} prefix="₹"
+            <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Today's Sales</Text>} value={todaysSales} precision={2} prefix="₹"
                        styles={{ content: { color: '#48bb78', fontWeight: 600 } }} />
           </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
+        </Col>}
+        {show('inventory_value') && <Col xs={24} sm={12} lg={12}>
           <Card style={cardStyle} bodyStyle={{ padding: 20 }}>
-            <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Net Profit</Text>} value={0} prefix="₹"
-                       styles={{ content: { color: '#48bb78', fontWeight: 600 } }} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <Card style={cardStyle} bodyStyle={{ padding: 20 }}>
-            <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Cash & Bank</Text>} value={0} prefix="₹"
-                       styles={{ content: { color: '#4299e1', fontWeight: 600 } }} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <Card style={cardStyle} bodyStyle={{ padding: 20 }}>
-            <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Inventory Value</Text>} value={inventoryValue} prefix="₹"
+            <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Inventory Value</Text>} value={inventoryValue} precision={2} prefix="₹"
                        styles={{ content: { color: 'var(--color-gold)', fontWeight: 600 } }} />
           </Card>
-        </Col>
+        </Col>}
       </Row>
 
       {/* Row 2: Operational KPIs */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col xs={24} sm={12} lg={6}>
+        {show('pending_production') && <Col xs={24} sm={12} lg={6}>
           <Card style={cardStyle} bodyStyle={{ padding: 20 }}>
             <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Pending Production</Text>} value={pendingProduction} prefix={<ExperimentOutlined />}
                        styles={{ content: { color: '#ed8936', fontWeight: 600 } }} />
           </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
+        </Col>}
+        {show('low_stock_count') && <Col xs={24} sm={12} lg={6}>
           <Card style={cardStyle} bodyStyle={{ padding: 20 }}>
             <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Low Stock Alerts</Text>} value={lowStock.length} prefix={<AlertOutlined />}
                        styles={{ content: { color: '#f56565', fontWeight: 600 } }}
                        suffix={<span style={{ fontSize: 14 }}><FallOutlined /> -1</span>} />
           </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
+        </Col>}
+        {show('overdue_payables') && <Col xs={24} sm={12} lg={6}>
           <Card style={cardStyle} bodyStyle={{ padding: 20 }}>
             <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Overdue Payables</Text>} value={0} prefix="₹"
                        styles={{ content: { color: '#f56565', fontWeight: 600 } }} />
           </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
+        </Col>}
+        {show('overdue_receivables') && <Col xs={24} sm={12} lg={6}>
           <Card style={cardStyle} bodyStyle={{ padding: 20 }}>
             <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Overdue Receivables</Text>} value={0} prefix="₹"
                        styles={{ content: { color: '#ed8936', fontWeight: 600 } }} />
           </Card>
-        </Col>
+        </Col>}
       </Row>
 
       <Row gutter={[16, 16]}>
-        <Col xs={24} lg={16}>
+        {show('revenue_trend') && <Col xs={24} lg={16}>
           <Card style={cardStyle} title={<Text style={{ color: 'var(--color-gold)' }}>Revenue Trend</Text>}>
             <div style={{ height: 300 }}>
               <ResponsiveContainer width="100%" height="100%">
@@ -111,8 +115,8 @@ export default function Dashboard() {
               </ResponsiveContainer>
             </div>
           </Card>
-        </Col>
-        <Col xs={24} lg={8}>
+        </Col>}
+        {show('revenue_by_product') && <Col xs={24} lg={8}>
           <Card style={cardStyle} title={<Text style={{ color: 'var(--color-gold)' }}>Revenue by Product</Text>}>
             <div style={{ height: 300 }}>
               <ResponsiveContainer width="100%" height="100%">
@@ -135,11 +139,11 @@ export default function Dashboard() {
               </div>
             </div>
           </Card>
-        </Col>
+        </Col>}
       </Row>
 
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        <Col xs={24} lg={8}>
+        {show('low_stock_list') && <Col xs={24} lg={8}>
           <Card style={cardStyle} title={<Text style={{ color: 'var(--color-gold)' }}>Low Stock Alerts</Text>}>
             <List
               itemLayout="horizontal"
@@ -159,8 +163,8 @@ export default function Dashboard() {
               )}
             />
           </Card>
-        </Col>
-        <Col xs={24} lg={8}>
+        </Col>}
+        {show('recent_activities') && <Col xs={24} lg={8}>
           <Card style={cardStyle} title={<Text style={{ color: 'var(--color-gold)' }}>Recent Activities</Text>}>
             <List
               itemLayout="horizontal"
@@ -175,8 +179,8 @@ export default function Dashboard() {
               )}
             />
           </Card>
-        </Col>
-        <Col xs={24} lg={8}>
+        </Col>}
+        {show('overdue_payments') && <Col xs={24} lg={8}>
           <Card style={cardStyle} title={<Text style={{ color: 'var(--color-gold)' }}>Overdue Payments</Text>}>
             <Table 
               dataSource={overdueData} 
@@ -190,8 +194,56 @@ export default function Dashboard() {
               ]} 
             />
           </Card>
-        </Col>
+        </Col>}
       </Row>
     </div>
   );
+}
+
+const dashboardCurrency = value => `₹${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const dashboardStatCards = [
+  { key: 'today_sales', label: 'Sales', icon: <CreditCardOutlined />, tone: 'mint', hint: 'For the current day' },
+  { key: 'overdue_receivables', label: 'Sales Due', icon: <WalletOutlined />, tone: 'amber', hint: 'Receivables to collect' },
+  { key: 'inventory_value', label: 'Purchases', icon: <ShoppingCartOutlined />, tone: 'blue', hint: 'Inventory value on hand' },
+  { key: 'overdue_payables', label: 'Purchases Due', icon: <BankOutlined />, tone: 'orange', hint: 'Payables to settle' },
+  { key: 'low_stock_count', label: 'Low stock', icon: <WarningOutlined />, tone: 'orange', hint: 'Items at or below reorder level' },
+];
+
+const revenueFlowItems = [
+  { key: 'cash_collected', label: 'Total cash collected', icon: <WalletOutlined />, tone: 'teal' },
+  { key: 'bank_collected', label: 'Total collection in bank', icon: <BankOutlined />, tone: 'green' },
+  { key: 'cash_paid', label: 'Total cash payment', icon: <WalletOutlined />, tone: 'red' },
+  { key: 'bank_paid', label: 'Total payment from bank', icon: <BankOutlined />, tone: 'coral' },
+  { key: 'cash_balance', label: 'Total cash balance (as on)', icon: <WalletOutlined />, tone: 'purple' },
+  { key: 'bank_balance', label: 'Total bank balance (as on)', icon: <BankOutlined />, tone: 'gold' },
+];
+
+export default function Dashboard() {
+  const { canView, canViewWidget } = React.useContext(AuthContext);
+  const show = widget => canViewWidget(widget);
+  const canOpenPos = canView('pos');
+  const hasRevenueFlowAccess = revenueFlowItems.some(item => show(item.key));
+  const quickActions = [
+    canOpenPos && { to: '/app/retail-sales/new', icon: <CreditCardOutlined />, label: 'New sale' },
+    canView('purchases') && { to: '/app/purchases', icon: <ShoppingCartOutlined />, label: 'Record purchase' },
+    canView('finance.expenses') && { to: '/app/expenses/new', icon: <WalletOutlined />, label: 'Add expense' },
+  ].filter(Boolean);
+  const needsInventory = show('inventory_value') || show('low_stock_count') || show('low_stock_list');
+  const { data: businessDayState } = useApiData('/business-days/current', { initialData: {}, enabled: show('today_sales') });
+  const { data: productionOrders } = useApiData('/production-orders', { enabled: show('pending_production') });
+  const { data: rawMaterials } = useApiData('/raw-materials', { enabled: needsInventory });
+  const { data: packagingMaterials } = useApiData('/packaging-materials', { enabled: needsInventory });
+  const { data: finishedGoods } = useApiData('/finished-goods', { enabled: needsInventory });
+  const { data: revenueFlow } = useApiData('/dashboard/revenue-flow', { initialData: {}, enabled: hasRevenueFlowAccess });
+  const todaysSales = Number(businessDayState.today_record?.total_sales || 0);
+  const inventoryValue = [...rawMaterials, ...packagingMaterials, ...finishedGoods].reduce((sum, item) => sum + Number(item.current_stock || 0) * Number(item.avg_cost ?? item.cost_price ?? 0), 0);
+  const pendingProduction = productionOrders.filter(item => ['planned', 'in_progress'].includes(item.status)).length;
+  const lowStock = [...rawMaterials, ...packagingMaterials, ...finishedGoods].filter(item => Number(item.current_stock || 0) <= Number(item.reorder_level || 0));
+  if (!ALL_DASHBOARD_WIDGET_KEYS.some(show)) return <div className="dashboard-page"><Card className="dashboard-empty"><Empty description="No dashboard widgets are assigned to your account" /></Card></div>;
+  return <div className="dashboard-page">
+    <div className="dashboard-hero"><div><Text className="dashboard-kicker">OVERVIEW</Text><Title level={1}>Good morning<span className="title-dot">.</span></Title><Text className="dashboard-subtitle">Here’s what’s happening with your business today.</Text></div>{canOpenPos && <Link to="/app/retail-sales/new"><Button className="pos-button" type="primary" icon={<PlusOutlined />}>Open POS</Button></Link>}</div>
+    <section className="dashboard-stat-grid" aria-label="Business overview">{dashboardStatCards.map(stat => show(stat.key) && <Card className={`dashboard-stat ${stat.tone}`} bordered={false} key={stat.key}><div className="stat-topline"><span>{stat.label}</span><span className="stat-icon">{stat.icon}</span></div><Statistic value={stat.key === 'today_sales' ? todaysSales : stat.key === 'inventory_value' ? inventoryValue : stat.key === 'low_stock_count' ? lowStock.length : 0} precision={stat.key === 'low_stock_count' ? 0 : 2} prefix={stat.key === 'low_stock_count' ? undefined : '₹'} /><Text className="stat-hint"><ArrowUpOutlined /> {stat.hint}</Text></Card>)}</section>
+    {hasRevenueFlowAccess && <Card className="dashboard-panel revenue-flow-panel" title="Revenue flow"><div className="revenue-flow-grid">{revenueFlowItems.map(item => show(item.key) && <div className="revenue-flow-item" key={item.key}><span className={`flow-icon ${item.tone}`}>{item.icon}</span><div><strong>{dashboardCurrency(revenueFlow[item.key])}</strong><Text>{item.label}</Text></div></div>)}</div></Card>}
+    <section className="dashboard-bottom-grid">{show('pending_production') && <Card className="dashboard-panel compact-panel production-panel" title="Production queue" extra={<ExperimentOutlined />}><div className="big-number">{pendingProduction}</div><Text type="secondary">orders currently in progress</Text><div className="queue-line"><span style={{ width: `${Math.min(pendingProduction * 12, 100)}%` }} /></div></Card>}{show('low_stock_list') && <Card className="dashboard-panel compact-panel stock-panel" title="Low stock alerts" extra={<WarningOutlined />}><div className="big-number warning-number">{lowStock.length}</div><List size="small" dataSource={lowStock.slice(0, 3)} locale={{ emptyText: 'All stock levels look healthy' }} renderItem={item => <List.Item><Avatar className="mini-avatar" icon={<FallOutlined />} /><span>{item.name}</span><Tag color="orange">{item.current_stock || 0} left</Tag></List.Item>} /></Card>}{show('recent_activities') && quickActions.length > 0 && <Card className="dashboard-panel compact-panel actions-panel" title="Quick actions"><div className="quick-actions">{quickActions.map(action => <Link key={action.to} to={action.to}>{action.icon} {action.label}</Link>)}</div></Card>}</section>
+  </div>;
 }

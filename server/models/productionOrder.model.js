@@ -2,6 +2,7 @@ module.exports = (sequelize, DataTypes) => {
   const ProductionOrder = sequelize.define('productionOrder', {
     id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
     tenant_id: { type: DataTypes.UUID },
+    branch_id: { type: DataTypes.UUID, allowNull: true },
     order_number: { type: DataTypes.STRING },
     formula_id: { type: DataTypes.UUID },
     finished_good_id: { type: DataTypes.UUID, allowNull: true },

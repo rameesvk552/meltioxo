@@ -5,6 +5,7 @@ import Sidebar from './Sidebar';
 import Header from './Header';
 import MobileBottomNav from './MobileBottomNav';
 import { PageTitleProvider } from '../../context/PageTitleContext';
+import WayonLogo from '../common/WayonLogo';
 
 const { Content, Sider } = Layout;
 
@@ -14,10 +15,10 @@ export default function AppLayout() {
 
   return (
     <PageTitleProvider>
-    <Layout style={{ minHeight: '100vh' }}>
+    <Layout className="app-shell" style={{ minHeight: '100vh' }}>
       {/* Desktop Sider */}
       <Sider 
-        className="desktop-only"
+        className="desktop-only app-desktop-sider"
         theme="light"
         collapsible 
         collapsed={collapsed} 
@@ -26,7 +27,7 @@ export default function AppLayout() {
         width={260}
       >
         <div style={{ height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid var(--color-border)' }}>
-          <h2 style={{ margin: 0, color: 'var(--color-gold)' }}>{collapsed ? 'ERP' : 'Perfume ERP'}</h2>
+          <WayonLogo compact={collapsed} size={collapsed ? 38 : 36} />
         </div>
         <Sidebar />
       </Sider>
@@ -41,12 +42,12 @@ export default function AppLayout() {
         className="mobile-only"
       >
         <div style={{ height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid var(--color-border)' }}>
-          <h2 style={{ margin: 0, color: 'var(--color-gold)' }}>Perfume ERP</h2>
+          <WayonLogo size={36} />
         </div>
         <Sidebar onNavigate={() => setMobileDrawerOpen(false)} />
       </Drawer>
 
-      <Layout>
+      <Layout className="app-main-layout">
         <Header 
           collapsed={collapsed} 
           setCollapsed={setCollapsed}

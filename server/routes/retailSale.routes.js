@@ -1,9 +1,13 @@
 const router = require('express').Router();
 const ctrl = require('../controllers/retailSaleV2.controller');
+const returns = require('../controllers/salesReturn.controller');
 const { authenticate } = require('../middleware/auth');
 const { tenantContext } = require('../middleware/tenant');
+const { authorize } = require('../middleware/permission');
 router.get('/', authenticate, tenantContext, ctrl.getAll);
 router.get('/:id', authenticate, tenantContext, ctrl.getById);
 router.post('/preview', authenticate, tenantContext, ctrl.preview);
 router.post('/', authenticate, tenantContext, ctrl.create);
+router.put('/:id', authenticate, tenantContext, authorize('super_admin', 'admin', 'manager', 'accountant', 'sales'), ctrl.update);
+router.post('/:id/returns', authenticate, tenantContext, authorize('super_admin', 'admin', 'manager', 'accountant', 'sales'), returns.create);
 module.exports = router;

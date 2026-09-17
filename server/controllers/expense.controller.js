@@ -24,6 +24,17 @@ exports.create = async (req, res, next) => {
       expense_number: req.body.expense_number || `EXP-${new Date(req.body.expense_date).getFullYear()}-${String(sequence).padStart(4, '0')}`,
       payment_method_id: method.id, payment_mode: accounting.paymentModeForType(method.method_type),
       bank_account_id: method.account.id, created_by: req.user.id }, { transaction });
+    const journal = await accounting.createAndPost(req.tenantId, {
+      entry_date: item.expense_date,
+      reference_type: 'expense',
+      reference_id: item.id,
+      narration: item.description || `Expense ${item.expense_number}`,
+      lines: [
+        { account_id: costAccount.id, debit_amount: item.amount, description: item.description },
+        { account_id: method.account.id, credit_amount: item.amount, description: item.description }
+      ]
+    }, req.user.id, transaction);
+    await item.update({ status: 'approved', approved_by: req.user.id, journal_entry_id: journal.id }, { transaction });
     await transaction.commit();
     res.status(201).json(item);
   } catch (error) { await transaction.rollback(); next(error); }

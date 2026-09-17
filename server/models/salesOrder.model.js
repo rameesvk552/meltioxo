@@ -2,6 +2,7 @@ module.exports = (sequelize, DataTypes) => {
   const SalesOrder = sequelize.define('salesOrder', {
     id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
     tenant_id: { type: DataTypes.UUID },
+    branch_id: { type: DataTypes.UUID, allowNull: true },
     order_number: { type: DataTypes.STRING },
     customer_id: { type: DataTypes.UUID },
     status: { type: DataTypes.ENUM('draft','confirmed','invoiced','delivered','cancelled'), defaultValue: 'draft' },
