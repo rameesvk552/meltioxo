@@ -7,6 +7,7 @@ const whatsappCtrl = require('../controllers/whatsappConnection.controller');
 
 router.get('/settings', authenticate, tenantContext, ctrl.getSettings);
 router.put('/settings', authenticate, tenantContext, ctrl.updateSettings);
+router.put('/whatsapp-invoice-settings', authenticate, tenantContext, authorize('super_admin', 'admin'), ctrl.updateWhatsappInvoiceSettings);
 router.get('/whatsapp-connection', authenticate, tenantContext, whatsappCtrl.getConnection);
 router.post('/whatsapp-connection/connect', authenticate, tenantContext, authorize('super_admin', 'admin'), whatsappCtrl.startConnection);
 router.post('/whatsapp-connection/complete', authenticate, tenantContext, authorize('super_admin', 'admin'), whatsappCtrl.completeConnection);

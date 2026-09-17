@@ -399,9 +399,10 @@ export default function ProductsAndVariants() {
   };
 
   const openFormulaModal = () => {
+    const productName = productForm.getFieldValue('name')?.trim();
     formulaForm.resetFields();
     formulaForm.setFieldsValue({
-      version: 1,
+      name: productName || undefined,
       output_quantity: 100,
       output_unit: 'L',
       ingredients: [{ raw_material_id: undefined, quantity: 1 }]
@@ -415,7 +416,6 @@ export default function ProductsAndVariants() {
       const { data: created } = await client.post('/formulas', {
         code: values.code?.trim() || undefined,
         name: values.name.trim(),
-        version: Number(values.version || 1),
         description: values.description?.trim() || undefined,
         output_quantity: Number(values.output_quantity),
         output_unit: values.output_unit,
@@ -914,11 +914,6 @@ export default function ProductsAndVariants() {
                   { value: 'kg', label: 'Kilograms (kg)' },
                   { value: 'pcs', label: 'Units (pcs)' }
                 ]} />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={6}>
-              <Form.Item name="version" label="Version" rules={[{ required: true }]}>
-                <InputNumber min={1} precision={0} style={{ width: '100%' }} />
               </Form.Item>
             </Col>
           </Row>

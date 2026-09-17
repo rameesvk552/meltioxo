@@ -1,6 +1,6 @@
 import React, { useContext, useState } from 'react';
 import { Alert, Button, Card, Col, Descriptions, Empty, Row, Space, Spin, Table, Tag, Typography } from 'antd';
-import { ArrowLeftOutlined, ExperimentOutlined, PrinterOutlined, RollbackOutlined, SwapOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, EditOutlined, ExperimentOutlined, PrinterOutlined, RollbackOutlined, SwapOutlined } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 import useApiData from '../../hooks/useApiData';
 import SalesReturnModal from './SalesReturnModal';
@@ -34,6 +34,7 @@ export default function RetailSaleDetail() {
         <Space wrap>
           {canReturn && sale.return_status !== 'full' && <Button danger icon={<RollbackOutlined />} onClick={() => setReturnOpen(true)}>Return</Button>}
           {canReturn && sale.return_status !== 'full' && <Button icon={<SwapOutlined />} onClick={() => setExchangeOpen(true)}>Exchange</Button>}
+          {canReturn && sale.return_status === 'none' && <Button icon={<EditOutlined />} onClick={() => navigate(`/app/retail-sales/${sale.id}/edit`)}>Edit sale</Button>}
           <Button type="primary" icon={<PrinterOutlined />} onClick={() => navigate(`/app/retail-sales/${sale.id}/invoice`)}>Invoice &amp; Print</Button>
         </Space>
       </div>

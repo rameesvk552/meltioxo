@@ -131,7 +131,6 @@ export default function RetailSaleInvoice() {
                 <th>Product</th>
                 <th className="numeric">Qty</th>
                 <th className="numeric">Rate</th>
-                {hasDiscount && <th className="numeric">Disc.</th>}
                 {hasTax && <th className="numeric">Tax</th>}
                 <th className="numeric">Amount</th>
               </tr>
@@ -144,15 +143,15 @@ export default function RetailSaleInvoice() {
                 const isMeasured = Boolean(variant.product?.sell_by_measurement);
                 const variantName = packingMaterial?.sku || (isMeasured ? null : variant.size_label || variant.sku);
                 const quantityUnit = packingMaterial ? ` ${packingMaterial.unit || 'pcs'}` : isMeasured ? ` ${variant.product.measurement_unit || 'ml'}` : '';
+                const lineAmount = Number(item.quantity || 0) * Number(item.unit_price || 0);
                 return (
                   <tr key={item.id || index}>
                     <td>{index + 1}</td>
                     <td><strong>{productName}</strong>{variantName && <small>{variantName}{variant.sku && variantName !== variant.sku ? ` · ${variant.sku}` : ''}</small>}</td>
                     <td className="numeric">{quantity(item.quantity)}{quantityUnit}</td>
                     <td className="numeric">{money(item.unit_price)}</td>
-                    {hasDiscount && <td className="numeric">{Number(item.discount_pct || 0).toLocaleString('en-IN')}%</td>}
                     {hasTax && <td className="numeric">{Number(item.tax_rate || 0).toLocaleString('en-IN')}%</td>}
-                    <td className="numeric"><strong>{money(item.total)}</strong></td>
+                    <td className="numeric"><strong>{money(lineAmount)}</strong></td>
                   </tr>
                 );
               })}

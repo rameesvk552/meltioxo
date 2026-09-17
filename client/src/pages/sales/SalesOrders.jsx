@@ -1,6 +1,6 @@
 import React from 'react';
 import { Card, Row, Col, Statistic, Tag, Button, Space } from 'antd';
-import { PlusOutlined, ShoppingCartOutlined, CheckCircleOutlined, FileTextOutlined, WhatsAppOutlined, EyeOutlined } from '@ant-design/icons';
+import { PlusOutlined, ShoppingCartOutlined, CheckCircleOutlined, FileTextOutlined, WhatsAppOutlined, EyeOutlined, EditOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import useApiData from '../../hooks/useApiData';
 import ResponsiveDataTable from '../../components/common/ResponsiveDataTable';
@@ -72,6 +72,7 @@ const SalesOrders = () => {
         <Space size="middle">
           <Button type="text" icon={<EyeOutlined />} onClick={() => navigate(`/app/retail-sales/${record.id}`)}>View</Button>
           <Button type="text" icon={<FileTextOutlined />} onClick={() => navigate(`/app/retail-sales/${record.id}/invoice`)}>Invoice</Button>
+          {record.return_status === 'none' && <Button type="text" icon={<EditOutlined />} onClick={() => navigate(`/app/retail-sales/${record.id}/edit`)}>Edit</Button>}
           <Button type="text" icon={<WhatsAppOutlined />} style={{ color: '#25D366' }} onClick={() => handleWhatsAppShare(record)} />
         </Space>
       ),

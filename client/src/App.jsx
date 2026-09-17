@@ -113,6 +113,7 @@ export default function App() {
         <Route path="retail-sales" element={<SalesOrders />} />
         <Route path="day-register" element={<DayRegister />} />
         <Route path="retail-sales/new" element={<SalesOrderForm />} />
+        <Route path="retail-sales/:id/edit" element={<SalesOrderForm />} />
         <Route path="retail-sales/:id/invoice" element={<RetailSaleInvoice />} />
         <Route path="retail-sales/:id" element={<RetailSaleDetail />} />
         

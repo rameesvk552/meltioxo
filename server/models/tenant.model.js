@@ -31,6 +31,10 @@ module.exports = (sequelize, DataTypes) => {
     whatsapp_contact_sync_status: { type: DataTypes.STRING(30), allowNull: false, defaultValue: 'NOT_STARTED' },
     whatsapp_history_sync_status: { type: DataTypes.STRING(30), allowNull: false, defaultValue: 'NOT_STARTED' },
     whatsapp_coexistence_last_synced_at: { type: DataTypes.DATE },
+    whatsapp_invoice_auto_send: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    whatsapp_invoice_api_url: { type: DataTypes.TEXT },
+    whatsapp_invoice_api_token: { type: DataTypes.TEXT },
+    whatsapp_invoice_template: { type: DataTypes.STRING(255), defaultValue: 'rental_invoice_5' },
     status: { type: DataTypes.ENUM('active','suspended','deactivated'), defaultValue: 'active' }
   }, {
     tableName: 'tenants',

@@ -14,6 +14,16 @@ const hasPermission = (user, collection, permission) => {
 exports.hasViewPermission = (user, permission) => hasPermission(user, 'views', permission);
 exports.hasDashboardWidgetPermission = (user, permission) => hasPermission(user, 'dashboard_widgets', permission);
 
+// Use this for data endpoints that back a screen.  The browser's navigation
+// guards are useful UX, but they must not be the only protection because an
+// API URL can be called directly.
+exports.requireViewPermission = (...permissions) => {
+  return (req, res, next) => {
+    if (permissions.some(permission => exports.hasViewPermission(req.user, permission))) return next();
+    return next(new AppError('You do not have permission to view this information', 403));
+  };
+};
+
 exports.normalizePermissions = permissions => {
   if (permissions === null || permissions === undefined) return null;
   if (!permissions || typeof permissions !== 'object' || Array.isArray(permissions)) {

@@ -2,6 +2,7 @@ const db = require('../models');
 const { AppError } = require('../middleware/errorHandler');
 const accounting = require('../services/accounting.service');
 const { ACCOUNT_CODES } = require('../config/constants');
+const saleNumbers = require('../services/saleNumber.service');
 
 const number = value => Number(value || 0);
 
@@ -25,7 +26,7 @@ exports.create = async (req, res, next) => {
     const method = await accounting.resolvePaymentMethod(req.tenantId, req.body, transaction);
     const paymentAccount = method.account;
 
-    const sequence = await db.retailSale.count({ where: { tenant_id: req.tenantId }, transaction }) + 1;
+    const saleNumber = await saleNumbers.nextRetailSaleNumber({ tenantId: req.tenantId, saleDate: sale_date, transaction });
     let subtotal = 0, discountAmount = 0, taxAmount = 0;
     const calculated = items.map(row => {
       const qty = number(row.quantity), price = number(row.unit_price), discountPct = number(row.discount_pct), taxRate = number(row.tax_rate);
@@ -36,7 +37,7 @@ exports.create = async (req, res, next) => {
       return { ...row, quantity: qty, unit_price: price, discount_pct: discountPct, tax_rate: taxRate, tax_amount: tax, total: accounting.money(taxable + tax) };
     });
     subtotal = accounting.money(subtotal); discountAmount = accounting.money(discountAmount); taxAmount = accounting.money(taxAmount);
-    const sale = await db.retailSale.create({ tenant_id: req.tenantId, sale_number: `RS-${new Date(sale_date).getFullYear()}-${String(sequence).padStart(4, '0')}`,
+    const sale = await db.retailSale.create({ tenant_id: req.tenantId, sale_number: saleNumber,
       sale_date, customer_id, payment_account_id: paymentAccount.id, payment_method_id: method.id, notes, subtotal, discount_amount: discountAmount, tax_amount: taxAmount, total_amount: accounting.money(subtotal - discountAmount + taxAmount), created_by: req.user.id }, { transaction });
 
     let cogs = 0;

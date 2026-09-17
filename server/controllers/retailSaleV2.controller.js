@@ -1,11 +1,28 @@
 const db = require('../models');
+const { Op } = db.Sequelize;
 const { AppError } = require('../middleware/errorHandler');
 const accounting = require('../services/accounting.service');
 const production = require('../services/production.service');
 const businessDays = require('../services/businessDay.service');
+const saleNumbers = require('../services/saleNumber.service');
+const invoiceWhatsapp = require('../services/invoiceWhatsapp.service');
 const { ACCOUNT_CODES } = require('../config/constants');
 
 const number = value => Number(value || 0);
+const allocateFixedDiscount = (bases, amount) => {
+  const baseCents = bases.map(base => Math.round(number(base) * 100));
+  const subtotalCents = baseCents.reduce((sum, cents) => sum + cents, 0);
+  const discountCents = Math.min(Math.max(0, Math.round(number(amount) * 100)), subtotalCents);
+  if (!subtotalCents || !discountCents) return baseCents.map(() => 0);
+  const shares = baseCents.map((cents, index) => {
+    const exact = discountCents * cents / subtotalCents;
+    return { index, cents: Math.floor(exact), remainder: exact % 1 };
+  });
+  let centsLeft = discountCents - shares.reduce((sum, share) => sum + share.cents, 0);
+  shares.sort((left, right) => right.remainder - left.remainder || left.index - right.index);
+  for (let index = 0; index < centsLeft; index += 1) shares[index].cents += 1;
+  return shares.sort((left, right) => left.index - right.index).map(share => share.cents / 100);
+};
 const measurementSourceType = variant => variant?.product?.sell_by_measurement ? (variant.product.measurement_source_type || 'formula') : null;
 const fulfillmentModeForVariant = variant => variant?.source_type === 'ready_made' || ['raw_material', 'bulk_stock'].includes(measurementSourceType(variant)) ? 'stock' : 'make_now';
 const mlToMaterialQuantity = (ml, unit) => ['l', 'litre', 'litres', 'liter', 'liters'].includes(String(unit || '').trim().toLowerCase()) ? ml / 1000 : ml;
@@ -114,18 +131,22 @@ const buildPreview = async (tenantId, items, transaction) => {
       line.matching_kits = matchingKits.map(kit => ({ id: kit.id, code: kit.code, name: kit.name, minimum_fill_ml: number(kit.minimum_fill_ml), maximum_fill_ml: number(kit.maximum_fill_ml), is_default: kit.is_default }));
       let selectedKit = row.packing_kit_id ? matchingKits.find(kit => kit.id === row.packing_kit_id) : null;
       if (row.packing_kit_id && !selectedKit) throw new AppError(`The selected packing kit does not support ${fillQuantityMl} ml`, 400);
-      if (!selectedKit && settings.measured_packaging_auto_select && matchingKits.length === 1) selectedKit = matchingKits[0];
+      if (!selectedKit && settings.measured_packaging_auto_select) selectedKit = matchingKits.find(kit => kit.is_default) || (matchingKits.length === 1 ? matchingKits[0] : null);
       if (!selectedKit && settings.measured_packaging_required) {
         if (!matchingKits.length) throw new AppError(`No active packing kit supports ${fillQuantityMl} ml`, 400);
         throw new AppError(`Select a packing kit for ${variant.product.name}`, 400);
       }
       if (selectedKit) {
         line.packing_kit = { id: selectedKit.id, code: selectedKit.code, name: selectedKit.name };
+        const requestedQuantities = row.packing_kit_quantities && typeof row.packing_kit_quantities === 'object' ? row.packing_kit_quantities : {};
+        if (Object.values(requestedQuantities).some(value => !Number.isFinite(Number(value)) || Number(value) <= 0)) {
+          throw new AppError('Packing kit material quantities must be greater than zero', 400);
+        }
         line.packaging = selectedKit.packingKitItems.map(item => ({
           id: item.packaging_material_id,
           name: item.packagingMaterial?.name || 'Packaging',
           unit: item.packagingMaterial?.unit || 'pcs',
-          quantity: number(item.quantity) * packCount
+          quantity: number(requestedQuantities[item.packaging_material_id] ?? item.quantity) * packCount
         }));
         line.sale_packaging = line.packaging;
         line.packaging.forEach(pkg => {
@@ -290,7 +311,13 @@ exports.getById = async (req, res, next) => {
   try {
     const sale = await db.retailSale.findOne({ where: { id: req.params.id, tenant_id: req.tenantId }, include: saleInclude });
     if (!sale) throw new AppError('Sale not found', 404);
-    res.json(await enrichSaleMaterials(req.tenantId, sale));
+    const data = await enrichSaleMaterials(req.tenantId, sale);
+    data.payments = sale.journal_entry_id ? await db.payment.findAll({
+      where: { tenant_id: req.tenantId, journal_entry_id: sale.journal_entry_id },
+      include: [db.paymentMethod],
+      order: [['created_at', 'ASC']]
+    }) : [];
+    res.json(data);
   } catch (error) { next(error); }
 };
 
@@ -374,12 +401,120 @@ const consumeMaterialStock = async ({ tenantId, saleId, materialType, materialId
   return { material, totalCost };
 };
 
-exports.create = async (req, res, next) => {
+const removeJournal = async (tenantId, journalId, userId, transaction) => {
+  if (!journalId) return;
+  const journal = await db.journalEntry.findOne({ where: { id: journalId, tenant_id: tenantId }, transaction, lock: transaction.LOCK.UPDATE });
+  if (!journal) return;
+  const lines = await db.journalEntryLine.findAll({ where: { journal_entry_id: journal.id }, transaction });
+  if (journal.status === 'posted') {
+    const accountIds = [...new Set(lines.map(line => line.account_id))];
+    const accounts = await db.account.findAll({ where: { tenant_id: tenantId, id: { [Op.in]: accountIds } }, transaction, lock: transaction.LOCK.UPDATE });
+    const accountById = new Map(accounts.map(account => [account.id, account]));
+    for (const line of lines) {
+      const account = accountById.get(line.account_id);
+      if (!account) throw new AppError(`Cannot rebuild sale: account for journal ${journal.entry_number} is missing`, 409);
+      const effect = ['asset', 'expense'].includes(account.type)
+        ? number(line.debit) - number(line.credit)
+        : number(line.credit) - number(line.debit);
+      if (effect) await account.increment('balance', { by: -effect, transaction });
+    }
+  }
+  await db.journalEntryLine.destroy({ where: { journal_entry_id: journal.id }, transaction });
+  await journal.destroy({ transaction });
+};
+
+const restoreStockForMovements = async (tenantId, movements, transaction) => {
+  const itemDeltas = new Map();
+  const batchDeltas = new Map();
+  for (const movement of movements) {
+    const quantity = number(movement.quantity);
+    const delta = movement.direction === 'out' ? quantity : -quantity;
+    const itemKey = `${movement.material_type}:${movement.material_id}`;
+    itemDeltas.set(itemKey, (itemDeltas.get(itemKey) || 0) + delta);
+    if (movement.batch_id) batchDeltas.set(movement.batch_id, (batchDeltas.get(movement.batch_id) || 0) + delta);
+  }
+
+  for (const [key, delta] of itemDeltas) {
+    if (Math.abs(delta) < 0.000001) continue;
+    const [materialType, materialId] = key.split(':');
+    const Model = materialType === 'raw' ? db.rawMaterial : materialType === 'packaging' ? db.packagingMaterial : db.finishedGood;
+    const item = await Model.findOne({ where: { id: materialId, tenant_id: tenantId }, transaction, lock: transaction.LOCK.UPDATE });
+    if (!item) throw new AppError(`Cannot rebuild sale: ${materialType} stock item is missing`, 409);
+    await item.update({ current_stock: number(item.current_stock) + delta }, { transaction });
+  }
+  for (const [batchId, delta] of batchDeltas) {
+    const batch = await db.stockBatch.findOne({ where: { id: batchId, tenant_id: tenantId }, transaction, lock: transaction.LOCK.UPDATE });
+    if (batch) await batch.update({ remaining_qty: number(batch.remaining_qty) + delta }, { transaction });
+  }
+};
+
+// Editing a posted sale is an in-place rebuild. Its original stock and journal
+// effects are removed inside the same transaction, then the normal create path
+// posts the edited sale again. No reversal rows are created.
+const removeSaleDataForRebuild = async (tenantId, sale, transaction) => {
+  const saleItems = await db.retailSaleItem.findAll({ where: { retail_sale_id: sale.id }, transaction, lock: transaction.LOCK.UPDATE });
+  const productionOrderIds = [...new Set(saleItems.map(item => item.production_order_id).filter(Boolean))];
+  const returnCount = await db.salesReturn.count({ where: { tenant_id: tenantId, retail_sale_id: sale.id }, transaction });
+  if (returnCount || sale.exchange_return_id) {
+    throw new AppError('A sale with returns or an exchange cannot be edited. Correct it with a return instead.', 409);
+  }
+
+  const saleJournals = await db.journalEntry.findAll({
+    where: { tenant_id: tenantId, [Op.or]: [
+      { id: { [Op.in]: [sale.journal_entry_id, sale.cogs_journal_id].filter(Boolean) } },
+      { reference_type: { [Op.in]: ['retail_sale_revenue', 'retail_sale_cogs'] }, reference_id: sale.id }
+    ] }, transaction, lock: transaction.LOCK.UPDATE
+  });
+  const productionJournals = productionOrderIds.length ? await db.journalEntry.findAll({
+    where: { tenant_id: tenantId, [Op.or]: [
+      { reference_type: { [Op.in]: ['production_issue', 'production_completion'] }, reference_id: { [Op.in]: productionOrderIds } },
+      { id: { [Op.in]: (await db.productionOrder.findAll({ where: { id: productionOrderIds, tenant_id: tenantId }, attributes: ['journal_entry_id'], transaction })).map(order => order.journal_entry_id).filter(Boolean) } }
+    ] }, transaction, lock: transaction.LOCK.UPDATE
+  }) : [];
+  const journalIds = [...new Set([...saleJournals, ...productionJournals].map(journal => journal.id))];
+  const payments = journalIds.length ? await db.payment.findAll({ where: { tenant_id: tenantId, journal_entry_id: { [Op.in]: journalIds } }, transaction, lock: transaction.LOCK.UPDATE }) : [];
+  const paymentIds = payments.map(payment => payment.id);
+  const allocations = paymentIds.length ? await db.paymentAllocation.findAll({ where: { payment_id: { [Op.in]: paymentIds } }, transaction, lock: transaction.LOCK.UPDATE }) : [];
+  if (allocations.length) throw new AppError('This sale has allocated payments and cannot be edited safely', 409);
+
+  const movementWhere = [{ reference_type: 'retail_sale', reference_id: sale.id }];
+  if (productionOrderIds.length) movementWhere.push({ reference_type: 'production_order', reference_id: { [Op.in]: productionOrderIds } });
+  const movements = await db.stockMovement.findAll({ where: { tenant_id: tenantId, [Op.or]: movementWhere }, transaction, lock: transaction.LOCK.UPDATE });
+  await restoreStockForMovements(tenantId, movements, transaction);
+
+  const productionBatchIds = [...new Set(movements.filter(movement => movement.reference_type === 'production_order' && movement.direction === 'in' && movement.batch_id).map(movement => movement.batch_id))];
+  await db.inventoryDeficit.destroy({ where: { tenant_id: tenantId, production_order_id: { [Op.in]: productionOrderIds } }, transaction });
+  await db.stockMovement.destroy({ where: { id: { [Op.in]: movements.map(movement => movement.id) } }, transaction });
+  await db.retailSaleItemPackaging.destroy({ where: { retail_sale_item_id: { [Op.in]: saleItems.map(item => item.id) } }, transaction });
+  await db.retailSaleItem.destroy({ where: { retail_sale_id: sale.id }, transaction });
+  if (productionOrderIds.length) {
+    await db.productionMaterial.destroy({ where: { production_order_id: { [Op.in]: productionOrderIds } }, transaction });
+    await db.productionOutput.destroy({ where: { production_order_id: { [Op.in]: productionOrderIds } }, transaction });
+    await db.productionOrder.destroy({ where: { id: { [Op.in]: productionOrderIds }, tenant_id: tenantId }, transaction });
+  }
+  if (paymentIds.length) {
+    await db.paymentAllocation.destroy({ where: { payment_id: { [Op.in]: paymentIds } }, transaction });
+    await db.payment.destroy({ where: { id: { [Op.in]: paymentIds }, tenant_id: tenantId }, transaction });
+  }
+  for (const journal of [...saleJournals, ...productionJournals]) await removeJournal(tenantId, journal.id, sale.created_by, transaction);
+  if (productionBatchIds.length) {
+    const remainingReferences = await db.stockMovement.count({ where: { tenant_id: tenantId, batch_id: { [Op.in]: productionBatchIds } }, transaction });
+    if (!remainingReferences) await db.stockBatch.destroy({ where: { tenant_id: tenantId, id: { [Op.in]: productionBatchIds } }, transaction });
+  }
+};
+
+const saveSale = async (req, res, next, isEdit = false) => {
   const transaction = await db.sequelize.transaction();
   try {
-    const { items = [], customer_id = null, notes, allow_negative_materials = false, exchange_return_id = null } = req.body;
-    const businessDay = await businessDays.requireOpen(req.tenantId, transaction);
-    const sale_date = businessDay.business_date;
+    const { items = [], customer_id = null, notes, allow_negative_materials = false, exchange_return_id = null, order_discount_amount } = req.body;
+    const existingSale = isEdit ? await db.retailSale.findOne({ where: { id: req.params.id, tenant_id: req.tenantId }, transaction, lock: transaction.LOCK.UPDATE }) : null;
+    if (isEdit && !existingSale) throw new AppError('Sale not found', 404);
+    if (isEdit) await removeSaleDataForRebuild(req.tenantId, existingSale, transaction);
+    const businessDay = isEdit && existingSale.business_day_id
+      ? await db.businessDay.findOne({ where: { id: existingSale.business_day_id, tenant_id: req.tenantId }, transaction, lock: transaction.LOCK.UPDATE })
+      : await businessDays.requireOpen(req.tenantId, transaction);
+    if (!businessDay) throw new AppError('The sale business day no longer exists', 409);
+    const sale_date = isEdit ? existingSale.sale_date : businessDay.business_date;
     if (customer_id) {
       const customer = await db.customer.findOne({ where: { id: customer_id, tenant_id: req.tenantId, is_active: true }, transaction });
       if (!customer) throw new AppError('Customer not found', 400);
@@ -398,22 +533,29 @@ exports.create = async (req, res, next) => {
       await transaction.rollback();
       return res.status(409).json({ success: false, code: 'NEGATIVE_STOCK_CONFIRMATION_REQUIRED', message: 'Confirm the material shortages to complete this sale', preview, shortages: preview.shortages });
     }
-    const sequence = await db.retailSale.count({ where: { tenant_id: req.tenantId }, transaction }) + 1;
+    const saleNumber = isEdit ? null : await saleNumbers.nextRetailSaleNumber({ tenantId: req.tenantId, saleDate: sale_date, transaction });
+    const hasFixedOrderDiscount = order_discount_amount !== undefined && order_discount_amount !== null;
+    const fixedLineDiscounts = hasFixedOrderDiscount
+      ? allocateFixedDiscount(items.map(row => accounting.money(number(row.quantity) * number(row.unit_price))), order_discount_amount)
+      : null;
     let subtotal = 0, discountAmount = 0, taxAmount = 0;
     const calculated = items.map((row, index) => {
       const quantity = number(row.quantity), price = number(row.unit_price), discountPct = number(row.discount_pct), taxRate = number(row.tax_rate);
       if (price < 0) throw new AppError('Sale price cannot be negative', 400);
       if (discountPct < 0 || discountPct > 100 || taxRate < 0 || taxRate > 100) throw new AppError('Discount and tax rates must be between 0 and 100', 400);
-      const base = accounting.money(quantity * price), discount = accounting.money(base * discountPct / 100), taxable = accounting.money(base - discount), tax = accounting.money(taxable * taxRate / 100);
+      const base = accounting.money(quantity * price), discount = hasFixedOrderDiscount ? fixedLineDiscounts[index] : accounting.money(base * discountPct / 100), taxable = accounting.money(base - discount), tax = accounting.money(taxable * taxRate / 100);
       subtotal += base; discountAmount += discount; taxAmount += tax;
       const previewLine = preview.lines[index];
-      return { ...row, item_type: previewLine.item_type, line_number: index + 1, fulfillment_mode: previewLine.fulfillment_mode, measurement_source_type: previewLine.measurement_source_type, measurement_source_id: previewLine.measurement_source_id, source_quantity: previewLine.source_quantity, exclude_formula_packaging: previewLine.exclude_formula_packaging, fill_quantity_ml: previewLine.fill_quantity_ml, pack_count: previewLine.pack_count, packing_kit: previewLine.packing_kit, sale_packaging: previewLine.sale_packaging, quantity, unit_price: price, discount_pct: discountPct, tax_rate: taxRate, tax_amount: tax, total: accounting.money(taxable + tax) };
+      return { ...row, item_type: previewLine.item_type, line_number: index + 1, fulfillment_mode: previewLine.fulfillment_mode, measurement_source_type: previewLine.measurement_source_type, measurement_source_id: previewLine.measurement_source_id, source_quantity: previewLine.source_quantity, exclude_formula_packaging: previewLine.exclude_formula_packaging, fill_quantity_ml: previewLine.fill_quantity_ml, pack_count: previewLine.pack_count, packing_kit: previewLine.packing_kit, sale_packaging: previewLine.sale_packaging, quantity, unit_price: price, discount_pct: hasFixedOrderDiscount && base ? accounting.money(discount / base * 100) : discountPct, tax_rate: taxRate, tax_amount: tax, total: accounting.money(taxable + tax) };
     });
     subtotal = accounting.money(subtotal); discountAmount = accounting.money(discountAmount); taxAmount = accounting.money(taxAmount);
     const totalAmount = accounting.money(subtotal - discountAmount + taxAmount);
     const paymentSplits = await accounting.resolvePaymentSplits(req.tenantId, req.body, totalAmount, transaction);
     const primaryPayment = paymentSplits[0];
-    const sale = await db.retailSale.create({ tenant_id: req.tenantId, business_day_id: businessDay.id, exchange_return_id, sale_number: `RS-${new Date(sale_date).getFullYear()}-${String(sequence).padStart(4, '0')}`, sale_date, customer_id, payment_account_id: primaryPayment.method.account.id, payment_method_id: primaryPayment.method.id, notes, subtotal, discount_amount: discountAmount, tax_amount: taxAmount, total_amount: totalAmount, created_by: req.user.id }, { transaction });
+    const sale = isEdit
+      ? existingSale
+      : await db.retailSale.create({ tenant_id: req.tenantId, business_day_id: businessDay.id, exchange_return_id, sale_number: saleNumber, sale_date, customer_id, payment_account_id: primaryPayment.method.account.id, payment_method_id: primaryPayment.method.id, notes, subtotal, discount_amount: discountAmount, tax_amount: taxAmount, total_amount: totalAmount, created_by: req.user.id }, { transaction });
+    if (isEdit) await sale.update({ customer_id, payment_account_id: primaryPayment.method.account.id, payment_method_id: primaryPayment.method.id, notes, subtotal, discount_amount: discountAmount, tax_amount: taxAmount, total_amount: totalAmount, cogs_amount: 0, journal_entry_id: null, cogs_journal_id: null }, { transaction });
     let cogs = 0, rawInventoryCost = 0, packagingInventoryCost = 0, finishedInventoryCost = 0;
     for (const line of calculated) {
       const variant = line.item_type === 'packaging_material' ? null : await loadVariant(req.tenantId, line.finished_good_id, transaction);
@@ -496,12 +638,23 @@ exports.create = async (req, res, next) => {
     }
     await sale.update({ cogs_amount: cogs, journal_entry_id: revenueJournal.id, cogs_journal_id: cogsJournal?.id || null }, { transaction });
     await transaction.commit();
-    res.status(201).json({ ...sale.toJSON(), payment_id: paymentRecords[0].id, payment_ids: paymentRecords.map(record => record.id) });
+    // Send only after the database transaction succeeds; provider failures do
+    // not undo a sale, inventory movement, payment, or journal entry.
+    const [customer, tenant] = await Promise.all([
+      customer_id ? db.customer.findOne({ where: { id: customer_id, tenant_id: req.tenantId } }) : null,
+      db.tenant.findByPk(req.tenantId),
+    ]);
+    const whatsapp = isEdit ? { attempted: false, status: 'not_sent_for_update' } : await invoiceWhatsapp.sendInvoice({ sale: sale.toJSON(), customer, tenant });
+    if (whatsapp.status === 'failed') console.error(`Invoice WhatsApp send failed for ${sale.sale_number}: ${whatsapp.reason}`);
+    res.status(isEdit ? 200 : 201).json({ ...sale.toJSON(), payment_id: paymentRecords[0].id, payment_ids: paymentRecords.map(record => record.id), whatsapp });
   } catch (error) {
     if (!transaction.finished) await transaction.rollback();
     next(error);
   }
 };
+
+exports.create = (req, res, next) => saveSale(req, res, next, false);
+exports.update = (req, res, next) => saveSale(req, res, next, true);
 
 exports.buildPreview = buildPreview;
 exports.fulfillmentModeForVariant = fulfillmentModeForVariant;

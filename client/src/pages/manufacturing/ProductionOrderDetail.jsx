@@ -4,6 +4,7 @@ import { ArrowLeftOutlined, PlayCircleOutlined, CheckCircleOutlined } from '@ant
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import client from '../../api/client';
 import useApiData from '../../hooks/useApiData';
+import './ProductionOrders.css';
 
 export default function ProductionOrderDetail() {
   const navigate = useNavigate();
@@ -69,7 +70,7 @@ export default function ProductionOrderDetail() {
   ];
 
   return (
-    <div style={{ padding: 24 }}>
+    <div className="production-page production-detail-page">
       <Breadcrumb style={{ marginBottom: 16 }}>
         <Breadcrumb.Item><Link to="/app/dashboard" style={{ color: 'var(--color-text-secondary)' }}>Dashboard</Link></Breadcrumb.Item>
         <Breadcrumb.Item><Link to="/app/production" style={{ color: 'var(--color-text-secondary)' }}>Production</Link></Breadcrumb.Item>

@@ -12,6 +12,7 @@ import {
   VIEW_PERMISSION_GROUPS,
 } from '../../config/permissions';
 import WhatsAppIntegration from './WhatsAppIntegration';
+import WhatsAppInvoiceSettings from './WhatsAppInvoiceSettings';
 
 const { Title } = Typography;
 const { Option } = Select;
@@ -430,7 +431,7 @@ const CompanySettings = () => {
     {
       key: '6',
       label: 'WhatsApp',
-      children: <WhatsAppIntegration canManage={canManageUsers} />
+      children: <><WhatsAppIntegration canManage={canManageUsers} /><WhatsAppInvoiceSettings canManage={canManageUsers} /></>
     }
   ];
 

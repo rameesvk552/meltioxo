@@ -1,0 +1,109 @@
+.production-page {
+  min-height: 100%;
+  padding: 30px 36px 48px;
+  background: #f7f8fa;
+}
+
+.production-page .responsive-list-page-header {
+  margin-bottom: 22px;
+}
+
+.production-page .responsive-list-page-header h1,
+.production-detail-page h1 {
+  color: #172a3a !important;
+  font-family: var(--font-family) !important;
+  font-size: 28px;
+  font-weight: 750;
+  letter-spacing: -.035em;
+}
+
+.production-page .page-summary-inline .ant-card,
+.production-table-card,
+.production-detail-page > .ant-card {
+  border: 1px solid #e4e9ed !important;
+  border-radius: 14px !important;
+  box-shadow: 0 2px 8px rgba(25, 42, 60, .035) !important;
+}
+
+.production-page .page-summary-inline .ant-card {
+  min-height: 98px;
+}
+
+.production-page .page-summary-inline .ant-statistic-title {
+  color: #708090;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.production-page .page-summary-inline .ant-statistic-content {
+  color: #1d3948;
+  font-size: 25px;
+  font-weight: 780;
+}
+
+.production-table-card .ant-card-body {
+  padding: 8px 20px 20px;
+}
+
+.production-table-card .ant-tabs-nav {
+  margin-bottom: 12px;
+}
+
+.production-table-card .ant-tabs-tab {
+  color: #718091;
+  font-size: 13px;
+}
+
+.production-table-card .ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: #b54230;
+  font-weight: 700;
+}
+
+.production-table-card .ant-table-thead > tr > th {
+  background: #f7f9fa !important;
+  color: #687987 !important;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.production-table-card .ant-table-tbody > tr > td {
+  color: #405565;
+  font-size: 12px;
+}
+
+.production-table-card .ant-table-tbody > tr:hover > td {
+  background: #fff9f7 !important;
+}
+
+.production-table-card .ant-progress-inner {
+  background: #edf1f2;
+}
+
+.production-table-card .ant-progress-bg {
+  height: 6px !important;
+}
+
+.production-detail-page > .ant-card {
+  margin-bottom: 18px !important;
+}
+
+.production-detail-page .ant-card-head-title {
+  color: #1d3445;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.production-detail-page .ant-breadcrumb {
+  margin-bottom: 20px !important;
+}
+
+@media (max-width: 767px) {
+  .production-page { padding: 20px 16px 34px; }
+  .production-page .responsive-list-page-header h1 { font-size: 23px; }
+  .production-page .page-summary-inline { display: none; }
+  .production-table-card { border: 0 !important; background: transparent !important; box-shadow: none !important; }
+  .production-table-card .ant-card-body { padding: 0; }
+  .production-detail-page h1 { font-size: 22px; }
+}

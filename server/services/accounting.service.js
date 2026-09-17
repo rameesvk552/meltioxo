@@ -43,7 +43,9 @@ const money = (value, field = 'Amount') => {
 };
 
 const dateOnly = value => {
-  const result = value ? String(value).slice(0, 10) : today();
+  const result = value instanceof Date
+    ? value.toISOString().slice(0, 10)
+    : value ? String(value).slice(0, 10) : today();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(result)) throw new AppError('Entry date must be YYYY-MM-DD', 400);
   return result;
 };

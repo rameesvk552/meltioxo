@@ -16,6 +16,9 @@ app.use(express.json({ limit: '8mb' }));
 app.use(requestContext);
 app.use(morgan('dev'));
 
+// Used only by WhatsApp to fetch a time-limited signed invoice PDF.
+app.use('/api/public', require('./routes/publicInvoice.routes'));
+
 // Routes would be mounted here
 app.use('/api/auth', require('./routes/auth.routes'));
 app.use('/api/raw-materials', require('./routes/rawMaterial.routes'));
