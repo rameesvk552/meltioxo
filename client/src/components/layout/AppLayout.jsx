@@ -6,12 +6,14 @@ import Header from './Header';
 import MobileBottomNav from './MobileBottomNav';
 import { PageTitleProvider } from '../../context/PageTitleContext';
 import WayonLogo from '../common/WayonLogo';
+import useApiData from '../../hooks/useApiData';
 
 const { Content, Sider } = Layout;
 
 export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const { data: tenant } = useApiData('/tenant/settings', { initialData: {} });
 
   return (
     <PageTitleProvider>
@@ -27,7 +29,7 @@ export default function AppLayout() {
         width={260}
       >
         <div style={{ height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid var(--color-border)' }}>
-          <WayonLogo compact={collapsed} size={collapsed ? 38 : 36} />
+          <WayonLogo compact={collapsed} size={collapsed ? 38 : 36} logoUrl={tenant.logo_url} companyName={tenant.name} />
         </div>
         <Sidebar />
       </Sider>
@@ -42,7 +44,7 @@ export default function AppLayout() {
         className="mobile-only"
       >
         <div style={{ height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid var(--color-border)' }}>
-          <WayonLogo size={36} />
+          <WayonLogo size={36} logoUrl={tenant.logo_url} companyName={tenant.name} />
         </div>
         <Sidebar onNavigate={() => setMobileDrawerOpen(false)} />
       </Drawer>

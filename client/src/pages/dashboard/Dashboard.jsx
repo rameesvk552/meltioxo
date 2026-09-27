@@ -234,16 +234,27 @@ export default function Dashboard() {
       </Card>)}
     </section>
 
-    <section className="dashboard-middle-grid">
-      {hasRevenueFlowAccess && <Card className="dashboard-panel revenue-flow-panel" title="Revenue Flow" extra={<span className="refresh-mark">↻</span>}>
-        <div className="revenue-flow-grid">{revenueFlowItems.map(item => show(item.key) && <div className="revenue-flow-item" key={item.key}><span className={`flow-icon ${item.tone}`}>{item.icon}</span><div><strong>{dashboardCurrency(revenueFlow[item.key])}</strong><Text>{item.label}</Text></div></div>)}</div>
-      </Card>}
-      <Card className="dashboard-panel revenue-management" title="Revenue Management">
-        <div className="money-summary">
-          <div><span className="summary-icon blue"><BankOutlined /></span><strong>{dashboardCurrency(show('overdue_payables') ? 0 : 0)}</strong><Text>Expected Payable</Text></div>
-          <div><span className="summary-icon purple"><WalletOutlined /></span><strong>{dashboardCurrency(show('overdue_receivables') ? 0 : 0)}</strong><Text>Expected Receivable</Text></div>
-        </div>
-      </Card>
+    <section className="dashboard-middle-grid finance-sections">
+      {hasRevenueFlowAccess && <>
+        {(show('cash_collected') || show('bank_collected')) && <Card className="dashboard-panel finance-panel" bordered={false}>
+          <div className="finance-panel-heading">
+            <div><span className="finance-panel-icon collection"><WalletOutlined /></span><div><strong>Collections</strong><Text>Billed vs collected</Text></div></div>
+            <Link to="/app/receivables">View all ↗</Link>
+          </div>
+          <div className="finance-total"><Text>Total collected</Text><strong>{dashboardCurrency((show('cash_collected') ? Number(revenueFlow.cash_collected || 0) : 0) + (show('bank_collected') ? Number(revenueFlow.bank_collected || 0) : 0))}</strong></div>
+          {show('cash_collected') && <div className="finance-row"><span>Cash collected</span><strong>{dashboardCurrency(revenueFlow.cash_collected)}</strong></div>}
+          {show('bank_collected') && <div className="finance-row"><span>Bank collections</span><strong>{dashboardCurrency(revenueFlow.bank_collected)}</strong></div>}
+        </Card>}
+        {(show('cash_paid') || show('bank_paid')) && <Card className="dashboard-panel finance-panel" bordered={false}>
+          <div className="finance-panel-heading">
+            <div><span className="finance-panel-icon payable"><BankOutlined /></span><div><strong>Payables</strong><Text>Payments made</Text></div></div>
+            <Link to="/app/payables">View all ↗</Link>
+          </div>
+          <div className="finance-total"><Text>Total paid</Text><strong>{dashboardCurrency((show('cash_paid') ? Number(revenueFlow.cash_paid || 0) : 0) + (show('bank_paid') ? Number(revenueFlow.bank_paid || 0) : 0))}</strong></div>
+          {show('cash_paid') && <div className="finance-row"><span>Cash payments</span><strong>{dashboardCurrency(revenueFlow.cash_paid)}</strong></div>}
+          {show('bank_paid') && <div className="finance-row"><span>Bank payments</span><strong>{dashboardCurrency(revenueFlow.bank_paid)}</strong></div>}
+        </Card>}
+      </>}
     </section>
 
     <section className="dashboard-bottom-row">

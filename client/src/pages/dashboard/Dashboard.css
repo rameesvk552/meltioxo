@@ -41,3 +41,23 @@
 .dashboard-bottom-row { display: grid; grid-template-columns: 1fr 1fr 1.5fr; gap: 10px; margin-top: 10px; }.compact-panel { min-height: 184px; }.compact-panel .ant-card-body { min-height: 150px; padding: 8px; }.compact-panel .ant-empty { margin: 26px 0; }.compact-panel .ant-empty-image { height: 28px; }.expense-panel .ant-card-body { display: grid; place-items: center; }.empty-centered { margin-top: 22px; color: #778486; font-size: 10px; }
 @media (max-width: 900px) { .dashboard-middle-grid { grid-template-columns: 1fr; }.dashboard-bottom-row { grid-template-columns: 1fr 1fr; }.expense-panel { grid-column: 1 / -1; } }
 @media (max-width: 600px) { .dashboard-page { padding: 8px; }.dashboard-stat-grid, .dashboard-bottom-row { grid-template-columns: 1fr; }.expense-panel { grid-column: auto; } }
+
+/* Collections and payables sections */
+.finance-sections { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.finance-panel { min-height: 190px; padding: 0 20px 14px; }
+.finance-panel .ant-card-body { padding: 0; }
+.finance-panel-heading { display: flex; align-items: center; justify-content: space-between; min-height: 62px; border-bottom: 1px solid #e8eeeb; }
+.finance-panel-heading > div { display: flex; align-items: center; gap: 10px; }
+.finance-panel-heading strong { display: block; color: #3f4d53; font-size: 13px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.finance-panel-heading .ant-typography { display: block; margin-top: 2px; color: #718091; font-size: 11px; }
+.finance-panel-heading a { color: #2166d1; font-size: 11px; font-weight: 600; }
+.finance-panel-icon { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 8px; }
+.finance-panel-icon.collection { color: #17b968; background: #e3f8ec; }
+.finance-panel-icon.payable { color: #e26a4b; background: #fff0e9; }
+.finance-total, .finance-row { display: flex; align-items: center; justify-content: space-between; }
+.finance-total { padding: 16px 0 10px; }
+.finance-total .ant-typography, .finance-row span { color: #62727a; font-size: 12px; }
+.finance-total strong { color: #33434b; font-size: 16px; }
+.finance-row { padding: 8px 0; border-top: 1px solid #edf1ef; }
+.finance-row strong { color: #4c5d63; font-size: 12px; font-weight: 700; }
+@media (max-width: 900px) { .finance-sections { grid-template-columns: 1fr; } }
