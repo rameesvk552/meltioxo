@@ -244,24 +244,25 @@ export default function Dashboard() {
   const statValue = key => key === 'today_sales' ? todaysSales : key === 'inventory_value' ? inventoryValue : 0;
   return <div className="dashboard-page">
     <section className="dashboard-top-row" aria-label="Business overview">
-      <div className="dashboard-stat-grid dashboard-primary-stats">
-      {dashboardStatCards.slice(0, 2).map(stat => show(stat.key) && <Card className={`dashboard-stat ${stat.tone}`} bordered={false} key={stat.key}>
-        <div className="stat-topline"><span>{stat.label}</span><span className="stat-icon">{stat.icon}</span></div>
-        <Statistic value={statValue(stat.key)} precision={2} prefix="₹" />
-        <Text className="stat-hint"><ArrowUpOutlined /> For The Current Day</Text>
-      </Card>)}
+      <div className="dashboard-stat-stack">
+        <div className="dashboard-stat-grid dashboard-primary-stats">
+        {dashboardStatCards.slice(0, 2).map(stat => show(stat.key) && <Card className={`dashboard-stat ${stat.tone}`} bordered={false} key={stat.key}>
+          <div className="stat-topline"><span>{stat.label}</span><span className="stat-icon">{stat.icon}</span></div>
+          <Statistic value={statValue(stat.key)} precision={2} prefix="₹" />
+          <Text className="stat-hint"><ArrowUpOutlined /> For The Current Day</Text>
+        </Card>)}
+        </div>
+        <div className="dashboard-secondary-stats" aria-label="Purchase overview">
+          {dashboardStatCards.slice(2).map(stat => show(stat.key) && <Card className={`dashboard-stat ${stat.tone}`} bordered={false} key={stat.key}>
+            <div className="stat-topline"><span>{stat.label}</span><span className="stat-icon">{stat.icon}</span></div>
+            <Statistic value={statValue(stat.key)} precision={2} prefix="₹" />
+            <Text className="stat-hint"><ArrowUpOutlined /> For The Current Day</Text>
+          </Card>)}
+        </div>
       </div>
       {quickActions.length > 0 && <Card className="dashboard-panel quick-actions-panel" title="Quick Actions">
         <div className="quick-actions">{quickActions.map(action => <Link key={action.to} to={action.to}>{action.icon}<span>{action.label}</span></Link>)}</div>
       </Card>}
-    </section>
-
-    <section className="dashboard-secondary-stats" aria-label="Purchase overview">
-      {dashboardStatCards.slice(2).map(stat => show(stat.key) && <Card className={`dashboard-stat ${stat.tone}`} bordered={false} key={stat.key}>
-        <div className="stat-topline"><span>{stat.label}</span><span className="stat-icon">{stat.icon}</span></div>
-        <Statistic value={statValue(stat.key)} precision={2} prefix="₹" />
-        <Text className="stat-hint"><ArrowUpOutlined /> For The Current Day</Text>
-      </Card>)}
     </section>
 
     <section className="dashboard-middle-grid finance-sections">

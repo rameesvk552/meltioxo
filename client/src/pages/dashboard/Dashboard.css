@@ -43,9 +43,10 @@
 @media (max-width: 600px) { .dashboard-page { padding: 8px; }.dashboard-stat-grid, .dashboard-bottom-row { grid-template-columns: 1fr; }.expense-panel { grid-column: auto; } }
 
 /* Dashboard controls and stock alerts */
-.dashboard-top-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.dashboard-top-row { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; align-items: stretch; }
+.dashboard-stat-stack { display: grid; gap: 10px; min-width: 0; }
 .dashboard-primary-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.dashboard-top-row .quick-actions-panel { min-height: 92px; }
+.dashboard-top-row .quick-actions-panel { min-height: 194px; }
 .quick-actions-panel .ant-card-body { padding: 10px 12px; }
 .quick-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .quick-actions a { display: flex; min-height: 50px; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 7px 4px; border: 1px solid #e5ece8; border-radius: 5px; color: #50636a; background: #fafcfb; font-size: 10px; font-weight: 600; }
@@ -62,7 +63,7 @@
 .stock-alert-item { display: flex; align-items: center; justify-content: space-between; min-height: 29px; padding: 4px 2px; border-bottom: 1px solid #edf2ef; color: #5c6c72; font-size: 10px; }
 .stock-alert-item:last-child { border-bottom: 0; }
 .stock-alert-item .ant-tag { margin: 0; border: 0; border-radius: 4px; font-size: 9px; }
-@media (max-width: 900px) { .dashboard-top-row { grid-template-columns: 1fr; }.dashboard-secondary-stats { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 900px) { .dashboard-top-row { grid-template-columns: 1fr; }.dashboard-top-row .quick-actions-panel { min-height: 92px; }.dashboard-secondary-stats { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 600px) { .dashboard-secondary-stats { grid-template-columns: 1fr; }.quick-actions { grid-template-columns: repeat(2, 1fr); } }
 .dashboard-bottom-row .expense-panel { grid-column: auto; }
 .expense-panel .ant-card-extra a { color: #2166d1; font-size: 10px; }
@@ -93,3 +94,26 @@
 .finance-row { padding: 8px 0; border-top: 1px solid #edf1ef; }
 .finance-row strong { color: #4c5d63; font-size: 12px; font-weight: 700; }
 @media (max-width: 900px) { .finance-sections { grid-template-columns: 1fr; } }
+
+/* Give the dashboard and its quick actions more room at every screen size. */
+.dashboard-page { width: 100%; max-width: none; padding-right: 8px; padding-left: 8px; font-size: 14px; }
+.dashboard-top-row, .dashboard-middle-grid, .dashboard-bottom-row { width: 100%; min-width: 0; }
+.dashboard-top-row .quick-actions-panel { display: flex; min-height: 238px; flex-direction: column; }
+.quick-actions-panel .ant-card-head { flex: 0 0 auto; }
+.quick-actions-panel .ant-card-body { display: flex; flex: 1 1 auto; padding: 12px; }
+.quick-actions { width: 100%; flex: 1 1 auto; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(72px, 1fr)); gap: 12px; }
+.quick-actions a { min-width: 0; min-height: 72px; gap: 8px; padding: 10px; border-radius: 8px; font-size: 14px; }
+.quick-actions a svg { font-size: 22px; }
+.dashboard-panel .ant-card-head-title { font-size: 15px; }
+.finance-total .ant-typography, .finance-row span, .finance-row strong { font-size: 13px; }
+.stock-alert-tabs button, .stock-alert-item { font-size: 12px; }
+.stock-alert-item .ant-tag, .expense-item .ant-typography { font-size: 11px; }
+.expense-item strong, .expense-item > strong { font-size: 12px; }
+@media (max-width: 900px) {
+  .dashboard-top-row .quick-actions-panel { min-height: 210px; }
+}
+@media (max-width: 600px) {
+  .dashboard-page { padding-right: 8px; padding-left: 8px; }
+  .dashboard-top-row .quick-actions-panel { min-height: 220px; }
+  .quick-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(76px, 1fr)); gap: 10px; }
+}
