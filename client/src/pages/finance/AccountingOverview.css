@@ -46,3 +46,53 @@
 .ao-activity-empty{padding:34px 18px;text-align:center;color:#978a7d;font-size:12px}
 @media(max-width:1100px){.ao-top-grid,.ao-bottom-grid{grid-template-columns:1fr}.ao-composition-card{min-height:300px}.ao-secondary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){.ao-top-grid,.ao-bottom-grid{gap:15px}.ao-financial-grid{gap:9px;grid-template-rows:auto}.ao-summary-card{padding:12px 14px}.ao-profit-card{grid-column:1/-1;grid-row:auto;min-height:160px;padding:19px}.ao-summary-card strong{font-size:20px}.ao-profit-card strong{font-size:30px;white-space:nowrap;overflow-wrap:normal}.ao-summary-label{font-size:9px}.ao-summary-card small{font-size:10px}.ao-composition-card{min-height:300px}.ao-card-header{align-items:flex-start;flex-direction:column;gap:9px;padding:15px}.ao-card-header .ant-segmented{align-self:stretch}.ao-module-grid{grid-template-columns:1fr}.ao-secondary-grid{gap:9px}.ao-kpi{padding:13px}.ao-kpi strong{font-size:16px}.ao-health-strip{align-items:flex-start}.ao-health-strip>span:last-child{display:none}}
+
+/* Money is the visual anchor; labels stay readable and subordinate. */
+.accounts-page .ao-top-grid { gap: var(--account-space-6); margin-bottom: var(--account-space-6); }
+.accounts-page .ao-financial-grid { gap: var(--account-space-4); }
+.accounts-page .ao-summary-card { padding: var(--account-space-6); }
+.accounts-page .ao-summary-card strong { font-size: 26px; line-height: 1.15; font-weight: 720; }
+.accounts-page .ao-profit-card strong { font-size: clamp(30px, 3vw, 40px); line-height: 1.08; }
+.accounts-page .ao-summary-label { font-size: var(--account-text-caption); line-height: 1.35; letter-spacing: .075em; }
+.accounts-page .ao-summary-card small { font-size: var(--account-text-caption); line-height: 1.45; }
+.accounts-page .ao-card-header { padding: var(--account-space-4) var(--account-space-6); }
+.accounts-page .ao-card-header h2 { font-size: var(--account-text-section) !important; line-height: 1.3; }
+.accounts-page .ao-card-header p { font-size: var(--account-text-caption); line-height: 1.45; }
+.accounts-page .ao-eyebrow { font-size: var(--account-text-caption); letter-spacing: .09em; }
+.accounts-page .ao-composition-line { font-size: var(--account-text-secondary); line-height: 1.4; }
+.accounts-page .ao-composition-list { padding: var(--account-space-6); gap: var(--account-space-6); }
+.accounts-page .ao-secondary-grid { gap: var(--account-space-4); margin-bottom: var(--account-space-4); }
+.accounts-page .ao-kpi { padding: var(--account-space-4) var(--account-space-6); }
+.accounts-page .ao-kpi span { font-size: var(--account-text-secondary); }
+.accounts-page .ao-kpi strong { font-size: 22px; line-height: 1.2; }
+.accounts-page .ao-kpi small { font-size: var(--account-text-caption); line-height: 1.4; }
+.accounts-page .ao-health-strip { min-height: 48px; font-size: var(--account-text-secondary); margin-bottom: var(--account-space-8); }
+.accounts-page .ao-bottom-grid { gap: var(--account-space-6); }
+.accounts-page .ao-section-heading { min-height: 58px; }
+.accounts-page .ao-section-heading p { font-size: var(--account-text-secondary); line-height: 1.45; }
+.accounts-page .ao-module-grid { gap: var(--account-space-3); }
+.accounts-page .ao-module { min-height: 88px; padding: var(--account-space-4); }
+.accounts-page .ao-module strong { font-size: var(--account-text-body); line-height: 1.3; }
+.accounts-page .ao-module small { font-size: var(--account-text-caption); line-height: 1.45; }
+.accounts-page .ao-connected button { font-size: var(--account-text-secondary); min-height: 40px; }
+.accounts-page .ao-activity-card .ao-card-header h2 { font-size: 16px !important; }
+.accounts-page .ao-journal { min-height: 58px; }
+.accounts-page .ao-journal strong,
+.accounts-page .ao-payment strong { font-size: var(--account-text-secondary); }
+.accounts-page .ao-journal small,
+.accounts-page .ao-payment small { font-size: var(--account-text-caption); line-height: 1.4; }
+.accounts-page .ao-activity-empty { font-size: var(--account-text-secondary); }
+@media (max-width: 700px) {
+  .accounts-page .ao-top-grid,
+  .accounts-page .ao-bottom-grid { gap: var(--account-space-4); }
+  .accounts-page .ao-financial-grid,
+  .accounts-page .ao-secondary-grid { gap: var(--account-space-2); }
+  .accounts-page .ao-summary-card { padding: var(--account-space-4); }
+  .accounts-page .ao-profit-card { padding: var(--account-space-6); }
+  .accounts-page .ao-profit-card strong { font-size: clamp(23px, 7vw, 30px); }
+  .accounts-page .ao-summary-card:not(.ao-profit-card) strong { font-size: 19px; }
+  .accounts-page .ao-kpi { padding: var(--account-space-3); }
+  .accounts-page .ao-kpi strong { font-size: 18px; }
+  .accounts-page .ao-card-header { padding: var(--account-space-4); }
+  .accounts-page .ao-composition-list { padding: var(--account-space-4); }
+}
