@@ -36,7 +36,7 @@ Object.keys(db).forEach(modelName => {
 
 // Define Associations based on requirements
 // Tenant associations
-const tenantHasMany = ['user', 'rawMaterial', 'packagingMaterial', 'packingKit', 'product', 'finishedGood', 'supplier', 'purchaseOrder', 'formula', 'productionOrder', 'customer', 'salesOrder', 'salesReturn', 'account', 'journalEntry', 'paymentMethod', 'payment', 'expense', 'businessDay', 'auditLog', 'whatsappChannel'];
+const tenantHasMany = ['user', 'rawMaterial', 'packagingMaterial', 'packingKit', 'product', 'finishedGood', 'supplier', 'purchaseOrder', 'formula', 'productionOrder', 'customer', 'salesOrder', 'salesReturn', 'account', 'journalEntry', 'paymentMethod', 'payment', 'expense', 'businessDay', 'auditLog', 'whatsappChannel', 'whatsappInvoiceLog'];
 tenantHasMany.forEach(model => {
     if(db.tenant && db[model]) {
         db.tenant.hasMany(db[model], { foreignKey: 'tenant_id' });
@@ -52,7 +52,7 @@ if (db.tenant && db.branch) {
 // Branch context is applied centrally so existing controllers automatically
 // read and write the selected branch. Shared master data is intentionally not
 // included in this list.
-const branchScopedModels = ['customer', 'retailSale', 'salesOrder', 'salesInvoice', 'salesReturn', 'businessDay', 'payment', 'expense', 'stockBatch', 'stockMovement', 'purchaseOrder', 'purchaseReceipt', 'purchaseInvoice', 'productionOrder', 'journalEntry'];
+const branchScopedModels = ['customer', 'retailSale', 'salesOrder', 'salesInvoice', 'salesReturn', 'businessDay', 'payment', 'expense', 'stockBatch', 'stockMovement', 'purchaseOrder', 'purchaseReceipt', 'purchaseInvoice', 'productionOrder', 'journalEntry', 'whatsappInvoiceLog'];
 const { getAuditContext } = require('../middleware/auditContext');
 branchScopedModels.forEach(name => {
   const model = db[name];
@@ -148,6 +148,9 @@ if(db.paymentMethod && db.account) db.account.hasMany(db.paymentMethod, { foreig
 if(db.payment && db.paymentMethod) db.payment.belongsTo(db.paymentMethod, { foreignKey: 'payment_method_id' });
 if(db.expense && db.paymentMethod) db.expense.belongsTo(db.paymentMethod, { foreignKey: 'payment_method_id' });
 if(db.retailSale && db.paymentMethod) db.retailSale.belongsTo(db.paymentMethod, { foreignKey: 'payment_method_id' });
+if (db.whatsappInvoiceLog && db.retailSale) db.whatsappInvoiceLog.belongsTo(db.retailSale, { foreignKey: 'retail_sale_id' });
+if (db.retailSale && db.whatsappInvoiceLog) db.retailSale.hasMany(db.whatsappInvoiceLog, { foreignKey: 'retail_sale_id' });
+if (db.whatsappInvoiceLog && db.customer) db.whatsappInvoiceLog.belongsTo(db.customer, { foreignKey: 'customer_id' });
 if (db.businessDay && db.retailSale) {
     db.businessDay.hasMany(db.retailSale, { foreignKey: 'business_day_id' });
     db.retailSale.belongsTo(db.businessDay, { foreignKey: 'business_day_id' });

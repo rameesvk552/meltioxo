@@ -21,6 +21,16 @@ body {
   line-height: 1;
 }
 
+.wayon-logo[aria-label] {
+  max-width: 100%;
+}
+
+.wayon-logo[aria-label] .wayon-logo__name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .wayon-logo__mark {
   display: block;
   width: var(--wayon-logo-size, 42px);

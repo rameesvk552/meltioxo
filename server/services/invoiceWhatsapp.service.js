@@ -15,6 +15,39 @@ const settingsForTenant = tenant => ({
   template: tenant?.whatsapp_invoice_template || DEFAULT_WHATSAPP_INVOICE_TEMPLATE,
 });
 
+const lastFourDigits = value => {
+  const normalized = normalizePhone(value);
+  return normalized ? normalized.slice(-4) : null;
+};
+
+const recordDeliveryAttempt = async ({ sale, customer, tenant, result }) => {
+  try {
+    const db = require('../models');
+    const apiUrl = String(tenant?.whatsapp_invoice_api_url || DEFAULT_WHATSAPP_API_URL).replace(/\/+$/, '');
+    const templateName = tenant?.whatsapp_invoice_template || DEFAULT_WHATSAPP_INVOICE_TEMPLATE;
+    await db.whatsappInvoiceLog.create({
+      tenant_id: tenant?.id || sale?.tenant_id,
+      branch_id: sale?.branch_id || null,
+      retail_sale_id: sale?.id || null,
+      sale_number: sale?.sale_number || null,
+      customer_id: customer?.id || sale?.customer_id || null,
+      customer_name: customer?.name || null,
+      customer_phone_last4: lastFourDigits(customer?.phone),
+      status: result?.status || 'failed',
+      attempted: Boolean(result?.attempted),
+      template_name: templateName,
+      api_url: apiUrl,
+      provider_message_id: result?.provider_message_id || null,
+      provider_status: result?.provider_status || null,
+      error_message: result?.reason || null,
+      sent_at: result?.status === 'sent' ? new Date() : null
+    }, { skipAudit: true });
+  } catch (error) {
+    // Delivery logging must never turn a completed sale into a failed sale.
+    console.error(`WhatsApp invoice delivery log failed for ${sale?.sale_number || 'unknown sale'}: ${error.message}`);
+  }
+};
+
 const isEnabled = settings => Boolean(settings?.enabled && settings?.apiToken && INVOICE_PUBLIC_BASE_URL && INVOICE_LINK_SECRET);
 
 const normalizePhone = value => {
@@ -78,7 +111,12 @@ const sendInvoice = async ({ sale, customer, tenant }) => {
     let payload;
     try { payload = raw ? JSON.parse(raw) : null; } catch { payload = { message: raw }; }
     if (!response.ok) throw new Error(payload?.message || payload?.error?.message || `WhatsApp API returned ${response.status}`);
-    return { attempted: true, status: 'sent' };
+    return {
+      attempted: true,
+      status: 'sent',
+      provider_message_id: payload?.message_id || payload?.messageId || payload?.id || null,
+      provider_status: payload?.status || null
+    };
   } catch (error) {
     return { attempted: true, status: 'failed', reason: error.name === 'AbortError' ? 'WhatsApp API timed out' : error.message };
   } finally {
@@ -86,4 +124,4 @@ const sendInvoice = async ({ sale, customer, tenant }) => {
   }
 };
 
-module.exports = { createInvoiceLink, isEnabled, normalizePhone, sendInvoice, verifyInvoiceLink, _private: { settingsForTenant, signInvoiceLink } };
+module.exports = { createInvoiceLink, isEnabled, normalizePhone, recordDeliveryAttempt, sendInvoice, verifyInvoiceLink, _private: { settingsForTenant, signInvoiceLink } };

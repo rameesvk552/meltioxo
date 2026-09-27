@@ -6,7 +6,7 @@ const VIEW_PERMISSION_KEYS = [
   'finance.expenses', 'finance.payables', 'finance.receivables',
   'reports.profit_loss', 'reports.sales_profit', 'reports.balance_sheet',
   'reports.trial_balance', 'reports.stock', 'reports.production',
-  'reports.audit_log', 'settings'
+  'reports.audit_log', 'reports.whatsapp_invoices', 'settings'
 ];
 
 const DASHBOARD_WIDGET_KEYS = [

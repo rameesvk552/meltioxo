@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Button, Card, Col, DatePicker, Form, Input, InputNumber, Modal, Popconfirm, Row, Segmented, Select, Space, Statistic, Table, Tag, message } from 'antd';
-import { AppstoreAddOutlined, CloseOutlined, DeleteOutlined, EditOutlined, FileTextOutlined, InfoCircleOutlined, PlusOutlined, SaveOutlined, SendOutlined, ShoppingCartOutlined } from '@ant-design/icons';
+import { AppstoreAddOutlined, CloseOutlined, DeleteOutlined, EditOutlined, EyeOutlined, FileTextOutlined, InfoCircleOutlined, PlusOutlined, SaveOutlined, SendOutlined, ShoppingCartOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import client from '../../api/client';
 import useApiData from '../../hooks/useApiData';
@@ -31,6 +31,7 @@ export default function Purchases() {
   const { data: paymentMethods } = useApiData('/accounts/payment-methods');
   const [creating, setCreating] = useState(false), [saving, setSaving] = useState(false), [items, setItems] = useState([blankItem()]);
   const [editingId, setEditingId] = useState(null);
+  const [viewingPurchase, setViewingPurchase] = useState(null);
   const [postingId, setPostingId] = useState(null);
   const [paymentSplits, setPaymentSplits] = useState([]);
   const [quickMaterialForm] = Form.useForm();
@@ -270,6 +271,22 @@ export default function Purchases() {
     };
     Modal.confirm({ title: `Delete ${purchase.invoice_number || 'this purchase'}?`, content: 'The purchase, receipt, stock added by it, and related accounting records will be deleted or reversed.', okText: 'Continue', okButtonProps: { danger: true }, onOk: () => remove(false) });
   };
+  const materialName = item => {
+    const material = (item.material_type === 'raw' ? rawMaterials : item.material_type === 'packaging' ? packagingMaterials : finishedGoods)
+      .find(row => row.id === item.material_id);
+    if (!material) return '—';
+    return item.material_type === 'finished'
+      ? material.purchaseLabel || `${material.product?.name || material.name}${material.size_label ? ` · ${material.size_label}` : ''}`
+      : material.name;
+  };
+  const viewPurchase = async purchase => {
+    try {
+      const { data } = await client.get(`/purchases/${purchase.id}`);
+      setViewingPurchase(data);
+    } catch (error) {
+      message.error(error.response?.data?.message || 'Could not load the purchase details.');
+    }
+  };
   const itemColumns = [
     { title: 'Type', width: 154, render: (_, item) => <Select aria-label="Purchase item type" value={item.materialType} onChange={value => update(item.key, 'materialType', value)} options={purchaseTypeOptions} /> },
     { title: 'Item', width: 274, render: (_, item) => <Space.Compact className="purchase-material-picker"><Select aria-label="Purchase item" showSearch optionFilterProp="label" value={item.materialId} onChange={value => update(item.key, 'materialId', value)} placeholder={item.materialType === 'finished' ? 'Choose a ready-made variant' : 'Choose a material'} options={materialOptions(item.materialType).map(material => ({ value: material.id, label: material.purchaseLabel || material.name }))} /><Button icon={<PlusOutlined />} title={item.materialType === 'finished' ? 'Create ready-made product or variant' : `Create ${item.materialType === 'raw' ? 'raw material' : 'packaging material'}`} aria-label={item.materialType === 'finished' ? 'Create ready-made product or variant' : `Create ${item.materialType === 'raw' ? 'raw material' : 'packaging material'}`} onClick={() => item.materialType === 'finished' ? openQuickFinished(item) : openQuickMaterial(item)} /></Space.Compact> },
@@ -286,7 +303,18 @@ export default function Purchases() {
       <Button size="small" type="primary" icon={<SendOutlined />} loading={postingId === purchase.id}>Post</Button>
     </Popconfirm>
   </Space> : null;
-  const columns = [{ title: 'Invoice #', dataIndex: 'invoice_number' }, { title: 'Supplier', render: (_, purchase) => purchase.supplier?.name || '—' }, { title: 'Date', dataIndex: 'invoice_date', render: value => value ? dayjs(value).format('DD MMM YYYY') : '—' }, { title: 'Amount', dataIndex: 'total_amount', align: 'right', render: value => formatMoney(value) }, { title: 'Status', dataIndex: 'status', render: statusTag }, { title: 'Actions', width: 240, render: (_, purchase) => <Space size="small">{purchase.status === 'draft' && draftActions(purchase)}<Button size="small" danger icon={<DeleteOutlined />} onClick={() => deletePurchase(purchase)}>Delete</Button></Space> }];
+  const columns = [{ title: 'Invoice #', dataIndex: 'invoice_number' }, { title: 'Supplier', render: (_, purchase) => purchase.supplier?.name || '—' }, { title: 'Date', dataIndex: 'invoice_date', render: value => value ? dayjs(value).format('DD MMM YYYY') : '—' }, { title: 'Amount', dataIndex: 'total_amount', align: 'right', render: value => formatMoney(value) }, { title: 'Status', dataIndex: 'status', render: statusTag }, { title: 'Actions', width: 300, render: (_, purchase) => <Space size="small"><Button size="small" icon={<EyeOutlined />} onClick={() => viewPurchase(purchase)}>View</Button>{purchase.status === 'draft' && draftActions(purchase)}<Button size="small" danger icon={<DeleteOutlined />} onClick={() => deletePurchase(purchase)}>Delete</Button></Space> }];
+  const viewItems = viewingPurchase?.purchaseReceipt?.purchaseReceiptItems || [];
+  const viewSubtotal = viewItems.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unit_price || 0), 0);
+  const viewTax = viewItems.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unit_price || 0) * Number(item.tax_rate || 0) / 100, 0);
+  const viewColumns = [
+    { title: 'Item', render: (_, item) => materialName(item) },
+    { title: 'Type', dataIndex: 'material_type', render: type => purchaseTypeOptions.find(option => option.value === type)?.label || type || '—' },
+    { title: 'Qty', dataIndex: 'quantity', align: 'right', render: value => Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 }) },
+    { title: 'Unit price', dataIndex: 'unit_price', align: 'right', render: formatMoney },
+    { title: 'GST', dataIndex: 'tax_rate', align: 'right', render: value => `${Number(value || 0)}%` },
+    { title: 'Total', align: 'right', render: (_, item) => formatMoney(Number(item.quantity || 0) * Number(item.unit_price || 0) * (1 + Number(item.tax_rate || 0) / 100)) }
+  ];
 
   const mobileItemFields = item => <>
     <div className="purchase-mobile-item__field purchase-mobile-item__field--wide">
@@ -367,9 +395,29 @@ export default function Purchases() {
         <div className="mobile-data-list__title-row"><strong>{purchase.invoice_number || 'Purchase'}</strong>{statusTag(purchase.status)}</div>
         <span className="mobile-data-list__code">{purchase.supplier?.name || '—'} · {purchase.invoice_date ? dayjs(purchase.invoice_date).format('DD MMM YYYY') : '—'}</span>
         <div className="mobile-data-list__metrics"><span>Amount <strong>{formatMoney(purchase.total_amount)}</strong></span></div>
-        <div style={{ marginTop: 12 }}><Space size="small">{purchase.status === 'draft' && draftActions(purchase)}<Button size="small" danger icon={<DeleteOutlined />} onClick={() => deletePurchase(purchase)}>Delete</Button></Space></div>
+        <div style={{ marginTop: 12 }}><Space size="small"><Button size="small" icon={<EyeOutlined />} onClick={() => viewPurchase(purchase)}>View</Button>{purchase.status === 'draft' && draftActions(purchase)}<Button size="small" danger icon={<DeleteOutlined />} onClick={() => deletePurchase(purchase)}>Delete</Button></Space></div>
       </>} />
     </Card>
+    <Modal
+      title={viewingPurchase ? `Purchase details · ${viewingPurchase.invoice_number || 'Purchase'}` : 'Purchase details'}
+      open={Boolean(viewingPurchase)}
+      onCancel={() => setViewingPurchase(null)}
+      footer={<Button onClick={() => setViewingPurchase(null)}>Close</Button>}
+      width={900}
+      destroyOnHidden
+    >
+      {viewingPurchase && <div className="purchase-view">
+        <div className="purchase-view__summary">
+          <div><span>Supplier</span><strong>{viewingPurchase.supplier?.name || '—'}</strong></div>
+          <div><span>Invoice date</span><strong>{viewingPurchase.invoice_date ? dayjs(viewingPurchase.invoice_date).format('DD MMM YYYY') : '—'}</strong></div>
+          <div><span>Due date</span><strong>{viewingPurchase.due_date ? dayjs(viewingPurchase.due_date).format('DD MMM YYYY') : '—'}</strong></div>
+          <div><span>Status</span>{statusTag(viewingPurchase.status)}</div>
+        </div>
+        <Table className="purchase-view__items" rowKey="id" dataSource={viewItems} columns={viewColumns} pagination={false} size="small" scroll={{ x: 680 }} />
+        <div className="purchase-view__totals"><span>Subtotal {formatMoney(viewSubtotal)}</span><span>GST {formatMoney(viewTax)}</span><strong>Total {formatMoney(viewingPurchase.total_amount)}</strong></div>
+        {viewingPurchase.purchaseReceipt?.notes && <div className="purchase-view__notes"><strong>Notes</strong><span>{viewingPurchase.purchaseReceipt.notes}</span></div>}
+      </div>}
+    </Modal>
     <Modal
       title="Quick Create Supplier"
       open={Boolean(quickSupplier)}

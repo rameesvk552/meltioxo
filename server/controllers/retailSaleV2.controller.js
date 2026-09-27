@@ -132,8 +132,7 @@ const buildPreview = async (tenantId, items, transaction) => {
       let selectedKit = row.packing_kit_id ? matchingKits.find(kit => kit.id === row.packing_kit_id) : null;
       if (row.packing_kit_id && !selectedKit) throw new AppError(`The selected packing kit does not support ${fillQuantityMl} ml`, 400);
       if (!selectedKit && settings.measured_packaging_auto_select) selectedKit = matchingKits.find(kit => kit.is_default) || (matchingKits.length === 1 ? matchingKits[0] : null);
-      if (!selectedKit && settings.measured_packaging_required) {
-        if (!matchingKits.length) throw new AppError(`No active packing kit supports ${fillQuantityMl} ml`, 400);
+      if (!selectedKit && settings.measured_packaging_required && matchingKits.length) {
         throw new AppError(`Select a packing kit for ${variant.product.name}`, 400);
       }
       if (selectedKit) {
@@ -645,6 +644,7 @@ const saveSale = async (req, res, next, isEdit = false) => {
       db.tenant.findByPk(req.tenantId),
     ]);
     const whatsapp = isEdit ? { attempted: false, status: 'not_sent_for_update' } : await invoiceWhatsapp.sendInvoice({ sale: sale.toJSON(), customer, tenant });
+    if (!isEdit) await invoiceWhatsapp.recordDeliveryAttempt({ sale: sale.toJSON(), customer, tenant, result: whatsapp });
     if (whatsapp.status === 'failed') console.error(`Invoice WhatsApp send failed for ${sale.sale_number}: ${whatsapp.reason}`);
     res.status(isEdit ? 200 : 201).json({ ...sale.toJSON(), payment_id: paymentRecords[0].id, payment_ids: paymentRecords.map(record => record.id), whatsapp });
   } catch (error) {

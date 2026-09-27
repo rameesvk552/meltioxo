@@ -7,7 +7,7 @@ exports.download = async (req, res, next) => {
     const { id } = req.params;
     const { tenant, expires, signature } = req.query;
     if (!verifyInvoiceLink({ saleId: id, tenantId: tenant, expiresAt: expires, signature })) return res.status(403).json({ message: 'This invoice link is invalid or has expired.' });
-    const sale = await db.retailSale.findOne({ where: { id, tenant_id: tenant }, include: [db.customer, { model: db.retailSaleItem, include: [{ model: db.finishedGood, include: [db.product] }, db.packagingMaterial] }] });
+    const sale = await db.retailSale.findOne({ where: { id, tenant_id: tenant }, include: [db.customer, db.paymentMethod, { model: db.account, as: 'paymentAccount' }, { model: db.retailSaleItem, include: [{ model: db.finishedGood, include: [db.product] }, db.packagingMaterial] }] });
     if (!sale) return res.status(404).json({ message: 'Invoice not found.' });
     const company = await db.tenant.findByPk(tenant);
     const filename = String(sale.sale_number || 'invoice').replace(/[^a-zA-Z0-9._-]/g, '_');

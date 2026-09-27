@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Table, Card, Row, Col, Statistic, Tag, Button, Space, Tabs, Modal, Form, Input, InputNumber, Select, DatePicker, message, Radio, Alert, Progress } from 'antd';
 import { ExperimentOutlined, PlusOutlined, EyeOutlined, CheckCircleOutlined, PlayCircleOutlined, CloseCircleOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
@@ -39,20 +39,34 @@ export default function ProductionOrders() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isCompleteModalOpen, setIsCompleteModalOpen] = useState(false);
   const [selectedOrderId, setSelectedOrderId] = useState(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const creatingRef = useRef(false);
+  const idempotencyKeyRef = useRef(null);
   const [form] = Form.useForm();
   const [completeForm] = Form.useForm();
 
   const handleCreateOrder = async (values) => {
-    await client.post('/production-orders', {
-      outputs: values.outputs.map(row => ({ ...(String(row.finishedGoodId).startsWith('product:') ? { product_id: String(row.finishedGoodId).slice(8) } : { finished_good_id: row.finishedGoodId }), planned_qty: row.planned })),
-      batch_number: values.batch,
-      planned_qty: values.planned,
-      planned_date: values.date.format('YYYY-MM-DD')
-    });
-    await Promise.all([reload(), reloadFinishedGoods()]);
-    setIsAddModalOpen(false);
-    form.resetFields();
-    message.success('Production Order planned successfully!');
+    if (creatingRef.current) return;
+    creatingRef.current = true;
+    setIsCreating(true);
+    const requestKey = idempotencyKeyRef.current || crypto.randomUUID();
+    idempotencyKeyRef.current = requestKey;
+    try {
+      await client.post('/production-orders', {
+        outputs: values.outputs.map(row => ({ ...(String(row.finishedGoodId).startsWith('product:') ? { product_id: String(row.finishedGoodId).slice(8) } : { finished_good_id: row.finishedGoodId }), planned_qty: row.planned })),
+        batch_number: values.batch,
+        planned_qty: values.planned,
+        planned_date: values.date.format('YYYY-MM-DD')
+      }, { headers: { 'Idempotency-Key': requestKey } });
+      await Promise.all([reload(), reloadFinishedGoods()]);
+      setIsAddModalOpen(false);
+      form.resetFields();
+      idempotencyKeyRef.current = null;
+      message.success('Production Order planned successfully!');
+    } finally {
+      creatingRef.current = false;
+      setIsCreating(false);
+    }
   };
 
   const handleStartOrder = async (id) => {
@@ -215,7 +229,7 @@ export default function ProductionOrders() {
       <Modal
         title="Plan New Production"
         open={isAddModalOpen}
-        onCancel={() => setIsAddModalOpen(false)}
+        onCancel={() => { setIsAddModalOpen(false); idempotencyKeyRef.current = null; }}
         footer={null}
         width={720}
       >
@@ -267,8 +281,8 @@ export default function ProductionOrders() {
           </Form.List>
           <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
             <Space>
-              <Button onClick={() => setIsAddModalOpen(false)}>Cancel</Button>
-              <Button type="primary" htmlType="submit">Plan</Button>
+              <Button disabled={isCreating} onClick={() => { setIsAddModalOpen(false); idempotencyKeyRef.current = null; }}>Cancel</Button>
+              <Button type="primary" htmlType="submit" loading={isCreating} disabled={isCreating}>Plan</Button>
             </Space>
           </Form.Item>
         </Form>

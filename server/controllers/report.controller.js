@@ -1,7 +1,40 @@
 const reportService = require('../services/report.service');
+const { AppError } = require('../middleware/errorHandler');
+const { businessDate } = require('../services/businessDay.service');
+const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+  && Number.isFinite(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+const reportDate = value => {
+  const date = value || businessDate();
+  if (!validDate(date)) throw new AppError('Choose a valid date.', 400);
+  return date;
+};
+const reportRange = query => {
+  const to = reportDate(query.to);
+  const year = Number(to.slice(0,4));
+  const from = query.from || `${Number(to.slice(5,7)) >= 4 ? year : year-1}-04-01`;
+  if (!validDate(from) || from > to || (Date.parse(to) - Date.parse(from)) / 86400000 > 3660) throw new AppError('Choose a valid date range of up to ten years.', 400);
+  return { from, to };
+};
 
 exports.trialBalance = async (req, res, next) => {
-  try { res.json(await reportService.trialBalance(req.tenantId, req.query.as_of)); } catch (error) { next(error); }
+  try { res.json(await reportService.trialBalance(req.tenantId, reportDate(req.query.as_of))); } catch (error) { next(error); }
+};
+exports.whatsappInvoices = async (req, res, next) => {
+  try {
+    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+    const today = new Date().toISOString().slice(0, 10);
+    const defaultFrom = new Date();
+    defaultFrom.setUTCDate(defaultFrom.getUTCDate() - 29);
+    const from = req.query.from || defaultFrom.toISOString().slice(0, 10);
+    const to = req.query.to || today;
+    if (!datePattern.test(from) || !datePattern.test(to) || from > to) return res.status(400).json({ message: 'Choose a valid date range.' });
+    const allowedStatuses = ['sent', 'failed', 'skipped', 'disabled'];
+    const status = req.query.status || undefined;
+    if (status && !allowedStatuses.includes(status)) return res.status(400).json({ message: 'Invalid WhatsApp delivery status.' });
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const pageSize = Math.min(200, Math.max(1, Number.parseInt(req.query.page_size, 10) || 50));
+    res.json(await reportService.whatsappInvoices(req.tenantId, req.branchId, { from, to, status, page, pageSize }));
+  } catch (error) { next(error); }
 };
 exports.profitLoss = async (req, res, next) => {
   try {
@@ -9,7 +42,7 @@ exports.profitLoss = async (req, res, next) => {
     const from = req.query.from || `${new Date().getUTCFullYear()}-01-01`;
     const groupBy = req.query.group_by || 'month';
     const datePattern = /^\d{4}-\d{2}-\d{2}$/;
-    if (!datePattern.test(from) || !datePattern.test(to) || from > to) {
+    if (!datePattern.test(from) || !datePattern.test(to) || !validDate(from) || !validDate(to) || from > to || (Date.parse(to)-Date.parse(from))/86400000 > 3660) {
       return res.status(400).json({ message: 'Choose a valid date range.' });
     }
     if (!['day', 'month', 'year'].includes(groupBy)) {
@@ -20,14 +53,7 @@ exports.profitLoss = async (req, res, next) => {
 };
 exports.profitLossStatement = async (req, res, next) => {
   try {
-    const now = new Date();
-    const to = req.query.to || now.toISOString().slice(0, 10);
-    const fyStartYear = now.getUTCMonth() >= 3 ? now.getUTCFullYear() : now.getUTCFullYear() - 1;
-    const from = req.query.from || `${fyStartYear}-04-01`;
-    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
-    if (!datePattern.test(from) || !datePattern.test(to) || from > to) {
-      return res.status(400).json({ message: 'Choose a valid date range.' });
-    }
+    const { from, to } = reportRange(req.query);
     res.json(await reportService.profitAndLossStatement(req.tenantId, from, to));
   } catch (error) { next(error); }
 };
@@ -67,10 +93,19 @@ exports.purchaseReport = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 exports.balanceSheet = async (req, res, next) => {
-  try { res.json(await reportService.balanceSheet(req.tenantId, req.query.as_of)); } catch (error) { next(error); }
+  try { res.json(await reportService.balanceSheet(req.tenantId, reportDate(req.query.as_of))); } catch (error) { next(error); }
+};
+exports.ledgerStatement = async (req, res, next) => {
+  try { const { from, to } = reportRange(req.query); res.json(await reportService.ledgerStatement(req.tenantId, req.params.accountId, from, to)); } catch (error) { next(error); }
+};
+exports.managementReport = async (req, res, next) => {
+  try { const { from, to } = reportRange(req.query); res.json(await reportService.managementReport(req.tenantId, from, to)); } catch (error) { next(error); }
+};
+exports.accountingHealth = async (req, res, next) => {
+  try { res.json(await reportService.accountingHealth(req.tenantId, req.branchId)); } catch (error) { next(error); }
 };
 exports.cashFlow = async (req, res, next) => {
-  try { res.status(200).json(await reportService.cashFlow(req.tenantId, req.query.from, req.query.to)); } catch (error) { next(error); }
+  try { const { from, to } = reportRange(req.query); res.status(200).json(await reportService.cashFlow(req.tenantId, from, to)); } catch (error) { next(error); }
 };
 exports.agingPayables = async (req, res, next) => {
   try { res.json(await reportService.agingReport(req.tenantId, 'payable')); } catch (error) { next(error); }

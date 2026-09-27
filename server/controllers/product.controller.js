@@ -21,6 +21,29 @@ const SOURCE_TYPES = ['live_make', 'ready_made'];
 const MEASUREMENT_SOURCE_TYPES = ['formula', 'raw_material', 'bulk_stock'];
 const ALLOWED_UOMS = ['pcs', 'ml', 'L', 'g', 'kg', 'box', 'bottle', 'pack', 'set'];
 
+const assertProductNameAvailable = async ({ tenantId, name, excludeId = null, transaction }) => {
+  const normalizedName = String(name || '').trim();
+  // Serialize creates/renames for the same tenant/name so two simultaneous
+  // requests cannot both pass the duplicate check.
+  await db.sequelize.query(
+    'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+    { bind: [`product-name:${tenantId}:${normalizedName.toLowerCase()}`], transaction }
+  );
+  const [rows] = await db.sequelize.query(`
+    SELECT id
+    FROM products
+    WHERE tenant_id = $tenantId
+      AND lower(btrim(name)) = lower($name)
+      ${excludeId ? 'AND id <> $excludeId' : ''}
+    LIMIT 1
+  `, {
+    bind: { tenantId, name: normalizedName, ...(excludeId ? { excludeId } : {}) },
+    transaction
+  });
+  if (rows.length) throw new AppError(`A product named "${normalizedName}" already exists`, 409);
+  return normalizedName;
+};
+
 const validatePackaging = async (tenantId, packaging, transaction) => {
   if (!Array.isArray(packaging)) throw new AppError('Packaging must be a list', 400);
   const materialIds = packaging.map(row => row.packaging_material_id);
@@ -114,9 +137,11 @@ exports.getById = async (req, res, next) => {
 exports.create = async (req, res, next) => {
   const transaction = await db.sequelize.transaction();
   try {
-    if (!String(req.body.name || '').trim()) {
+    const name = String(req.body.name || '').trim();
+    if (!name) {
       throw new AppError('Product name is required', 400);
     }
+    await assertProductNameAvailable({ tenantId: req.tenantId, name, transaction });
     const measurement = measurementSettings(req.body);
     const measurementSource = await resolveMeasurementSource(req.tenantId, req.body, measurement, transaction);
     const sourceType = measurement.sell_by_measurement ? 'live_make' : req.body.source_type || 'live_make';
@@ -136,7 +161,7 @@ exports.create = async (req, res, next) => {
     const item = await db.product.create({
       tenant_id: req.tenantId,
       code: req.body.code || `PROD-${String(sequence).padStart(4, '0')}`,
-      name: req.body.name,
+      name,
       description: req.body.description,
       source_type: sourceType,
       formula_id: formula?.id || null,
@@ -224,6 +249,11 @@ exports.update = async (req, res, next) => {
   try {
     const product = await db.product.findOne({ where: { id: req.params.id, tenant_id: req.tenantId }, transaction });
     if (!product) throw new AppError('Product not found', 404);
+    const name = Object.prototype.hasOwnProperty.call(req.body, 'name')
+      ? String(req.body.name || '').trim()
+      : product.name;
+    if (!name) throw new AppError('Product name is required', 400);
+    await assertProductNameAvailable({ tenantId: req.tenantId, name, excludeId: product.id, transaction });
     const previousFormulaId = product.formula_id;
     const measurement = measurementSettings({
       sell_by_measurement: Object.prototype.hasOwnProperty.call(req.body, 'sell_by_measurement') ? req.body.sell_by_measurement : product.sell_by_measurement,
@@ -252,7 +282,7 @@ exports.update = async (req, res, next) => {
     }
 
     const { initial_variant: _ignoredInitialVariant, ...bodyUpdates } = req.body;
-    const updates = { ...bodyUpdates, ...measurement, ...measurementSource, source_type: sourceType };
+    const updates = { ...bodyUpdates, name, ...measurement, ...measurementSource, source_type: sourceType };
     if (sourceType === 'ready_made') updates.formula_id = null;
     await product.update(updates, { transaction });
     await syncMeasurementItem(req.tenantId, product, measurement, transaction);

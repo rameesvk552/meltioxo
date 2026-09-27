@@ -31,7 +31,7 @@ exports.create = async (req, res, next) => {
     if (!['asset', 'liability', 'equity', 'revenue', 'expense'].includes(req.body.type)) throw new AppError('Select a valid account type', 400);
     let parent = null;
     if (req.body.parent_id) {
-      parent = await account.findOne({ where: { id: req.body.parent_id, tenant_id: req.tenantId }, transaction });
+      parent = await account.findOne({ where: { id: req.body.parent_id, tenant_id: req.tenantId, is_active: true }, transaction });
       if (!parent?.is_group) throw new AppError('A ledger must be placed under an account group', 400);
       if (parent.type !== req.body.type) throw new AppError('Ledger type must match its parent group', 400);
     }

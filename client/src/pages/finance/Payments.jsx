@@ -1,105 +1,25 @@
-﻿import React, { useState } from 'react';
-import { Table, Card, Row, Col, Statistic, Tag, Tabs, Button } from 'antd';
-import { PlusOutlined, ArrowUpOutlined, ArrowDownOutlined, DollarOutlined } from '@ant-design/icons';
+import React, { useState } from 'react';
+import { Button, Input, Segmented, Table, Tag } from 'antd';
+import { PlusOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import useApiData from '../../hooks/useApiData';
+import { exportCsv, Metric, money, ReportShell, useReportRange } from '../reports/AccountingUI';
+import usePrintPagination from '../reports/usePrintPagination';
 
-const Payments = () => {
-  const [activeTab, setActiveTab] = useState('All');
+export default function Payments() {
   const navigate = useNavigate();
-  const { data: paymentData, loading } = useApiData('/payments');
-  const paymentRows = paymentData.map(item => ({
-    ...item,
-    type: item.payment_type === 'incoming' ? 'Incoming' : 'Outgoing',
-    party: item.party_name || item.party_type || '—',
-    mode: item.payment_mode || '—',
-    amount: Number(item.amount || 0),
-    date: item.payment_date,
-    ref: item.reference_number || '—',
-    status: item.status || '—'
-  }));
-
-  const columns = [
-    { title: 'Payment#', dataIndex: 'id', key: 'id' },
-    { 
-      title: 'Type', 
-      dataIndex: 'type', 
-      key: 'type',
-      render: (type) => (
-        <Tag color={type === 'Incoming' ? 'green' : 'red'}>
-          {type === 'Incoming' ? <ArrowDownOutlined /> : <ArrowUpOutlined />} {type}
-        </Tag>
-      )
-    },
-    { title: 'Party', dataIndex: 'party', key: 'party' },
-    { title: 'Mode', dataIndex: 'mode', key: 'mode', render: val => <Tag>{val}</Tag> },
-    { 
-      title: 'Amount', 
-      dataIndex: 'amount', 
-      key: 'amount',
-      align: 'right',
-      render: (val, record) => (
-        <span style={{ color: record.type === 'Incoming' ? '#52c41a' : '#ff4d4f', fontWeight: 'bold' }}>
-          ₹{val.toLocaleString('en-IN')}
-        </span>
-      )
-    },
-    { title: 'Date', dataIndex: 'date', key: 'date' },
-    { title: 'Reference', dataIndex: 'ref', key: 'ref', responsive: ['lg'] },
-    { title: 'Status', dataIndex: 'status', key: 'status', render: val => <Tag color={val === 'Pending' ? 'warning' : 'success'}>{val}</Tag> }
-  ];
-
-  const filteredData = activeTab === 'All' ? paymentRows : paymentRows.filter(d => d.type === activeTab);
-
-  return (
-    <div style={{ padding: 24 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <h1 style={{ fontFamily: "'Playfair Display', serif", color: 'var(--color-gold)', margin: 0 }}>Payments</h1>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/app/payments/new')} >
-          Record Payment
-        </Button>
-      </div>
-
-      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col xs={24} sm={8}>
-          <Card >
-            <Statistic title={<span style={{ color: 'var(--color-text-secondary)' }}>Total Payments</span>} value={paymentRows.length} prefix={<DollarOutlined />} styles={{ content: { color: 'var(--color-text-primary)' } }} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={8}>
-          <Card >
-            <Statistic title={<span style={{ color: 'var(--color-text-secondary)' }}>Incoming</span>} value={paymentRows.filter(item => item.type === 'Incoming').reduce((sum, item) => sum + item.amount, 0)} prefix={<ArrowDownOutlined />} styles={{ content: { color: '#52c41a' } }} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={8}>
-          <Card >
-            <Statistic title={<span style={{ color: 'var(--color-text-secondary)' }}>Outgoing</span>} value={paymentRows.filter(item => item.type === 'Outgoing').reduce((sum, item) => sum + item.amount, 0)} prefix={<ArrowUpOutlined />} styles={{ content: { color: '#ff4d4f' } }} />
-          </Card>
-        </Col>
-      </Row>
-
-      <Card >
-        <Tabs 
-          activeKey={activeTab} 
-          onChange={setActiveTab} 
-          items={[
-            { key: 'All', label: 'All Payments' },
-            { key: 'Incoming', label: 'Incoming Receipts' },
-            { key: 'Outgoing', label: 'Outgoing Payments' }
-          ]} 
-        />
-        
-        <Table 
-          columns={columns} 
-          dataSource={filteredData}
-          loading={loading}
-          rowKey="id"
-          scroll={{ x: 'max-content' }}
-          pagination={{ pageSize: 10 }}
-        />
-      </Card>
-    </div>
-  );
-};
-
-export default Payments;
+  const period = useReportRange();
+  const pagination = usePrintPagination();
+  const [direction, setDirection] = useState('All');
+  const [search, setSearch] = useState('');
+  const query = useApiData('/payments');
+  const rows = query.data.filter(row => row.payment_date >= period.from && row.payment_date <= period.to);
+  const filtered = rows.filter(row => (direction === 'All' || row.payment_type === (direction === 'Receipts' ? 'incoming' : 'outgoing')) && (row.payment_number+' '+row.party_name+' '+row.reference_number).toLowerCase().includes(search.toLowerCase()));
+  const sum = type => rows.filter(row=>row.payment_type===type).reduce((total,row)=>total+Math.round(Number(row.amount)*100),0)/100;
+  const columns=[{title:'Number',dataIndex:'payment_number',width:160},{title:'Date',dataIndex:'payment_date',width:110},{title:'Party',dataIndex:'party_name',render:value=>value || 'Walk-in customer'},{title:'Method',render:(_,row)=>row.paymentMethod?.name || row.payment_mode?.replaceAll('_',' ').replace(/\b\w/g,letter=>letter.toUpperCase())},{title:'Direction',dataIndex:'payment_type',render:value=><Tag color={value==='incoming'?'success':'default'}>{value==='incoming'?'Receipt':'Payment'}</Tag>},{title:'Amount',dataIndex:'amount',align:'right',render:money},{title:'Reference',dataIndex:'reference_number'}];
+  return <ReportShell title="Receipts & payments" subtitle="A searchable money register with party, payment method, and reference details." query={query} periodLabel={period.from+' to '+period.to} basis="Payment records · INR" controls={<>{period.controls}<Button type="primary" icon={<PlusOutlined/>} onClick={()=>navigate('/app/payments/new')}>Record receipt / payment</Button></>} onExport={()=>exportCsv('payments-'+period.from+'-'+period.to+'.csv',[['Payments',period.from,period.to],['Number','Date','Party','Direction','Method','Amount','Reference'],...filtered.map(row=>[row.payment_number,row.payment_date,row.party_name,row.payment_type,row.paymentMethod?.name || row.payment_mode,Number(row.amount),row.reference_number])])}>
+    <div className="ar-metrics"><Metric label="Receipts" value={sum('incoming')} tone="positive"/><Metric label="Payments" value={sum('outgoing')}/><Metric label="Net receipts less payments" value={sum('incoming')-sum('outgoing')}/><div className="ar-metric"><span>Recorded movements</span><strong>{rows.length}</strong><small>In the selected period</small></div></div>
+    <div className="ar-table-card"><div className="ar-table-tools"><Input.Search aria-label="Search payments" value={search} onChange={event=>setSearch(event.target.value)} allowClear placeholder="Search number, party or reference"/><Segmented value={direction} options={['All','Receipts','Payments']} onChange={setDirection}/></div><Table rowKey="id" columns={columns} dataSource={filtered} pagination={pagination} scroll={{x:950}}/></div>
+    <p className="ar-footnote">This register lists payment records. POS collections and other direct cash postings are included in the Cash & Bank Movements report.</p>
+  </ReportShell>;
+}

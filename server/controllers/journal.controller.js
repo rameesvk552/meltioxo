@@ -5,14 +5,14 @@ const accountingService = require('../services/accounting.service');
 
 exports.getAll = async (req, res, next) => {
   try {
-    const items = await journalEntry.findAll({ where: { tenant_id: req.tenantId } });
+    const items = await journalEntry.findAll({ where: { tenant_id: req.tenantId }, order: [['entry_date', 'DESC'], ['created_at', 'DESC']] });
     res.status(200).json(items);
   } catch (error) { next(error); }
 };
 
 exports.getById = async (req, res, next) => {
   try {
-    const item = await journalEntry.findOne({ where: { id: req.params.id, tenant_id: req.tenantId }, include: [journalEntryLine] });
+    const item = await journalEntry.findOne({ where: { id: req.params.id, tenant_id: req.tenantId }, include: [{ model: journalEntryLine, include: [{ model: db.account, where: { tenant_id: req.tenantId }, required: false }] }] });
     if (!item) throw new AppError('Not found', 404);
     res.status(200).json(item);
   } catch (error) { next(error); }

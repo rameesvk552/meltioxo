@@ -471,5 +471,7 @@
 .pos-day-gate .ant-card-body { min-height: 350px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; }
 .pos-day-gate h1 { margin: 0; color: var(--color-text-primary); font-size: 26px; }
 .pos-day-gate p { max-width: 390px; margin: 0 0 8px; color: var(--color-text-muted); }
+.pos-day-warning { width: 100%; max-width: 450px; text-align: left; }
+.pos-day-warning .ant-alert-description { font-size: 12px; }
 .pos-day-gate-icon { width: 64px; height: 64px; display: grid; place-items: center; border-radius: 50%; color: var(--color-gold); background: #fff4e8; font-size: 27px; }
 .pos-day-status { cursor: pointer; font: inherit; }

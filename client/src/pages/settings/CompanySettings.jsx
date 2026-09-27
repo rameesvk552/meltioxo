@@ -20,6 +20,31 @@ const { TextArea } = Input;
 const paymentTypes = ['CASH', 'BANK', 'UPI', 'CARD', 'WALLET', 'GATEWAY', 'OTHER'];
 const acceptedLogoTypes = ['image/png', 'image/jpeg', 'image/webp'];
 const maxLogoSize = 5 * 1024 * 1024;
+const isPdfCompatibleLogo = source => {
+  const match = /^data:image\/(png|jpe?g);base64,/i.exec(String(source || ''));
+  if (!match) return false;
+  if (!/^png$/i.test(match[1])) return true;
+  try {
+    const bytes = Uint8Array.from(atob(source.slice(source.indexOf(',') + 1)), char => char.charCodeAt(0));
+    return bytes.length > 29 && bytes[0] === 137 && bytes[1] === 80 && bytes[2] === 78 && bytes[3] === 71
+      && bytes[24] === 8 && [2, 6].includes(bytes[25]) && bytes[28] === 0;
+  } catch { return false; }
+};
+const normalizeLogoForPdf = source => new Promise((resolve, reject) => {
+  const image = new Image();
+  image.onload = () => {
+    const scale = Math.min(1, 640 / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext('2d');
+    if (!context) return reject(new Error('Could not prepare the logo.'));
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    resolve(canvas.toDataURL('image/png'));
+  };
+  image.onerror = () => reject(new Error('Could not read the logo image.'));
+  image.src = source;
+});
 
 const CompanySettings = () => {
   const { user: currentUser } = React.useContext(AuthContext);
@@ -31,6 +56,7 @@ const CompanySettings = () => {
   const [editingPayment, setEditingPayment] = React.useState(null);
   const [savingPayment, setSavingPayment] = React.useState(false);
   const [savingCompany, setSavingCompany] = React.useState(false);
+  const [logoNeedsSave, setLogoNeedsSave] = React.useState(false);
   const [savingPrefs, setSavingPrefs] = React.useState(false);
   const [logoUrl, setLogoUrl] = React.useState(null);
   const [permissionModalOpen, setPermissionModalOpen] = React.useState(false);
@@ -69,7 +95,15 @@ const CompanySettings = () => {
 
   React.useEffect(() => {
     formCompany.setFieldsValue({ name: tenant.name, email: tenant.email, phone: tenant.phone, taxId: tenant.tax_id, address: tenant.address });
-    setLogoUrl(tenant.logo_url || null);
+    const savedLogo = tenant.logo_url || null;
+    setLogoUrl(savedLogo);
+    setLogoNeedsSave(false);
+    if (savedLogo?.startsWith('data:image/') && !isPdfCompatibleLogo(savedLogo)) {
+      normalizeLogoForPdf(savedLogo).then(compatibleLogo => {
+        setLogoUrl(compatibleLogo);
+        setLogoNeedsSave(true);
+      }).catch(() => {});
+    }
     formPrefs.setFieldsValue({
       currency: tenant.currency,
       taxSystem: tenant.tax_system,
@@ -94,6 +128,7 @@ const CompanySettings = () => {
         address: values.address,
         logo_url: logoUrl,
       });
+      setLogoNeedsSave(false);
       message.success('Company information saved.');
     } catch (error) {
       message.error(error.response?.data?.message || 'Could not save company information.');
@@ -113,7 +148,11 @@ const CompanySettings = () => {
     }
 
     const reader = new FileReader();
-    reader.onload = () => setLogoUrl(reader.result);
+    reader.onload = () => {
+      normalizeLogoForPdf(reader.result)
+        .then(logo => { setLogoUrl(logo); setLogoNeedsSave(true); })
+        .catch(() => message.error('Could not prepare that logo. Please try another image.'));
+    };
     reader.onerror = () => message.error('Could not read that image. Please try another file.');
     reader.readAsDataURL(file);
     return false;
@@ -291,8 +330,8 @@ const CompanySettings = () => {
                   </Upload>
                   {logoUrl && <Button danger icon={<DeleteOutlined />} onClick={() => setLogoUrl(null)}>Remove</Button>}
                 </Space>
-                <Typography.Text type="secondary" style={{ display: 'block', marginTop: 8, fontSize: 12 }}>
-                  PNG, JPEG, or WebP. Maximum 5 MB. The logo will appear on invoice headers.
+                <Typography.Text type={logoNeedsSave ? 'warning' : 'secondary'} style={{ display: 'block', marginTop: 8, fontSize: 12 }}>
+                  {logoNeedsSave ? 'Save Company Info to apply the PDF-compatible logo.' : 'PNG, JPEG, or WebP. Maximum 5 MB. The logo will appear on invoice headers.'}
                 </Typography.Text>
               </div>
             </Col>

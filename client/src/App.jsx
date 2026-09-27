@@ -40,10 +40,13 @@ import ExpenseForm from './pages/finance/ExpenseForm';
 import ProfitAndLoss from './pages/reports/PureProfitAndLoss';
 import SalesProfitReport from './pages/reports/OwnerProfitAndLoss';
 import BalanceSheet from './pages/reports/BalanceSheet';
+import ManagementReport from './pages/reports/ManagementReport';
+import CashMovements from './pages/reports/CashMovements';
 import TrialBalance from './pages/reports/TrialBalance';
 import StockReport from './pages/reports/StockReport';
 import ProductionOwnerReport from './pages/reports/ProductionOwnerReport';
 import AuditLog from './pages/reports/AuditLog';
+import WhatsAppInvoiceReport from './pages/reports/WhatsAppInvoiceReport';
 
 import CompanySettings from './pages/settings/CompanySettings';
 
@@ -134,10 +137,13 @@ export default function App() {
         <Route path="reports/profit-loss" element={<ProfitAndLoss />} />
         <Route path="reports/sales-profit" element={<SalesProfitReport />} />
         <Route path="reports/balance-sheet" element={<BalanceSheet />} />
+        <Route path="reports/management" element={<ManagementReport />} />
+        <Route path="reports/cash-bank" element={<CashMovements />} />
         <Route path="reports/trial-balance" element={<TrialBalance />} />
         <Route path="reports/stock" element={<StockReport />} />
         <Route path="reports/production" element={<ProductionOwnerReport />} />
         <Route path="reports/audit-log" element={<AuditLog />} />
+        <Route path="reports/whatsapp-invoices" element={<WhatsAppInvoiceReport />} />
         
         <Route path="settings" element={<CompanySettings />} />
       </Route>

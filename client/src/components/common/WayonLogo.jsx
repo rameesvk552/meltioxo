@@ -8,6 +8,7 @@ export default function WayonLogo({
   style,
   logoUrl = null,
   companyName = 'Wayon',
+  textOnly = false,
 }) {
   return (
     <div
@@ -16,7 +17,7 @@ export default function WayonLogo({
       role="img"
       aria-label={companyName}
     >
-      {logoUrl ? <img className="wayon-logo__image" src={logoUrl} alt="" /> : <svg
+      {!textOnly && (logoUrl ? <img className="wayon-logo__image" src={logoUrl} alt="" /> : <svg
           className="wayon-logo__mark"
           viewBox="0 0 48 48"
           aria-hidden="true"
@@ -31,8 +32,8 @@ export default function WayonLogo({
             strokeLinejoin="round"
           />
           <circle cx="36.5" cy="12" r="3" fill="#f7c4b8" />
-        </svg>}
-      {!compact && <span className="wayon-logo__name">{logoUrl ? companyName : 'Wayon'}</span>}
+        </svg>)}
+      {!compact && <span className="wayon-logo__name">{companyName}</span>}
     </div>
   );
 }

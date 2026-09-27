@@ -179,8 +179,8 @@ const createAndPost = async (tenantId, data, userId, transaction) => {
   return postJournal(tenantId, journal.id, userId, transaction);
 };
 
-const getCashBankLedgers = async (tenantId, transaction) => {
-  const all = await db.account.findAll({ where: { tenant_id: tenantId, is_active: true, type: 'asset' }, order: [['code', 'ASC'], ['name', 'ASC']], transaction });
+const getCashBankLedgers = async (tenantId, transaction, { includeInactive = false } = {}) => {
+  const all = await db.account.findAll({ where: { tenant_id: tenantId, ...(includeInactive ? {} : { is_active: true }), type: 'asset' }, order: [['code', 'ASC'], ['name', 'ASC']], transaction });
   const root = all.find(account => account.code === ACCOUNT_CODES.CASH_BANK_GROUP);
   if (!root) throw new AppError('Cash & Bank group is not configured', 500);
   const byId = new Map(all.map(account => [account.id, account]));

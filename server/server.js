@@ -118,6 +118,22 @@ const migrateProductsForReadyMade = async () => {
   }
 };
 
+// Packing-material-only retail sale lines do not have a finished-good ID.
+// Older installations kept this column NOT NULL, which makes those valid
+// sales fail at the database layer even though the model allows NULL.
+const migrateRetailSaleItemsForPackagingMaterials = async () => {
+  const [columns] = await db.sequelize.query(`
+    SELECT is_nullable
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'retail_sale_items'
+      AND column_name = 'finished_good_id'
+  `);
+  if (columns[0]?.is_nullable === 'NO') {
+    await db.sequelize.query('ALTER TABLE "retail_sale_items" ALTER COLUMN "finished_good_id" DROP NOT NULL');
+  }
+};
+
 // Upgrade every tenant to the same BS/PL hierarchy. Legacy ledger codes are
 // renamed in place so historical journals and production balances remain linked.
 const ensureDefaultAccountHierarchy = async () => {
@@ -143,7 +159,7 @@ const ensureDefaultBranches = async () => {
   }
 };
 
-migrateRawMaterialCategoryToText().then(migratePaymentModesToText).then(migratePurchaseItemEnums).then(migratePurchaseInvoiceStatus).then(migrateProductsForReadyMade).then(() => db.sequelize.sync({ alter: true })).then(ensureDefaultBranches).then(ensureDefaultAccountHierarchy).then(() => {
+migrateRawMaterialCategoryToText().then(migratePaymentModesToText).then(migratePurchaseItemEnums).then(migratePurchaseInvoiceStatus).then(migrateProductsForReadyMade).then(migrateRetailSaleItemsForPackagingMaterials).then(() => db.sequelize.sync({ alter: true })).then(ensureDefaultBranches).then(ensureDefaultAccountHierarchy).then(() => {
   console.log('Database synced');
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Button,
@@ -108,6 +108,8 @@ export default function ProductsAndVariants() {
   const [variantForm] = Form.useForm();
   const [formulaForm] = Form.useForm();
   const [formulaModalOpen, setFormulaModalOpen] = useState(false);
+  const [savingProduct, setSavingProduct] = useState(false);
+  const productSubmitInFlight = useRef(false);
   const [savingFormula, setSavingFormula] = useState(false);
   const selectedProductSourceType = Form.useWatch('source_type', productForm) || 'live_make';
   const sellByMeasurement = Form.useWatch('sell_by_measurement', productForm) === true;
@@ -328,9 +330,18 @@ export default function ProductsAndVariants() {
   });
 
   const createProduct = async values => {
+    if (productSubmitInFlight.current) return;
+    const normalizedName = String(values.name || '').trim();
+    const duplicate = !editingProduct && products.some(item => String(item.name || '').trim().toLowerCase() === normalizedName.toLowerCase());
+    if (duplicate) {
+      message.error(`A product named "${normalizedName}" already exists.`);
+      return;
+    }
+    productSubmitInFlight.current = true;
+    setSavingProduct(true);
     try {
       const payload = {
-        name: values.name,
+        name: normalizedName,
         code: values.code,
         description: values.description,
         sell_by_measurement: Boolean(values.sell_by_measurement),
@@ -356,6 +367,9 @@ export default function ProductsAndVariants() {
       message.success(editingProduct ? 'Product updated successfully.' : values.sell_by_measurement ? 'Measured product created successfully.' : 'Product and its first variant created successfully.');
     } catch (error) {
       message.error(error.response?.data?.message || `Could not ${editingProduct ? 'update' : 'create'} product`);
+    } finally {
+      productSubmitInFlight.current = false;
+      setSavingProduct(false);
     }
   };
 
@@ -870,7 +884,7 @@ export default function ProductsAndVariants() {
               {editingProduct && <Button danger icon={<DeleteOutlined />} onClick={() => deleteProduct(editingProduct)}>Delete Product</Button>}
               <Space>
               <Button onClick={() => { setProductModalOpen(false); setEditingProduct(null); productForm.resetFields(); }}>Cancel</Button>
-              <Button type="primary" htmlType="submit">{editingProduct ? 'Update Product' : 'Create Product'}</Button>
+              <Button type="primary" htmlType="submit" loading={savingProduct}>{editingProduct ? 'Update Product' : 'Create Product'}</Button>
               </Space>
             </div>
           </Form.Item>

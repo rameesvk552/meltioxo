@@ -48,6 +48,7 @@ export const VIEW_PERMISSION_GROUPS = [
       { key: 'reports.stock', label: 'Stock Report', path: '/app/reports/stock' },
       { key: 'reports.production', label: 'Production Owner Report', path: '/app/reports/production' },
       { key: 'reports.audit_log', label: 'Audit Log', path: '/app/reports/audit-log' },
+      { key: 'reports.whatsapp_invoices', label: 'WhatsApp Invoice Report', path: '/app/reports/whatsapp-invoices' },
     ],
   },
   {
@@ -127,12 +128,15 @@ export const getViewPermissionsForPath = pathname => {
   if (pathname.startsWith('/app/payables')) return ['finance.payables'];
   if (pathname.startsWith('/app/receivables')) return ['finance.receivables'];
   if (pathname.startsWith('/app/reports/profit-loss')) return ['reports.profit_loss'];
+  if (pathname.startsWith('/app/reports/management')) return ['reports.profit_loss'];
+  if (pathname.startsWith('/app/reports/cash-bank')) return ['reports.balance_sheet'];
   if (pathname.startsWith('/app/reports/sales-profit')) return ['reports.sales_profit'];
   if (pathname.startsWith('/app/reports/balance-sheet')) return ['reports.balance_sheet'];
   if (pathname.startsWith('/app/reports/trial-balance')) return ['reports.trial_balance'];
   if (pathname.startsWith('/app/reports/stock')) return ['reports.stock'];
   if (pathname.startsWith('/app/reports/production')) return ['reports.production'];
   if (pathname.startsWith('/app/reports/audit-log')) return ['reports.audit_log'];
+  if (pathname.startsWith('/app/reports/whatsapp-invoices')) return ['reports.whatsapp_invoices'];
   if (pathname.startsWith('/app/settings')) return ['settings'];
   return [];
 };

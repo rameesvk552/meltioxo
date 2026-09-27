@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Button, Card, Descriptions, Divider, Form, Input, InputNumber, Modal, Radio, Select, Space, Tag, Typography, message } from 'antd';
-import { ArrowLeftOutlined, CheckCircleOutlined, CreditCardOutlined, DeleteOutlined, FieldTimeOutlined, InfoCircleOutlined, LockOutlined, PlusOutlined, PrinterOutlined, SearchOutlined, ShoppingCartOutlined, UserAddOutlined, UserOutlined } from '@ant-design/icons';
+import { Alert, Button, Card, Descriptions, Divider, Form, Input, InputNumber, Modal, Radio, Select, Space, Tag, Typography, message } from 'antd';
+import { ArrowLeftOutlined, CheckCircleOutlined, CreditCardOutlined, DeleteOutlined, FieldTimeOutlined, InfoCircleOutlined, LockOutlined, PlusOutlined, PrinterOutlined, SearchOutlined, ShoppingCartOutlined, UserAddOutlined, UserOutlined, WarningOutlined } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 import client from '../../api/client';
 import useApiData from '../../hooks/useApiData';
@@ -26,7 +26,7 @@ const allocateFixedDiscount = (bases, amount) => {
   return shares.sort((a, b) => a.index - b.index).map(share => share.cents / 100);
 };
 const quantityLabel = value => Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 4 });
-const newSaleItem = (itemType = 'finished_good') => ({ key: `${itemType}-${Date.now()}-${Math.random()}`, itemType, product: null, qty: 1, packCount: 1, packingKit: null, packingKitQuantities: null, price: 0, discount: 0, tax: itemType === 'finished_good' ? 18 : 0 });
+const newSaleItem = (itemType = 'finished_good') => ({ key: `${itemType}-${Date.now()}-${Math.random()}`, itemType, product: null, qty: null, packCount: 1, packingKit: null, packingKitQuantities: null, price: 0, discount: 0, tax: itemType === 'finished_good' ? 18 : 0 });
 
 export default function SalesOrderPOS() {
   const [form] = Form.useForm();
@@ -55,6 +55,7 @@ export default function SalesOrderPOS() {
   const [editInitialized, setEditInitialized] = useState(false);
   const showFormulaInSales = Boolean(tenantSettings.show_formula_in_sales);
   const [items, setItems] = useState([{ ...newSaleItem(), key: '1' }]);
+  const previousDayOpen = Boolean(!isEditing && dayState.current && dayState.business_date && dayState.current.business_date !== dayState.business_date);
 
   useEffect(() => {
     if (!isEditing || editInitialized || !existingSale.id || !finishedGoods.length || !paymentMethods.length) return;
@@ -206,7 +207,7 @@ export default function SalesOrderPOS() {
     const missingKit = saleItems.find(item => {
       const selected = selectedItemFor(item);
       if (item.itemType === 'packaging_material') return false;
-      return tenantSettings.measured_packaging_enabled && tenantSettings.measured_packaging_required !== false && selected?.product?.sell_by_measurement && !selectedKitIdFor(item);
+      return tenantSettings.measured_packaging_enabled && tenantSettings.measured_packaging_required !== false && selected?.product?.sell_by_measurement && matchingKitsFor(item.qty).length > 0 && !selectedKitIdFor(item);
     });
     if (missingKit) {
       message.error(matchingKitsFor(missingKit.qty).length ? 'Select a packing kit for every measured product.' : `No packing kit supports ${quantityLabel(missingKit.qty)} ml.`);
@@ -323,10 +324,11 @@ export default function SalesOrderPOS() {
   if (!isEditing && !dayState.current) return <div className="pos-day-gate">
     <Card>
       <span className="pos-day-gate-icon"><LockOutlined /></span>
-      <h1>{dayState.today_record?.status === 'closed' ? 'Today’s register is closed' : 'Open the register to start selling'}</h1>
-      <p>{dayState.today_record?.status === 'closed' ? 'This business day has been reconciled and cannot accept more POS sales.' : 'Enter the opening cash in the Day Register before completing the first sale.'}</p>
+      {previousDayOpen ? <Alert className="pos-day-warning" type="warning" showIcon icon={<WarningOutlined />} message="Previous business day is still open" description={`The register for ${dayState.current.business_date} must be closed before opening ${dayState.business_date}.`} /> : null}
+      <h1>{dayState.today_record?.status === 'closed' ? 'Today’s register is closed' : previousDayOpen ? 'Close the previous day to continue' : 'Open the register to start selling'}</h1>
+      <p>{dayState.today_record?.status === 'closed' ? 'This business day has been reconciled and cannot accept more POS sales.' : previousDayOpen ? 'POS sales are paused until the previous day is counted and closed.' : 'Enter the opening cash in the Day Register before completing the first sale.'}</p>
       {dayState.can_open && <Button type="primary" size="large" icon={<FieldTimeOutlined />} onClick={() => navigate('/app/day-register')}>Open business day</Button>}
-      {!dayState.can_open && <Button size="large" icon={<FieldTimeOutlined />} onClick={() => navigate('/app/day-register')}>View day register</Button>}
+      {!dayState.can_open && <Button type={previousDayOpen ? 'primary' : 'default'} size="large" icon={<FieldTimeOutlined />} onClick={() => navigate('/app/day-register')}>{previousDayOpen ? 'Close previous day' : 'View day register'}</Button>}
       <Button type="text" onClick={reloadDay}>Check again</Button>
     </Card>
   </div>;

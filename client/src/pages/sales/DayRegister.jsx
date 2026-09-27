@@ -51,6 +51,17 @@ export default function DayRegister() {
     } finally { setSaving(false); }
   };
 
+  const confirmCloseDay = values => {
+    Modal.confirm({
+      title: 'Confirm day closing',
+      content: `Close the register for ${dateLabel(current?.business_date)} with ${money(values.counted_cash)} counted cash? Sales will be locked until an administrator reopens the day.`,
+      okText: 'Yes, close day',
+      okButtonProps: { danger: true },
+      cancelText: 'Keep day open',
+      onOk: () => closeDay(values)
+    });
+  };
+
   const historyColumns = useMemo(() => [
     { title: 'Business date', dataIndex: 'business_date', render: value => dateLabel(value) },
     { title: 'Status', dataIndex: 'status', render: value => <Tag color={value === 'open' ? 'processing' : 'success'}>{String(value).toUpperCase()}</Tag> },
@@ -107,7 +118,7 @@ export default function DayRegister() {
     <Modal title="Close and reconcile day" open={closeVisible} onCancel={() => !saving && setCloseVisible(false)} onOk={() => closeForm.submit()} okText="Close day permanently" okButtonProps={{ danger: true }} confirmLoading={saving} width={560} destroyOnHidden>
       <Alert type="warning" showIcon message="Count the physical cash before closing" description="Closing locks this register. It cannot be reopened." />
       <div className="close-reconciliation"><div><span>Opening cash</span><strong>{money(current?.opening_cash)}</strong></div><div><span>Net cash movement</span><strong>{money(current?.cash_movement)}</strong></div><div className="expected"><span>Expected cash</span><strong>{money(expectedCash)}</strong></div></div>
-      <Form form={closeForm} layout="vertical" onFinish={closeDay} className="day-register-form">
+      <Form form={closeForm} layout="vertical" onFinish={confirmCloseDay} className="day-register-form">
         <Form.Item name="counted_cash" label="Cash counted in drawer" rules={[{ required: true, message: 'Enter counted cash' }]}><InputNumber min={0} precision={2} prefix="₹" style={{ width: '100%' }} /></Form.Item>
         <div className={`variance-preview ${variance === 0 ? 'balanced' : 'different'}`}><span>Variance</span><strong>{money(variance)}</strong></div>
         <Form.Item name="closing_note" label="Closing note (optional)"><Input.TextArea rows={3} maxLength={500} placeholder={variance ? 'Explain the cash difference' : ''} /></Form.Item>

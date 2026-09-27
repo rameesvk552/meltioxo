@@ -81,7 +81,22 @@ exports.getById = async (req, res, next) => {
 
 exports.create = async (req, res, next) => {
   const transaction = await db.sequelize.transaction();
+  const requestKey = req.get('Idempotency-Key') || null;
   try {
+    // Return the original order when the browser retries the same submission
+    // (for example after a response is lost). This check also handles the
+    // common sequential retry without opening a second transaction.
+    if (requestKey) {
+      const existing = await productionOrder.findOne({
+        where: { tenant_id: req.tenantId, request_key: requestKey },
+        include: [{ model: productionOutput, include: [db.finishedGood] }],
+        transaction
+      });
+      if (existing) {
+        await transaction.rollback();
+        return res.status(200).json(existing);
+      }
+    }
     const requestedOutputs = Array.isArray(req.body.outputs) && req.body.outputs.length
       ? req.body.outputs : [{ finished_good_id: req.body.finished_good_id, planned_qty: req.body.planned_qty }];
     const outputSpecs = [];
@@ -134,6 +149,7 @@ exports.create = async (req, res, next) => {
       formula_id: formulaId,
       finished_good_id: variant.id,
       planned_qty: outputSpecs.reduce((sum, row) => sum + row.planned_qty, 0),
+      request_key: requestKey,
       order_number: req.body.order_number || `PROD-${new Date().getFullYear()}-${String(sequence).padStart(4, '0')}`
     }, { transaction });
     await productionOutput.bulkCreate(outputSpecs.map(row => ({ ...row, production_order_id: item.id })), { transaction });
@@ -162,6 +178,19 @@ exports.create = async (req, res, next) => {
   } catch (error) {
     if (transaction && !transaction.finished) {
       await transaction.rollback();
+    }
+    // The unique index is the concurrency guard. If two identical requests
+    // arrive together, the losing request returns the order made by the winner.
+    if (requestKey && error.name === 'SequelizeUniqueConstraintError') {
+      try {
+        const existing = await productionOrder.findOne({
+          where: { tenant_id: req.tenantId, request_key: requestKey },
+          include: [{ model: productionOutput, include: [db.finishedGood] }]
+        });
+        if (existing) return res.status(200).json(existing);
+      } catch (_) {
+        // Preserve the original error if the recovery lookup cannot run.
+      }
     }
     next(error);
   }
@@ -207,9 +236,14 @@ exports.cancel = async (req, res, next) => {
   try {
     const [updated] = await productionOrder.update(
       { status: 'cancelled' },
-      { where: { id: req.params.id, tenant_id: req.tenantId } }
+      { where: { id: req.params.id, tenant_id: req.tenantId, status: ['planned', 'in_progress'] } }
     );
-    if (!updated) throw new AppError('Not found', 404);
+    if (!updated) {
+      const item = await productionOrder.findOne({ where: { id: req.params.id, tenant_id: req.tenantId } });
+      if (!item) throw new AppError('Not found', 404);
+      if (item.status === 'cancelled') return res.json({ message: 'Already cancelled' });
+      throw new AppError('Completed production cannot be cancelled', 400);
+    }
     res.json({ message: 'Cancelled' });
   } catch (error) { next(error); }
 };

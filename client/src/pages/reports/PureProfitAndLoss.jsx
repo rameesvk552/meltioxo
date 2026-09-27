@@ -1,168 +1,33 @@
-import React, { useMemo, useState } from 'react';
-import { Alert, Button, Card, DatePicker, Segmented, Space, Spin, Typography } from 'antd';
-import { DownloadOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
-import dayjs from 'dayjs';
+import React, { useContext, useState } from 'react';
 import useApiData from '../../hooks/useApiData';
-import './PureProfitAndLoss.css';
-
-const { RangePicker } = DatePicker;
-const { Text, Title } = Typography;
-
-const money = value => {
-  const amount = Number(value || 0);
-  const formatted = Math.abs(amount).toLocaleString('en-IN', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  });
-  return amount < 0 ? `(₹${formatted})` : `₹${formatted}`;
-};
-
-const financialYearRange = (date = dayjs(), offset = 0) => {
-  const startYear = (date.month() >= 3 ? date.year() : date.year() - 1) + offset;
-  const start = dayjs(`${startYear}-04-01`);
-  const end = offset === 0 ? date : start.add(1, 'year').subtract(1, 'day');
-  return [start, end];
-};
-
-const presetRange = preset => {
-  const today = dayjs();
-  if (preset === 'This month') return [today.startOf('month'), today];
-  if (preset === 'Last FY') return financialYearRange(today, -1);
-  return financialYearRange(today);
-};
-
-const csvCell = value => `"${String(value ?? '').replaceAll('"', '""')}"`;
-
-function StatementRow({ code, label, value, total = false, result = false }) {
-  return <div className={`pl-row${total ? ' pl-row--total' : ''}${result ? ' pl-row--result' : ''}${result && Number(value || 0) < 0 ? ' is-loss' : ''}`}>
-    <div className="pl-row__label">
-      {code && <span className="pl-row__code">{code}</span>}
-      <span>{label}</span>
-    </div>
-    <span className={`pl-row__amount${Number(value || 0) < 0 ? ' is-negative' : ''}`}>{money(value)}</span>
-  </div>;
-}
-
-function AccountSection({ title, rows, emptyLabel }) {
-  return <section className="pl-section">
-    <h3>{title}</h3>
-    {rows.length
-      ? rows.map(row => <StatementRow key={row.id || row.code} code={row.code} label={row.name} value={row.amount} />)
-      : <div className="pl-empty-row">{emptyLabel}</div>}
-  </section>;
-}
+import { AuthContext } from '../../context/AuthContext';
+import { hasViewPermission } from '../../config/permissions';
+import { exportCsv, Metric, ReportShell, StatementLine, useReportRange } from './AccountingUI';
+import LedgerDrawer from './LedgerDrawer';
 
 export default function PureProfitAndLoss({ embedded = false }) {
-  const [preset, setPreset] = useState('This FY');
-  const [range, setRange] = useState(() => presetRange('This FY'));
-  const endpoint = useMemo(() => {
-    const [from, to] = range;
-    return `/reports/profit-loss-statement?from=${from.format('YYYY-MM-DD')}&to=${to.format('YYYY-MM-DD')}`;
-  }, [range]);
-  const { data, loading, error, reload } = useApiData(endpoint, { initialData: {} });
-  const summary = data.summary || {};
-  const accounts = data.accounts || {};
-  const revenue = Array.isArray(accounts.revenue) ? accounts.revenue : [];
-  const directCosts = Array.isArray(accounts.cogs) ? accounts.cogs : [];
-  const expenses = Array.isArray(accounts.operating_expenses) ? accounts.operating_expenses : [];
-
-  const choosePreset = value => {
-    setPreset(value);
-    setRange(presetRange(value));
-  };
-
-  const chooseRange = dates => {
-    if (!dates?.[0] || !dates?.[1]) return;
-    setPreset('Custom');
-    setRange(dates);
-  };
-
-  const exportCsv = () => {
-    const rows = [
-      ['Profit & Loss Statement'],
-      ['Period', `${range[0].format('DD MMM YYYY')} to ${range[1].format('DD MMM YYYY')}`],
-      [],
-      ['Income'],
-      ...revenue.map(row => [row.code, row.name, Number(row.amount || 0).toFixed(2)]),
-      ['', 'Total income', Number(summary.revenue || 0).toFixed(2)],
-      [],
-      ['Cost of goods sold / direct costs'],
-      ...directCosts.map(row => [row.code, row.name, Number(row.amount || 0).toFixed(2)]),
-      ['', 'Total direct costs', Number(summary.cogs || 0).toFixed(2)],
-      ['', 'Gross profit', Number(summary.gross_profit || 0).toFixed(2)],
-      [],
-      ['Operating expenses'],
-      ...expenses.map(row => [row.code, row.name, Number(row.amount || 0).toFixed(2)]),
-      ['', 'Total operating expenses', Number(summary.operating_expenses || 0).toFixed(2)],
-      ['', Number(summary.net_profit || 0) >= 0 ? 'Net profit' : 'Net loss', Number(summary.net_profit || 0).toFixed(2)]
-    ];
-    const blob = new Blob([rows.map(row => row.map(csvCell).join(',')).join('\n')], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `profit-loss-${range[0].format('YYYY-MM-DD')}-${range[1].format('YYYY-MM-DD')}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
-  return <div className={`profit-loss-page${embedded ? ' profit-loss-page--embedded' : ''}`}>
-    {!embedded && <header className="pl-page-header">
-      <div><Text className="pl-eyebrow">ACCOUNTS</Text><Title level={2}>Profit &amp; Loss</Title></div>
-      <Space wrap className="pl-actions">
-        <Button icon={<DownloadOutlined />} onClick={exportCsv}>Export CSV</Button>
-        <Button icon={<PrinterOutlined />} onClick={() => window.print()}>Print</Button>
-      </Space>
-    </header>}
-
-    <Card className="pl-filter-card no-print" styles={{ body: { padding: 16 } }}>
-      <div className="pl-filters">
-        <Segmented value={preset} options={['This month', 'This FY', 'Last FY']} onChange={choosePreset} />
-        <RangePicker value={range} allowClear={false} onChange={chooseRange} format="DD MMM YYYY" />
-        <Button icon={<ReloadOutlined />} onClick={reload} loading={loading}>Refresh</Button>
-        {embedded && <Space className="pl-embedded-actions">
-          <Button icon={<DownloadOutlined />} onClick={exportCsv}>Export</Button>
-          <Button icon={<PrinterOutlined />} onClick={() => window.print()}>Print</Button>
-        </Space>}
-      </div>
-    </Card>
-
-    {error && <Alert
-      type="error"
-      showIcon
-      message="Could not load the Profit & Loss statement"
-      description={error.response?.data?.message || error.message}
-      action={<Button size="small" onClick={reload}>Try again</Button>}
-      style={{ marginBottom: 16 }}
-    />}
-
-    <Card className="profit-loss-statement" styles={{ body: { padding: 0 } }}>
-      <div className="pl-statement-header">
-        <div>
-          <span className="pl-statement-kicker">FINANCIAL STATEMENT</span>
-          <h2>Profit &amp; Loss Account</h2>
-          <p>{range[0].format('DD MMM YYYY')} to {range[1].format('DD MMM YYYY')}</p>
-        </div>
-        <div className="pl-basis"><span>Basis</span><strong>Posted journals</strong></div>
-      </div>
-
-      {loading ? <div className="pl-loading"><Spin /><span>Preparing statement from posted journal entries…</span></div> : <div className="pl-statement-body">
-        <AccountSection title="Income" rows={revenue} emptyLabel="No income posted in this period" />
-        <StatementRow label="Total income" value={summary.revenue} total />
-
-        <AccountSection title="Cost of goods sold / direct costs" rows={directCosts} emptyLabel="No direct costs posted in this period" />
-        <StatementRow label="Total direct costs" value={summary.cogs} total />
-        <StatementRow label="Gross profit" value={summary.gross_profit} result />
-
-        <AccountSection title="Operating expenses" rows={expenses} emptyLabel="No operating expenses posted in this period" />
-        <StatementRow label="Total operating expenses" value={summary.operating_expenses} total />
-
-        <div className={`pl-net-result${Number(summary.net_profit || 0) < 0 ? ' is-loss' : ''}`}>
-          <div><span>{Number(summary.net_profit || 0) >= 0 ? 'Net profit' : 'Net loss'}</span><small>for the selected period</small></div>
-          <strong>{money(summary.net_profit)}</strong>
-        </div>
-      </div>}
-
-      <footer className="pl-statement-footer">This statement includes only revenue and expense entries from posted double-entry journals.</footer>
-    </Card>
-  </div>;
+  const period = useReportRange();
+  const [ledger, setLedger] = useState(null);
+  const { user } = useContext(AuthContext);
+  const query = useApiData('/reports/profit-loss-statement?from='+period.from+'&to='+period.to, { initialData: {} });
+  const summary = query.data.summary || {};
+  const accounts = query.data.accounts || {};
+  const section = (title, key, total) => <section><h3>{title}</h3>{accounts[key]?.length ? accounts[key].map(row =>
+    <StatementLine key={row.id} code={row.code} label={row.name} value={row.amount} onClick={hasViewPermission(user,'finance.accounts') ? () => setLedger(row) : undefined} />
+  ) : <div className="ar-empty">No postings in this period</div>}<StatementLine label={'Total '+title.toLowerCase()} value={total} total /></section>;
+  return <><ReportShell title="Profit & loss" subtitle="Income, direct costs, and operating expenses from the same accounting ledger." embedded={embedded} query={query} controls={period.controls} onExport={() => exportCsv('profit-loss-'+period.from+'-'+period.to+'.csv', [
+    ['Profit & loss',period.from,period.to], ['Section','Code','Account','Amount'],
+    ...Object.entries(accounts).flatMap(([key,rows]) => rows.map(row => [key,row.code,row.name,row.amount])),
+    ['Total income','','',summary.revenue],['Total direct costs','','',summary.cogs],['Gross profit','','',summary.gross_profit],
+    ['Operating expenses','','',summary.operating_expenses],['Net profit / loss','','',summary.net_profit]
+  ])}>
+    <div className="ar-metrics"><Metric label="Net income" value={summary.revenue} detail="After discounts and returns" /><Metric label="Gross profit" value={summary.gross_profit} detail={(summary.gross_margin_pct || 0)+'% gross margin'} /><Metric label="Operating expenses" value={summary.operating_expenses} detail="Excludes direct costs" /><Metric label={summary.net_profit < 0 ? 'Net loss' : 'Net profit'} value={summary.net_profit} tone={summary.net_profit < 0 ? 'negative' : 'positive'} detail={(summary.net_margin_pct || 0)+'% net margin'} /></div>
+    <article className="ar-statement-card"><div className="ar-statement-title"><div><h2>Profit & loss account</h2><p>{period.range[0].format('DD MMM YYYY')} to {period.range[1].format('DD MMM YYYY')}</p></div><span className="ar-eyebrow">ACCRUAL BASIS</span></div>
+      <div className="ar-statement-body">{section('Income','revenue',summary.revenue)}{section('Direct costs','cogs',summary.cogs)}
+        <div className={'ar-result'+(summary.gross_profit < 0 ? ' is-loss' : '')}><span>Gross profit</span><StatementLine value={summary.gross_profit} /></div>
+        {section('Operating expenses','operating_expenses',summary.operating_expenses)}
+        <div className={'ar-result'+(summary.net_profit < 0 ? ' is-loss' : '')}><span>{summary.net_profit < 0 ? 'Net loss' : 'Net profit'}</span><StatementLine value={summary.net_profit} /></div>
+      </div><footer className="ar-footnote">Income less direct costs gives gross profit. Operating expenses are deducted once to arrive at net profit. Click an account to see its posted entries.</footer>
+    </article>
+  </ReportShell><LedgerDrawer account={ledger} from={period.from} to={period.to} onClose={() => setLedger(null)} /></>;
 }

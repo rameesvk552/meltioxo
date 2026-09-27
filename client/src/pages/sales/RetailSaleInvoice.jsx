@@ -33,6 +33,7 @@ export default function RetailSaleInvoice() {
 
   const items = sale.retailSaleItems || [];
   const customer = sale.customer || {};
+  const isArabelegance = /arabelegance|arabglaance/i.test(String(company.name || ''));
   const hasTax = Number(sale.tax_amount || 0) > 0 || items.some(item => Number(item.tax_rate || 0) > 0 || Number(item.tax_amount || 0) > 0);
   const hasDiscount = Number(sale.discount_amount || 0) > 0 || items.some(item => Number(item.discount_pct || 0) > 0);
 
@@ -93,34 +94,34 @@ export default function RetailSaleInvoice() {
             {company.logo_url
               ? <img src={company.logo_url} alt={`${company.name || 'Company'} logo`} />
               : <div className="invoice-logo"><ShopOutlined /></div>}
-            <div>
-              <Title level={2}>{company.name || 'Company'}</Title>
-              {company.address && <Text>{company.address}</Text>}
-              {company.phone && <Text className="invoice-company-phone">Phone: {company.phone}</Text>}
-              {hasTax && company.tax_id && <Text>GSTIN: {company.tax_id}</Text>}
-            </div>
           </section>
 
           <section className="invoice-identity">
-            <span className="invoice-kicker">{hasTax ? 'TAX INVOICE' : 'INVOICE'}</span>
-            <Title level={2}>{sale.sale_number}</Title>
-            <span className="invoice-paid-badge">Paid in full</span>
+            <Title level={2}>{hasTax ? 'Tax Invoice' : 'Invoice'}</Title>
           </section>
         </header>
 
+        <section className="invoice-number-row">
+          <div><strong>Invoice No:</strong> <span>{sale.sale_number}</span></div>
+          <div><strong>Date:</strong> <span>{date(sale.sale_date)}</span></div>
+        </section>
+
         <section className="invoice-overview">
           <div className="invoice-bill-to">
-            <span className="invoice-label">BILLED TO</span>
+            <span className="invoice-label">Invoice To:</span>
             <strong>{customer.name || 'Walk-in customer'}</strong>
-            {customer.address && <span>{customer.address}</span>}
             {customer.phone && <span>{customer.phone}</span>}
+            {customer.address && <span>{customer.address}</span>}
             {hasTax && customer.tax_id && <span>GSTIN: {customer.tax_id}</span>}
           </div>
-          <dl className="invoice-meta">
-            <div><dt>Invoice date</dt><dd>{date(sale.sale_date)}</dd></div>
-            <div><dt>Payment status</dt><dd>Paid</dd></div>
-            <div><dt>Payment via</dt><dd>{sale.paymentMethod?.name || sale.paymentAccount?.name || 'Recorded payment'}</dd></div>
-          </dl>
+          <div className="invoice-from">
+            <span className="invoice-label">Invoice From:</span>
+            <strong>{company.name || 'Company'}</strong>
+            {company.phone && <span>{company.phone}</span>}
+            {company.address && <span>{company.address}</span>}
+            {isArabelegance && <a href="https://www.arabeleganceperfume.com" target="_blank" rel="noreferrer">www.arabeleganceperfume.com</a>}
+            {hasTax && company.tax_id && <span>GSTIN: {company.tax_id}</span>}
+          </div>
         </section>
 
         <div className="invoice-table-wrap">
@@ -141,13 +142,15 @@ export default function RetailSaleInvoice() {
                 const packingMaterial = item.packagingMaterial;
                 const productName = packingMaterial?.name || variant.product?.name || variant.name || 'Product';
                 const isMeasured = Boolean(variant.product?.sell_by_measurement);
-                const variantName = packingMaterial?.sku || (isMeasured ? null : variant.size_label || variant.sku);
+                const variantName = isArabelegance
+                  ? (packingMaterial ? null : (isMeasured ? null : variant.size_label))
+                  : (packingMaterial?.sku || (isMeasured ? null : variant.size_label || variant.sku));
                 const quantityUnit = packingMaterial ? ` ${packingMaterial.unit || 'pcs'}` : isMeasured ? ` ${variant.product.measurement_unit || 'ml'}` : '';
                 const lineAmount = Number(item.quantity || 0) * Number(item.unit_price || 0);
                 return (
                   <tr key={item.id || index}>
                     <td>{index + 1}</td>
-                    <td><strong>{productName}</strong>{variantName && <small>{variantName}{variant.sku && variantName !== variant.sku ? ` · ${variant.sku}` : ''}</small>}</td>
+                    <td><strong>{productName}</strong>{variantName && <small>{variantName}{!isArabelegance && variant.sku && variantName !== variant.sku ? ` · ${variant.sku}` : ''}</small>}</td>
                     <td className="numeric">{quantity(item.quantity)}{quantityUnit}</td>
                     <td className="numeric">{money(item.unit_price)}</td>
                     {hasTax && <td className="numeric">{Number(item.tax_rate || 0).toLocaleString('en-IN')}%</td>}
@@ -172,8 +175,8 @@ export default function RetailSaleInvoice() {
         </section>
 
         <footer className="invoice-footer">
-          <strong>Thank you for your business.</strong>
-          <span>This is a computer-generated invoice.</span>
+          <strong>{isArabelegance ? 'Thank you for choosing Arabelegance Perfume.' : 'Thank you for your business.'}</strong>
+          {!isArabelegance && <span>This is a computer-generated invoice.</span>}
         </footer>
       </article>
     </main>

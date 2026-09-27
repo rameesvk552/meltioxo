@@ -1,6 +1,6 @@
 import React from 'react';
 import { Row, Col, Card, Statistic, Table, Tag, Button, Typography, List, Avatar, Empty, Progress } from 'antd';
-import { ArrowUpOutlined, BankOutlined, CreditCardOutlined, AlertOutlined, FallOutlined, PlusOutlined, ShoppingCartOutlined, WalletOutlined, WarningOutlined } from '@ant-design/icons';
+import { ArrowUpOutlined, BankOutlined, CreditCardOutlined, AlertOutlined, FallOutlined, PlusOutlined, ShoppingCartOutlined, WalletOutlined, WarningOutlined, DollarOutlined } from '@ant-design/icons';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import useApiData from '../../hooks/useApiData';
 import { AuthContext } from '../../context/AuthContext';
@@ -200,6 +200,12 @@ const dashboardStatCards = [
   { key: 'overdue_payables', label: 'Purchases Due', icon: <BankOutlined />, tone: 'orange' },
 ];
 
+const stockAlertTabs = [
+  { key: 'raw', label: 'Raw Material' },
+  { key: 'finished', label: 'Finished Goods' },
+  { key: 'packaging', label: 'Packing Material' },
+];
+
 const revenueFlowItems = [
   { key: 'cash_collected', label: 'Total cash collected', icon: <WalletOutlined />, tone: 'teal' },
   { key: 'bank_collected', label: 'Total collection in bank', icon: <BankOutlined />, tone: 'green' },
@@ -220,14 +226,38 @@ export default function Dashboard() {
   const { data: packagingMaterials } = useApiData('/packaging-materials', { enabled: needsInventory });
   const { data: finishedGoods } = useApiData('/finished-goods', { enabled: needsInventory });
   const { data: revenueFlow } = useApiData('/dashboard/revenue-flow', { initialData: {}, enabled: hasRevenueFlowAccess });
+  const { data: expenses } = useApiData('/expenses', { initialData: [], enabled: canView('finance.expenses') });
+  const [stockTab, setStockTab] = React.useState('raw');
   const todaysSales = Number(businessDayState.today_record?.total_sales || 0);
   const inventoryValue = [...rawMaterials, ...packagingMaterials, ...finishedGoods].reduce((sum, item) => sum + Number(item.current_stock || 0) * Number(item.avg_cost ?? item.cost_price ?? 0), 0);
   const lowStock = [...rawMaterials, ...packagingMaterials, ...finishedGoods].filter(item => Number(item.current_stock || 0) <= Number(item.reorder_level || 0));
+  const stockLists = { raw: rawMaterials, finished: finishedGoods, packaging: packagingMaterials };
+  const selectedStock = (stockLists[stockTab] || []).filter(item => Number(item.current_stock || 0) <= Number(item.reorder_level || 0));
+  const recentExpenses = expenses.slice(0, 4);
+  const quickActions = [
+    canOpenPos && { to: '/app/retail-sales/new', icon: <CreditCardOutlined />, label: 'POS' },
+    canView('finance.expenses') && { to: '/app/expenses/new', icon: <WalletOutlined />, label: 'Expense' },
+    canView('finance.payments') && { to: '/app/payments', icon: <DollarOutlined />, label: 'Payment' },
+    canView('purchases') && { to: '/app/purchases', icon: <ShoppingCartOutlined />, label: 'Purchase' },
+  ].filter(Boolean);
   if (!ALL_DASHBOARD_WIDGET_KEYS.some(show)) return <div className="dashboard-page"><Card className="dashboard-empty"><Empty description="No dashboard widgets are assigned to your account" /></Card></div>;
   const statValue = key => key === 'today_sales' ? todaysSales : key === 'inventory_value' ? inventoryValue : 0;
   return <div className="dashboard-page">
-    <section className="dashboard-stat-grid" aria-label="Business overview">
-      {dashboardStatCards.map(stat => show(stat.key) && <Card className={`dashboard-stat ${stat.tone}`} bordered={false} key={stat.key}>
+    <section className="dashboard-top-row" aria-label="Business overview">
+      <div className="dashboard-stat-grid dashboard-primary-stats">
+      {dashboardStatCards.slice(0, 2).map(stat => show(stat.key) && <Card className={`dashboard-stat ${stat.tone}`} bordered={false} key={stat.key}>
+        <div className="stat-topline"><span>{stat.label}</span><span className="stat-icon">{stat.icon}</span></div>
+        <Statistic value={statValue(stat.key)} precision={2} prefix="₹" />
+        <Text className="stat-hint"><ArrowUpOutlined /> For The Current Day</Text>
+      </Card>)}
+      </div>
+      {quickActions.length > 0 && <Card className="dashboard-panel quick-actions-panel" title="Quick Actions">
+        <div className="quick-actions">{quickActions.map(action => <Link key={action.to} to={action.to}>{action.icon}<span>{action.label}</span></Link>)}</div>
+      </Card>}
+    </section>
+
+    <section className="dashboard-secondary-stats" aria-label="Purchase overview">
+      {dashboardStatCards.slice(2).map(stat => show(stat.key) && <Card className={`dashboard-stat ${stat.tone}`} bordered={false} key={stat.key}>
         <div className="stat-topline"><span>{stat.label}</span><span className="stat-icon">{stat.icon}</span></div>
         <Statistic value={statValue(stat.key)} precision={2} prefix="₹" />
         <Text className="stat-hint"><ArrowUpOutlined /> For The Current Day</Text>
@@ -258,9 +288,13 @@ export default function Dashboard() {
     </section>
 
     <section className="dashboard-bottom-row">
-      <Card className="dashboard-panel compact-panel" title="Top Customers"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={false} /></Card>
-      <Card className="dashboard-panel compact-panel" title="Trending Products"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={false} /></Card>
-      <Card className="dashboard-panel compact-panel expense-panel" title="Expenses"><div className="empty-centered">No Expense Data Found</div></Card>
+      <Card className="dashboard-panel compact-panel stock-alert-panel" title="Stock Alert">
+        <div className="stock-alert-tabs">{stockAlertTabs.map(tab => <button className={stockTab === tab.key ? 'active' : ''} key={tab.key} onClick={() => setStockTab(tab.key)}>{tab.label}</button>)}</div>
+        <div className="stock-alert-list">{selectedStock.length ? selectedStock.slice(0, 4).map(item => <div className="stock-alert-item" key={item.id || item.name}><span>{item.name}</span><Tag color="orange">{item.current_stock || 0} left</Tag></div>) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No stock alerts" />}</div>
+      </Card>
+      <Card className="dashboard-panel compact-panel expense-panel" title="Expenses" extra={expenses.length > 0 ? <Link to="/app/expenses">View all ↗</Link> : null}>
+        {recentExpenses.length ? <div className="expense-list">{recentExpenses.map(item => <div className="expense-item" key={item.id}><div><strong>{item.category || item.description || 'Expense'}</strong><Text>{item.expense_date || '—'}{item.description && item.category ? ` · ${item.description}` : ''}</Text></div><strong>{dashboardCurrency(item.amount)}</strong></div>)}</div> : <div className="empty-centered">No Expense Data Found</div>}
+      </Card>
     </section>
   </div>;
 }

@@ -50,7 +50,7 @@ export default function Sidebar({ onNavigate }) {
       { key: '/app/retail-sales', label: 'Retail Sales' },
     ]},
     { key: 'finance', icon: <BankOutlined />, label: 'Finance', children: [
-      { key: '/app/accounts', label: 'Chart of Accounts' },
+      { key: '/app/accounts', label: 'Accounting workspace' },
       { key: '/app/journal-entries', label: 'Journal Entries' },
       { key: '/app/payments', label: 'Payments' },
       { key: '/app/expenses', label: 'Expenses' },
@@ -61,10 +61,13 @@ export default function Sidebar({ onNavigate }) {
       { key: '/app/reports/profit-loss', label: 'Profit & Loss' },
       { key: '/app/reports/sales-profit', label: 'Daily Sales & Profit' },
       { key: '/app/reports/balance-sheet', label: 'Balance Sheet' },
+      { key: '/app/reports/management', label: 'Management / MIS' },
+      { key: '/app/reports/cash-bank', label: 'Cash & Bank Movements' },
       { key: '/app/reports/trial-balance', label: 'Trial Balance' },
       { key: '/app/reports/stock', label: 'Stock Report' },
       { key: '/app/reports/production', label: 'Production Owner Report' },
       { key: '/app/reports/audit-log', icon: <HistoryOutlined />, label: 'Audit Log' },
+      { key: '/app/reports/whatsapp-invoices', label: 'WhatsApp Invoice Report' },
     ]},
     { key: '/app/settings', icon: <SettingOutlined />, label: 'Settings' },
   ];
