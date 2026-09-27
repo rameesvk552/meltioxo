@@ -67,6 +67,7 @@
 @media (max-width: 600px) { .dashboard-secondary-stats { grid-template-columns: 1fr; }.quick-actions { grid-template-columns: repeat(2, 1fr); } }
 .dashboard-bottom-row .expense-panel { grid-column: auto; }
 .expense-panel .ant-card-extra a { color: #2166d1; font-size: 10px; }
+.stock-alert-panel .ant-card-extra a { color: #bd432f; font-size: 12px; font-weight: 600; }
 .expense-list { width: 100%; }
 .expense-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 33px; padding: 5px 0; border-bottom: 1px solid #edf2ef; }
 .expense-item:last-child { border-bottom: 0; }
@@ -95,25 +96,67 @@
 .finance-row strong { color: #4c5d63; font-size: 12px; font-weight: 700; }
 @media (max-width: 900px) { .finance-sections { grid-template-columns: 1fr; } }
 
-/* Give the dashboard and its quick actions more room at every screen size. */
-.dashboard-page { width: 100%; max-width: none; padding-right: 8px; padding-left: 8px; font-size: 14px; }
-.dashboard-top-row, .dashboard-middle-grid, .dashboard-bottom-row { width: 100%; min-width: 0; }
-.dashboard-top-row .quick-actions-panel { display: flex; min-height: 238px; flex-direction: column; }
+/* Full-width white and red dashboard with large, balanced quick actions. */
+.dashboard-page {
+  display: grid;
+  width: 100%;
+  max-width: none;
+  min-height: calc(100dvh - 82px);
+  grid-template-rows: auto auto minmax(220px, 1fr);
+  gap: 12px;
+  padding: 12px;
+  background: #fff;
+  color: #253342;
+  font-size: 14px;
+}
+.dashboard-top-row, .dashboard-middle-grid, .dashboard-bottom-row { width: 100%; min-width: 0; margin-top: 0; }
+.dashboard-top-row { grid-template-columns: minmax(0, 2fr) minmax(360px, 1fr); }
+.dashboard-top-row .quick-actions-panel { display: flex; min-height: 238px; flex-direction: column; background: #fff !important; }
+.dashboard-panel { background: #fff !important; border-color: #eadbd9 !important; }
+.dashboard-panel .ant-card-head { border-bottom-color: #f0e2e0; }
+.dashboard-panel .ant-card-head-title { color: #3f3440; font-size: 15px; }
+.dashboard-stat { --stat-accent: #bd432f; }
+.dashboard-stat.amber, .dashboard-stat.blue, .dashboard-stat.orange { --stat-accent: #bd432f; }
+.stat-icon { color: #bd432f; background: #f9e9e6; }
 .quick-actions-panel .ant-card-head { flex: 0 0 auto; }
 .quick-actions-panel .ant-card-body { display: flex; flex: 1 1 auto; padding: 12px; }
-.quick-actions { width: 100%; flex: 1 1 auto; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(72px, 1fr)); gap: 12px; }
-.quick-actions a { min-width: 0; min-height: 72px; gap: 8px; padding: 10px; border-radius: 8px; font-size: 14px; }
-.quick-actions a svg { font-size: 22px; }
-.dashboard-panel .ant-card-head-title { font-size: 15px; }
+.quick-actions {
+  display: grid;
+  width: 100%;
+  flex: 1 1 auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(72px, 1fr));
+  gap: 12px;
+}
+.quick-actions a {
+  min-width: 0;
+  min-height: 72px;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #efcfca;
+  border-radius: 9px;
+  color: #a9392a;
+  background: #fff;
+  font-size: 16px;
+}
+.quick-actions a:hover { border-color: #bd432f; color: #fff; background: #bd432f; }
+.quick-actions a svg { color: #bd432f; font-size: 26px; }
+.quick-actions a:hover svg { color: #fff; }
+.finance-panel-icon.collection, .finance-panel-icon.payable { color: #bd432f; background: #f9e9e6; }
+.stock-alert-tabs button.active { border-color: #efcfca; color: #a9392a; background: #fbefed; }
 .finance-total .ant-typography, .finance-row span, .finance-row strong { font-size: 13px; }
 .stock-alert-tabs button, .stock-alert-item { font-size: 12px; }
 .stock-alert-item .ant-tag, .expense-item .ant-typography { font-size: 11px; }
 .expense-item strong, .expense-item > strong { font-size: 12px; }
 @media (max-width: 900px) {
-  .dashboard-top-row .quick-actions-panel { min-height: 210px; }
+  .dashboard-page { min-height: calc(100dvh - 82px); grid-template-rows: auto auto minmax(220px, 1fr); }
+  .dashboard-top-row { grid-template-columns: 1fr; }
+  .dashboard-top-row .quick-actions-panel { min-height: 280px; }
 }
 @media (max-width: 600px) {
-  .dashboard-page { padding-right: 8px; padding-left: 8px; }
-  .dashboard-top-row .quick-actions-panel { min-height: 220px; }
-  .quick-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(76px, 1fr)); gap: 10px; }
+  .dashboard-page { min-height: 0; display: block; padding: 8px; }
+  .dashboard-top-row .quick-actions-panel { min-height: 280px; margin-top: 10px; }
+  .quick-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(86px, 1fr)); gap: 10px; }
+  .dashboard-middle-grid, .dashboard-bottom-row { margin-top: 10px; }
 }

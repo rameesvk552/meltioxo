@@ -2,6 +2,7 @@
 import { Card, Table, Row, Col, Statistic, Tag, Select, Typography } from 'antd';
 import { AppstoreOutlined, AlertOutlined, DollarOutlined } from '@ant-design/icons';
 import useApiData from '../../hooks/useApiData';
+import './StockReport.css';
 
 const { Title } = Typography;
 const { Option } = Select;
@@ -83,14 +84,13 @@ const StockReport = () => {
   ];
 
   return (
-    <div style={{ padding: 24 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 16 }}>
-        <Title level={2} style={{ fontFamily: "'Playfair Display', serif", color: 'var(--color-gold)', margin: 0 }}>Stock Valuation Report</Title>
-        <Select 
-          value={filterType} 
-          onChange={setFilterType} 
-          style={{ width: 200 }}
-        >
+    <div className="stock-report-page">
+      <div className="stock-report-header">
+        <div>
+          <span className="stock-report-eyebrow">INVENTORY</span>
+          <Title level={2} className="stock-report-title">Stock Valuation Report</Title>
+        </div>
+        <Select className="stock-report-filter" value={filterType} onChange={setFilterType}>
           <Option value="All">All Material Types</Option>
           <Option value="Raw Material">Raw Materials</Option>
           <Option value="Packaging">Packaging</Option>
@@ -98,25 +98,25 @@ const StockReport = () => {
         </Select>
       </div>
 
-      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+      <Row gutter={[16, 16]} className="stock-report-metrics">
         <Col xs={24} sm={8}>
-          <Card >
+          <Card className="stock-report-stat stock-report-stat--items">
             <Statistic title={<span style={{ color: 'var(--color-text-secondary)' }}>Total Items</span>} value={totalItems} prefix={<AppstoreOutlined />} styles={{ content: { color: 'var(--color-text-primary)' } }} />
           </Card>
         </Col>
         <Col xs={24} sm={8}>
-          <Card >
-            <Statistic title={<span style={{ color: 'var(--color-text-secondary)' }}>Total Inventory Value</span>} value={totalValue} prefix={<DollarOutlined />} styles={{ content: { color: '#1677ff' } }} />
+          <Card className="stock-report-stat stock-report-stat--value">
+            <Statistic title={<span style={{ color: 'var(--color-text-secondary)' }}>Total Inventory Value</span>} value={totalValue} prefix={<DollarOutlined />} styles={{ content: { color: 'var(--color-gold)' } }} />
           </Card>
         </Col>
         <Col xs={24} sm={8}>
-          <Card >
+          <Card className="stock-report-stat stock-report-stat--low">
             <Statistic title={<span style={{ color: 'var(--color-text-secondary)' }}>Low Stock Items</span>} value={lowStockCount} prefix={<AlertOutlined />} styles={{ content: { color: '#ff4d4f' } }} />
           </Card>
         </Col>
       </Row>
 
-      <Card >
+      <Card className="stock-report-table-card">
         <Table 
           columns={columns} 
           dataSource={filteredData}

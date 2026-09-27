@@ -236,9 +236,9 @@ export default function Dashboard() {
   const recentExpenses = expenses.slice(0, 4);
   const quickActions = [
     canOpenPos && { to: '/app/retail-sales/new', icon: <CreditCardOutlined />, label: 'POS' },
+    canView('purchases') && { to: '/app/purchases', icon: <ShoppingCartOutlined />, label: 'Purchase' },
     canView('finance.expenses') && { to: '/app/expenses/new', icon: <WalletOutlined />, label: 'Expense' },
     canView('finance.payments') && { to: '/app/payments', icon: <DollarOutlined />, label: 'Payment' },
-    canView('purchases') && { to: '/app/purchases', icon: <ShoppingCartOutlined />, label: 'Purchase' },
   ].filter(Boolean);
   if (!ALL_DASHBOARD_WIDGET_KEYS.some(show)) return <div className="dashboard-page"><Card className="dashboard-empty"><Empty description="No dashboard widgets are assigned to your account" /></Card></div>;
   const statValue = key => key === 'today_sales' ? todaysSales : key === 'inventory_value' ? inventoryValue : 0;
@@ -289,7 +289,7 @@ export default function Dashboard() {
     </section>
 
     <section className="dashboard-bottom-row">
-      <Card className="dashboard-panel compact-panel stock-alert-panel" title="Stock Alert">
+      <Card className="dashboard-panel compact-panel stock-alert-panel" title="Stock Alert" extra={canView('reports.stock') ? <Link to="/app/reports/stock">Show all ↗</Link> : null}>
         <div className="stock-alert-tabs">{stockAlertTabs.map(tab => <button className={stockTab === tab.key ? 'active' : ''} key={tab.key} onClick={() => setStockTab(tab.key)}>{tab.label}</button>)}</div>
         <div className="stock-alert-list">{selectedStock.length ? selectedStock.slice(0, 4).map(item => <div className="stock-alert-item" key={item.id || item.name}><span>{item.name}</span><Tag color="orange">{item.current_stock || 0} left</Tag></div>) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No stock alerts" />}</div>
       </Card>
