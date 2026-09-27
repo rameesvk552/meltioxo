@@ -1,6 +1,6 @@
 import React from 'react';
 import { Row, Col, Card, Statistic, Table, Tag, Button, Typography, List, Avatar, Empty, Progress } from 'antd';
-import { ArrowUpOutlined, BankOutlined, CreditCardOutlined, ExperimentOutlined, AlertOutlined, FallOutlined, PlusOutlined, ShoppingCartOutlined, WalletOutlined, WarningOutlined } from '@ant-design/icons';
+import { ArrowUpOutlined, BankOutlined, CreditCardOutlined, AlertOutlined, FallOutlined, PlusOutlined, ShoppingCartOutlined, WalletOutlined, WarningOutlined } from '@ant-design/icons';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import useApiData from '../../hooks/useApiData';
 import { AuthContext } from '../../context/AuthContext';
@@ -17,7 +17,6 @@ function LegacyDashboard() {
   const show = widget => canViewWidget(widget);
   const needsInventory = show('inventory_value') || show('low_stock_count') || show('low_stock_list');
   const { data: businessDayState } = useApiData('/business-days/current', { initialData: {}, enabled: show('today_sales') });
-  const { data: productionOrders } = useApiData('/production-orders', { enabled: show('pending_production') });
   const { data: rawMaterials } = useApiData('/raw-materials', { enabled: needsInventory });
   const { data: packagingMaterials } = useApiData('/packaging-materials', { enabled: needsInventory });
   const { data: finishedGoods } = useApiData('/finished-goods', { enabled: needsInventory });
@@ -27,7 +26,6 @@ function LegacyDashboard() {
     ...packagingMaterials.map(item => Number(item.current_stock || 0) * Number(item.avg_cost || 0)),
     ...finishedGoods.map(item => Number(item.current_stock || 0) * Number(item.cost_price || 0))
   ].reduce((sum, value) => sum + value, 0);
-  const pendingProduction = productionOrders.filter(item => ['planned', 'in_progress'].includes(item.status)).length;
   const lowStock = [...rawMaterials, ...packagingMaterials, ...finishedGoods]
     .filter(item => Number(item.current_stock || 0) <= Number(item.reorder_level || 0));
   const revenueData = [];
@@ -67,12 +65,6 @@ function LegacyDashboard() {
 
       {/* Row 2: Operational KPIs */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        {show('pending_production') && <Col xs={24} sm={12} lg={6}>
-          <Card style={cardStyle} bodyStyle={{ padding: 20 }}>
-            <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Pending Production</Text>} value={pendingProduction} prefix={<ExperimentOutlined />}
-                       styles={{ content: { color: '#ed8936', fontWeight: 600 } }} />
-          </Card>
-        </Col>}
         {show('low_stock_count') && <Col xs={24} sm={12} lg={6}>
           <Card style={cardStyle} bodyStyle={{ padding: 20 }}>
             <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Low Stock Alerts</Text>} value={lowStock.length} prefix={<AlertOutlined />}
@@ -202,11 +194,10 @@ function LegacyDashboard() {
 
 const dashboardCurrency = value => `₹${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const dashboardStatCards = [
-  { key: 'today_sales', label: 'Sales', icon: <CreditCardOutlined />, tone: 'mint', hint: 'For the current day' },
-  { key: 'overdue_receivables', label: 'Sales Due', icon: <WalletOutlined />, tone: 'amber', hint: 'Receivables to collect' },
-  { key: 'inventory_value', label: 'Purchases', icon: <ShoppingCartOutlined />, tone: 'blue', hint: 'Inventory value on hand' },
-  { key: 'overdue_payables', label: 'Purchases Due', icon: <BankOutlined />, tone: 'orange', hint: 'Payables to settle' },
-  { key: 'low_stock_count', label: 'Low stock', icon: <WarningOutlined />, tone: 'orange', hint: 'Items at or below reorder level' },
+  { key: 'today_sales', label: 'Sales', icon: <CreditCardOutlined />, tone: 'mint' },
+  { key: 'overdue_receivables', label: 'Sales Due', icon: <WalletOutlined />, tone: 'amber' },
+  { key: 'inventory_value', label: 'Purchases', icon: <ShoppingCartOutlined />, tone: 'green' },
+  { key: 'overdue_payables', label: 'Purchases Due', icon: <BankOutlined />, tone: 'orange' },
 ];
 
 const revenueFlowItems = [
@@ -223,27 +214,42 @@ export default function Dashboard() {
   const show = widget => canViewWidget(widget);
   const canOpenPos = canView('pos');
   const hasRevenueFlowAccess = revenueFlowItems.some(item => show(item.key));
-  const quickActions = [
-    canOpenPos && { to: '/app/retail-sales/new', icon: <CreditCardOutlined />, label: 'New sale' },
-    canView('purchases') && { to: '/app/purchases', icon: <ShoppingCartOutlined />, label: 'Record purchase' },
-    canView('finance.expenses') && { to: '/app/expenses/new', icon: <WalletOutlined />, label: 'Add expense' },
-  ].filter(Boolean);
   const needsInventory = show('inventory_value') || show('low_stock_count') || show('low_stock_list');
   const { data: businessDayState } = useApiData('/business-days/current', { initialData: {}, enabled: show('today_sales') });
-  const { data: productionOrders } = useApiData('/production-orders', { enabled: show('pending_production') });
   const { data: rawMaterials } = useApiData('/raw-materials', { enabled: needsInventory });
   const { data: packagingMaterials } = useApiData('/packaging-materials', { enabled: needsInventory });
   const { data: finishedGoods } = useApiData('/finished-goods', { enabled: needsInventory });
   const { data: revenueFlow } = useApiData('/dashboard/revenue-flow', { initialData: {}, enabled: hasRevenueFlowAccess });
   const todaysSales = Number(businessDayState.today_record?.total_sales || 0);
   const inventoryValue = [...rawMaterials, ...packagingMaterials, ...finishedGoods].reduce((sum, item) => sum + Number(item.current_stock || 0) * Number(item.avg_cost ?? item.cost_price ?? 0), 0);
-  const pendingProduction = productionOrders.filter(item => ['planned', 'in_progress'].includes(item.status)).length;
   const lowStock = [...rawMaterials, ...packagingMaterials, ...finishedGoods].filter(item => Number(item.current_stock || 0) <= Number(item.reorder_level || 0));
   if (!ALL_DASHBOARD_WIDGET_KEYS.some(show)) return <div className="dashboard-page"><Card className="dashboard-empty"><Empty description="No dashboard widgets are assigned to your account" /></Card></div>;
+  const statValue = key => key === 'today_sales' ? todaysSales : key === 'inventory_value' ? inventoryValue : 0;
   return <div className="dashboard-page">
-    <div className="dashboard-hero"><div><Text className="dashboard-kicker">OVERVIEW</Text><Title level={1}>Good morning<span className="title-dot">.</span></Title><Text className="dashboard-subtitle">Here’s what’s happening with your business today.</Text></div>{canOpenPos && <Link to="/app/retail-sales/new"><Button className="pos-button" type="primary" icon={<PlusOutlined />}>Open POS</Button></Link>}</div>
-    <section className="dashboard-stat-grid" aria-label="Business overview">{dashboardStatCards.map(stat => show(stat.key) && <Card className={`dashboard-stat ${stat.tone}`} bordered={false} key={stat.key}><div className="stat-topline"><span>{stat.label}</span><span className="stat-icon">{stat.icon}</span></div><Statistic value={stat.key === 'today_sales' ? todaysSales : stat.key === 'inventory_value' ? inventoryValue : stat.key === 'low_stock_count' ? lowStock.length : 0} precision={stat.key === 'low_stock_count' ? 0 : 2} prefix={stat.key === 'low_stock_count' ? undefined : '₹'} /><Text className="stat-hint"><ArrowUpOutlined /> {stat.hint}</Text></Card>)}</section>
-    {hasRevenueFlowAccess && <Card className="dashboard-panel revenue-flow-panel" title="Revenue flow"><div className="revenue-flow-grid">{revenueFlowItems.map(item => show(item.key) && <div className="revenue-flow-item" key={item.key}><span className={`flow-icon ${item.tone}`}>{item.icon}</span><div><strong>{dashboardCurrency(revenueFlow[item.key])}</strong><Text>{item.label}</Text></div></div>)}</div></Card>}
-    <section className="dashboard-bottom-grid">{show('pending_production') && <Card className="dashboard-panel compact-panel production-panel" title="Production queue" extra={<ExperimentOutlined />}><div className="big-number">{pendingProduction}</div><Text type="secondary">orders currently in progress</Text><div className="queue-line"><span style={{ width: `${Math.min(pendingProduction * 12, 100)}%` }} /></div></Card>}{show('low_stock_list') && <Card className="dashboard-panel compact-panel stock-panel" title="Low stock alerts" extra={<WarningOutlined />}><div className="big-number warning-number">{lowStock.length}</div><List size="small" dataSource={lowStock.slice(0, 3)} locale={{ emptyText: 'All stock levels look healthy' }} renderItem={item => <List.Item><Avatar className="mini-avatar" icon={<FallOutlined />} /><span>{item.name}</span><Tag color="orange">{item.current_stock || 0} left</Tag></List.Item>} /></Card>}{show('recent_activities') && quickActions.length > 0 && <Card className="dashboard-panel compact-panel actions-panel" title="Quick actions"><div className="quick-actions">{quickActions.map(action => <Link key={action.to} to={action.to}>{action.icon} {action.label}</Link>)}</div></Card>}</section>
+    <section className="dashboard-stat-grid" aria-label="Business overview">
+      {dashboardStatCards.map(stat => show(stat.key) && <Card className={`dashboard-stat ${stat.tone}`} bordered={false} key={stat.key}>
+        <div className="stat-topline"><span>{stat.label}</span><span className="stat-icon">{stat.icon}</span></div>
+        <Statistic value={statValue(stat.key)} precision={2} prefix="₹" />
+        <Text className="stat-hint"><ArrowUpOutlined /> For The Current Day</Text>
+      </Card>)}
+    </section>
+
+    <section className="dashboard-middle-grid">
+      {hasRevenueFlowAccess && <Card className="dashboard-panel revenue-flow-panel" title="Revenue Flow" extra={<span className="refresh-mark">↻</span>}>
+        <div className="revenue-flow-grid">{revenueFlowItems.map(item => show(item.key) && <div className="revenue-flow-item" key={item.key}><span className={`flow-icon ${item.tone}`}>{item.icon}</span><div><strong>{dashboardCurrency(revenueFlow[item.key])}</strong><Text>{item.label}</Text></div></div>)}</div>
+      </Card>}
+      <Card className="dashboard-panel revenue-management" title="Revenue Management">
+        <div className="money-summary">
+          <div><span className="summary-icon blue"><BankOutlined /></span><strong>{dashboardCurrency(show('overdue_payables') ? 0 : 0)}</strong><Text>Expected Payable</Text></div>
+          <div><span className="summary-icon purple"><WalletOutlined /></span><strong>{dashboardCurrency(show('overdue_receivables') ? 0 : 0)}</strong><Text>Expected Receivable</Text></div>
+        </div>
+      </Card>
+    </section>
+
+    <section className="dashboard-bottom-row">
+      <Card className="dashboard-panel compact-panel" title="Top Customers"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={false} /></Card>
+      <Card className="dashboard-panel compact-panel" title="Trending Products"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={false} /></Card>
+      <Card className="dashboard-panel compact-panel expense-panel" title="Expenses"><div className="empty-centered">No Expense Data Found</div></Card>
+    </section>
   </div>;
 }
