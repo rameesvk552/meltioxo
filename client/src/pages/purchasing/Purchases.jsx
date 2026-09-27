@@ -10,7 +10,7 @@ import PaymentSplitEditor from '../../components/common/PaymentSplitEditor';
 import SingleTagSelect from '../../components/common/SingleTagSelect';
 import './Purchases.css';
 const { TextArea } = Input;
-const blankItem = () => ({ key: Date.now(), materialType: 'raw', materialId: null, quantity: 1, unitPrice: 0, taxRate: 18 });
+const blankItem = () => ({ key: Date.now(), materialType: 'raw', materialId: null, quantity: 0, unitPrice: 0, taxRate: 0 });
 const defaultPackagingCategories = ['Bottles', 'Caps', 'Sprays', 'Labels', 'Boxes', 'Wrapping', 'Inserts'];
 const packagingDatabaseType = (category) => ({ Bottles: 'bottle', Caps: 'cap', Sprays: 'spray', Labels: 'label', Boxes: 'box' }[category] || 'other');
 const formatMoney = value => `₹${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -290,7 +290,7 @@ export default function Purchases() {
   const itemColumns = [
     { title: 'Type', width: 154, render: (_, item) => <Select aria-label="Purchase item type" value={item.materialType} onChange={value => update(item.key, 'materialType', value)} options={purchaseTypeOptions} /> },
     { title: 'Item', width: 274, render: (_, item) => <Space.Compact className="purchase-material-picker"><Select aria-label="Purchase item" showSearch optionFilterProp="label" value={item.materialId} onChange={value => update(item.key, 'materialId', value)} placeholder={item.materialType === 'finished' ? 'Choose a ready-made variant' : 'Choose a material'} options={materialOptions(item.materialType).map(material => ({ value: material.id, label: material.purchaseLabel || material.name }))} /><Button icon={<PlusOutlined />} title={item.materialType === 'finished' ? 'Create ready-made product or variant' : `Create ${item.materialType === 'raw' ? 'raw material' : 'packaging material'}`} aria-label={item.materialType === 'finished' ? 'Create ready-made product or variant' : `Create ${item.materialType === 'raw' ? 'raw material' : 'packaging material'}`} onClick={() => item.materialType === 'finished' ? openQuickFinished(item) : openQuickMaterial(item)} /></Space.Compact> },
-    { title: 'Quantity', width: 104, render: (_, item) => <InputNumber aria-label="Quantity" min={0.01} precision={2} value={item.quantity} onChange={value => update(item.key, 'quantity', value)} /> },
+    { title: 'Quantity', width: 104, render: (_, item) => <InputNumber aria-label="Quantity" min={0} precision={2} value={item.quantity} onFocus={event => { if (item.quantity === 0) event.target.select(); }} onChange={value => update(item.key, 'quantity', value)} /> },
     { title: 'Unit price', width: 126, render: (_, item) => <InputNumber aria-label="Unit price" min={0} precision={2} prefix="₹" value={item.unitPrice} onChange={value => update(item.key, 'unitPrice', value)} /> },
     { title: 'GST', width: 86, render: (_, item) => <Select aria-label="GST rate" value={item.taxRate} onChange={value => update(item.key, 'taxRate', value)} options={[0, 5, 12, 18, 28].map(value => ({ value, label: `${value}%` }))} /> },
     { title: 'Line total', width: 128, align: 'right', render: (_, item) => <strong className="purchase-line-total">{formatMoney(Number(item.quantity || 0) * Number(item.unitPrice || 0) * (1 + Number(item.taxRate || 0) / 100))}</strong> },
@@ -321,7 +321,7 @@ export default function Purchases() {
       <label>Item</label>
       <Space.Compact className="purchase-material-picker"><Select aria-label="Purchase item" showSearch optionFilterProp="label" value={item.materialId} onChange={value => update(item.key, 'materialId', value)} placeholder={item.materialType === 'finished' ? 'Choose a ready-made variant' : 'Choose a material'} options={materialOptions(item.materialType).map(material => ({ value: material.id, label: material.purchaseLabel || material.name }))} /><Button icon={<PlusOutlined />} aria-label={item.materialType === 'finished' ? 'Create ready-made product or variant' : 'Create material'} onClick={() => item.materialType === 'finished' ? openQuickFinished(item) : openQuickMaterial(item)} /></Space.Compact>
     </div>
-    <div className="purchase-mobile-item__field"><label>Quantity</label><InputNumber aria-label="Quantity" min={0.01} precision={2} value={item.quantity} onChange={value => update(item.key, 'quantity', value)} /></div>
+    <div className="purchase-mobile-item__field"><label>Quantity</label><InputNumber aria-label="Quantity" min={0} precision={2} value={item.quantity} onFocus={event => { if (item.quantity === 0) event.target.select(); }} onChange={value => update(item.key, 'quantity', value)} /></div>
     <div className="purchase-mobile-item__field"><label>Unit price</label><InputNumber aria-label="Unit price" min={0} precision={2} prefix="₹" value={item.unitPrice} onChange={value => update(item.key, 'unitPrice', value)} /></div>
     <div className="purchase-mobile-item__field"><label>GST</label><Select aria-label="GST rate" value={item.taxRate} onChange={value => update(item.key, 'taxRate', value)} options={[0, 5, 12, 18, 28].map(value => ({ value, label: `${value}%` }))} /></div>
   </>;
