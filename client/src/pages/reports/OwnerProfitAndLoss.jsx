@@ -10,6 +10,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 import useApiData from '../../hooks/useApiData';
+import './OwnerProfitAndLoss.css';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -32,13 +33,18 @@ const presetRange = preset => {
 const csvValue = value => `"${String(value ?? '').replaceAll('"', '""')}"`;
 
 function SummaryCard({ title, value, description, moneyValue = false, icon, color = '#172033', action }) {
-  return <Card style={{ height: '100%', borderRadius: 12 }} bodyStyle={{ padding: 18 }}>
-    <Text type="secondary">{title}</Text>
-    <div style={{ color, fontWeight: 750, fontSize: 24, lineHeight: 1.2, marginTop: 4, whiteSpace: 'nowrap', letterSpacing: '-0.3px' }}>
-      {moneyValue ? money(value) : <><span style={{ marginRight: 7 }}>{icon}</span>{Number(value || 0).toLocaleString('en-IN')}</>}
+  return <Card className="sales-report-metric" style={{ '--metric-color': color }}>
+    <div className="sales-report-metric__top">
+      <span className="sales-report-metric__label">{title}</span>
+      {icon && <span className="sales-report-metric__icon" aria-hidden="true">{icon}</span>}
     </div>
-    <Text type="secondary" style={{ display: 'block', fontSize: 11, lineHeight: 1.35, marginTop: 7 }}>{description}</Text>
-    {action && <div style={{ marginTop: 8 }}>{action}</div>}
+    <div className="sales-report-metric__value">
+      {moneyValue ? money(value) : Number(value || 0).toLocaleString('en-IN')}
+    </div>
+    <div className="sales-report-metric__footer">
+      <span>{description}</span>
+      {action}
+    </div>
   </Card>;
 }
 
@@ -179,12 +185,72 @@ function InvoiceDrawer({ invoiceId, onClose }) {
   </Drawer>;
 }
 
+function ProductHistoryDrawer({ product, range, onClose, onOpenInvoice }) {
+  const [historyScope, setHistoryScope] = useState(product?.openAllHistory ? 'all' : 'period');
+  const endpoint = useMemo(() => {
+    if (!product?.product_id) return null;
+    const dates = historyScope === 'period' ? `?from=${range[0].format('YYYY-MM-DD')}&to=${range[1].format('YYYY-MM-DD')}` : '';
+    return `/reports/product-sales/${product.product_id}${dates}`;
+  }, [product, range, historyScope]);
+  const history = useApiData(endpoint, { enabled: Boolean(product?.product_id), initialData: { summary: {}, rows: [] } });
+  const rows = history.loading ? [] : history.data.rows || [];
+  const totals = history.loading ? {} : history.data.summary || {};
+
+  const exportHistory = () => {
+    const headers = ['Date', 'Type', 'Reference', 'Invoice', 'Customer', 'Variant', 'Quantity', 'Sales ex tax', 'Cost', 'Gross profit'];
+    const data = rows.map(row => [row.date, row.type, row.reference, row.invoice, row.customer, row.variant, row.quantity, row.sales, row.cost, row.gross_profit]);
+    const csv = [headers, ...data].map(row => row.map(csvValue).join(',')).join('\n');
+    const blob = new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `product-sales-${product.product_id}-${historyScope}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+
+  const columns = [
+    { title: 'Date', dataIndex: 'date', width: 125, render: dateLabel },
+    { title: 'Type', dataIndex: 'type', width: 85, render: value => <Tag color={value === 'return' ? 'orange' : 'green'}>{value === 'return' ? 'Return' : 'Sale'}</Tag> },
+    { title: 'Reference', dataIndex: 'reference', width: 160, render: (value, row) => row.type === 'return'
+      ? <div><Text strong>{value}</Text><div><Button type="link" className="sales-report-product-link" onClick={() => onOpenInvoice(row.invoice_id)}>Invoice {row.invoice}</Button></div></div>
+      : <Button type="link" className="sales-report-product-link" onClick={() => onOpenInvoice(row.invoice_id)}>{value}</Button> },
+    { title: 'Customer', dataIndex: 'customer', width: 170 },
+    { title: 'Variant', dataIndex: 'variant', width: 150 },
+    { title: 'Qty', dataIndex: 'quantity', width: 85, align: 'right', render: quantity },
+    { title: 'Sales', dataIndex: 'sales', width: 125, align: 'right', render: money },
+    { title: 'Cost', dataIndex: 'cost', width: 120, align: 'right', render: money },
+    { title: 'Gross profit', dataIndex: 'gross_profit', width: 135, align: 'right', render: value => <Text strong style={{ color: value >= 0 ? '#17834b' : '#c73e35' }}>{money(value)}</Text> }
+  ];
+
+  return <Drawer
+    title={<div><div>{product?.product_name || 'Product sales history'}</div><Text type="secondary" style={{ fontSize: 12 }}>{product?.code}</Text></div>}
+    open={Boolean(product)} onClose={onClose} width={1100} destroyOnHidden
+    extra={<Button icon={<DownloadOutlined />} onClick={exportHistory} disabled={!rows.length}>Export history</Button>}
+  >
+    <div className="sales-report-history-toolbar">
+      <Segmented value={historyScope} onChange={setHistoryScope} options={[{ label: 'Selected dates', value: 'period' }, { label: 'All history', value: 'all' }]} />
+      <Text type="secondary">{historyScope === 'period' ? `${range[0].format('DD MMM YYYY')} – ${range[1].format('DD MMM YYYY')}` : 'All recorded sales and returns'}</Text>
+    </div>
+    {history.error && <Alert type="error" showIcon message="Could not load product history" description={history.error.response?.data?.message || history.error.message} style={{ marginBottom: 14 }} />}
+    <div className="sales-report-history-metrics">
+      <div><span>Net quantity</span><strong>{quantity(totals.quantity)}</strong></div>
+      <div><span>Sales</span><strong>{money(totals.sales)}</strong></div>
+      <div><span>Cost</span><strong>{money(totals.cost)}</strong></div>
+      <div><span>Gross profit</span><strong>{money(totals.gross_profit)}</strong></div>
+      <div><span>Gross margin</span><strong>{percentage(totals.gross_margin_pct)}</strong></div>
+    </div>
+    <Text type="secondary" className="sales-report-history-note">Sales exclude tax. Returns appear on their return date. Gross profit is before operating expenses.</Text>
+    <Table rowKey="id" columns={columns} dataSource={rows} loading={history.loading} size="small" scroll={{ x: 1120 }} pagination={{ pageSize: 15, showSizeChanger: true, showTotal: total => `${total} transactions` }} locale={{ emptyText: <Empty description="No sales or returns for this product" /> }} />
+  </Drawer>;
+}
+
 export default function OwnerProfitAndLoss() {
   const [preset, setPreset] = useState('today');
   const [range, setRange] = useState(() => presetRange('today'));
   const [salesView, setSalesView] = useState('invoices');
   const [reportTab, setReportTab] = useState('sales');
   const [selectedInvoiceId, setSelectedInvoiceId] = useState(null);
+  const [selectedProduct, setSelectedProduct] = useState(null);
   const [expenseBreakdownOpen, setExpenseBreakdownOpen] = useState(false);
   const [expenseBreakdownPeriod, setExpenseBreakdownPeriod] = useState(() => presetRange('today'));
 
@@ -200,6 +266,7 @@ export default function OwnerProfitAndLoss() {
   const salesQuery = useApiData('/retail-sales');
   const purchaseEndpoint = useMemo(() => `/reports/purchases?from=${range[0].format('YYYY-MM-DD')}&to=${range[1].format('YYYY-MM-DD')}`, [range]);
   const purchaseQuery = useApiData(purchaseEndpoint, { initialData: { summary: {}, rows: [] } });
+  const productCatalogQuery = useApiData('/reports/product-sales-catalog', { enabled: reportTab === 'sales' && salesView === 'products', initialData: [] });
 
   const invoices = useMemo(() => {
     const from = range[0].format('YYYY-MM-DD');
@@ -329,7 +396,7 @@ export default function OwnerProfitAndLoss() {
   const productColumns = [
     {
       title: 'Product', dataIndex: 'product_name', width: 230,
-      render: (value, item) => <div><Text strong>{value}</Text><div><Text type="secondary" style={{ fontSize: 12 }}>{item.code || '—'}</Text></div></div>
+      render: (value, item) => <div>{item.product_id ? <Button type="link" className="sales-report-product-link" onClick={() => setSelectedProduct(item)}>{value}</Button> : <Text strong>{value}</Text>}<div><Text type="secondary" style={{ fontSize: 12 }}>{item.code || '—'}</Text></div></div>
     },
     { title: 'Qty sold', dataIndex: 'quantity', align: 'right', width: 100, render: quantity },
     { title: 'Invoices', dataIndex: 'orders', align: 'right', width: 95 },
@@ -354,31 +421,30 @@ export default function OwnerProfitAndLoss() {
 
   if ((reportQuery.loading || salesQuery.loading || purchaseQuery.loading) && !reportQuery.data.period) return <div style={{ display: 'grid', placeItems: 'center', minHeight: 420 }}><Spin size="large" /></div>;
 
-  return <div style={{ padding: 24, maxWidth: 1500, margin: '0 auto' }}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16, marginBottom: 20 }}>
+  return <div className="sales-report-page">
+    <div className="sales-report-heading">
       <div>
-        <Text type="secondary" style={{ fontSize: 11, letterSpacing: 1.3 }}>SALES REPORT</Text>
-        <Title level={2} style={{ margin: '3px 0', color: 'var(--color-gold)', fontFamily: "'Playfair Display', serif" }}>Daily Sales & Profit</Title>
-        <Text type="secondary">Invoices, discounts, products and profit in one simple report.</Text>
+        <span className="sales-report-eyebrow">SALES REPORT</span>
+        <Title level={2} className="sales-report-title">Daily Sales & Profit</Title>
+        <Text type="secondary" className="sales-report-subtitle">A clear view of sales, costs and profit.</Text>
       </div>
-      <Space wrap>
+      <Space wrap className="sales-report-actions">
         <Button icon={<PrinterOutlined />} onClick={() => window.print()}>Print</Button>
-        <Button
+        {reportTab === 'sales' && <Button
           type="primary" icon={<DownloadOutlined />}
           onClick={salesView === 'invoices' ? exportInvoices : exportProducts}
           disabled={salesView === 'invoices' ? !invoices.length : !products.length}
-        >Export {salesView}</Button>
+        >Export {salesView}</Button>}
       </Space>
     </div>
 
-    <Card style={{ marginBottom: 16, borderRadius: 12 }} bodyStyle={{ padding: 16 }}>
+    <Card className="sales-report-controls">
       <Tabs
         activeKey={reportTab}
         onChange={setReportTab}
         items={[{ key: 'sales', label: 'Sales & profit' }, { key: 'purchases', label: 'Purchases' }]}
-        style={{ marginBottom: 8 }}
       />
-      <Space wrap size={12}>
+      <Space wrap size={12} className="sales-report-filters">
         <Select value={preset} onChange={selectPreset} style={{ width: 145 }} options={[
           { value: 'today', label: 'Today' }, { value: 'yesterday', label: 'Yesterday' },
           { value: 'last_7_days', label: 'Last 7 days' }, { value: 'this_month', label: 'This month' },
@@ -392,23 +458,23 @@ export default function OwnerProfitAndLoss() {
     {(reportQuery.error || salesQuery.error || purchaseQuery.error) && <Alert type="error" showIcon style={{ marginBottom: 16 }} message="Could not load the report" description={(reportQuery.error || salesQuery.error || purchaseQuery.error)?.response?.data?.message || (reportQuery.error || salesQuery.error || purchaseQuery.error)?.message} />}
 
     {reportTab === 'sales' && <>
-    <Row gutter={[14, 14]} style={{ marginBottom: 16 }}>
-      <Col xs={12} md={8} xl={6} xxl={3}><SummaryCard title="Net sales" value={invoiceSummary.netSales} description="Gross sales − discounts − returned revenue" moneyValue color="#16a34a" /></Col>
-      <Col xs={12} md={8} xl={6} xxl={3}><SummaryCard title="Invoices" value={invoices.length} description="Posted invoices in the selected dates" icon={<ShoppingCartOutlined />} color="#2563eb" /></Col>
-      <Col xs={12} md={8} xl={6} xxl={3}><SummaryCard title="Discounts" value={invoiceSummary.discount} description="Total discount given on all invoices" moneyValue color="#dc2626" /></Col>
-      <Col xs={12} md={8} xl={6} xxl={3}><SummaryCard title="Average invoice" value={averageInvoice} description="Net sales ÷ number of invoices" moneyValue color="#7c3aed" /></Col>
-      <Col xs={12} md={8} xl={6} xxl={3}><SummaryCard title="Cost of goods" value={summary.cogs} description="Actual material and product cost, net of returns" moneyValue color="#d97706" /></Col>
-      <Col xs={12} md={8} xl={6} xxl={3}><SummaryCard
+    <div className="sales-report-metrics">
+      <SummaryCard title="Net sales" value={invoiceSummary.netSales} description="After discounts and returns" moneyValue color="#17834b" />
+      <SummaryCard title="Net profit" value={summary.net_profit} description="After costs and expenses" moneyValue color={Number(summary.net_profit || 0) >= 0 ? '#17834b' : '#c73e35'} />
+      <SummaryCard title="Gross profit" value={summary.gross_profit} description="Sales less cost of goods" moneyValue color={Number(summary.gross_profit || 0) >= 0 ? '#187fa3' : '#c73e35'} />
+      <SummaryCard title="Invoices" value={invoices.length} description="In the selected period" icon={<ShoppingCartOutlined />} color="#3169b3" />
+      <SummaryCard title="Average invoice" value={averageInvoice} description="Net sales per invoice" moneyValue color="#7555ad" />
+      <SummaryCard title="Discounts" value={invoiceSummary.discount} description="Applied to invoices" moneyValue color="#c73e35" />
+      <SummaryCard title="Cost of goods" value={summary.cogs} description="Net of returns" moneyValue color="#b8741b" />
+      <SummaryCard
         title="Operating expenses"
         value={summary.operating_expenses}
-        description="Posted expenses within the selected dates"
+        description="Posted in this period"
         moneyValue
         color="#be123c"
-        action={<Button type="link" size="small" style={{ padding: 0 }} onClick={() => { setExpenseBreakdownPeriod(range); setExpenseBreakdownOpen(true); }}>View breakdown</Button>}
-      /></Col>
-      <Col xs={12} md={8} xl={6} xxl={3}><SummaryCard title="Gross profit" value={summary.gross_profit} description="Net sales − cost of goods" moneyValue color={Number(summary.gross_profit || 0) >= 0 ? '#0284c7' : '#dc2626'} /></Col>
-      <Col xs={12} md={8} xl={6} xxl={3}><SummaryCard title="Net profit" value={summary.net_profit} description="Gross profit − operating expenses" moneyValue color={Number(summary.net_profit || 0) >= 0 ? '#16a34a' : '#dc2626'} /></Col>
-    </Row>
+        action={<Button type="link" size="small" onClick={() => { setExpenseBreakdownPeriod(range); setExpenseBreakdownOpen(true); }}>Details</Button>}
+      />
+    </div>
 
     <Card title="Daily totals" style={{ marginBottom: 16, borderRadius: 12 }} extra={<Text type="secondary">Profit and expenses use posted journal dates</Text>}>
       <Table
@@ -449,6 +515,16 @@ export default function OwnerProfitAndLoss() {
       extra={<Space wrap>
         <Segmented value={salesView} onChange={setSalesView} options={[{ label: 'Invoice-wise', value: 'invoices' }, { label: 'Product-wise', value: 'products' }]} />
         {salesView === 'invoices' && <Text type="secondary">Click an invoice to see every item and discount</Text>}
+        {salesView === 'products' && <Select
+          className="sales-report-product-search"
+          showSearch
+          placeholder="Find any product"
+          optionFilterProp="label"
+          value={null}
+          loading={productCatalogQuery.loading}
+          options={productCatalogQuery.data.map(item => ({ value: item.id, label: `${item.name}${item.code ? ` · ${item.code}` : ''}` }))}
+          onChange={id => { const item = productCatalogQuery.data.find(entry => entry.id === id); if (item) setSelectedProduct({ product_id: item.id, product_name: item.name, code: item.code, openAllHistory: true }); }}
+        />}
       </Space>}
     >
       {salesView === 'invoices' ? <Table
@@ -464,6 +540,7 @@ export default function OwnerProfitAndLoss() {
     </Card>}
 
     <InvoiceDrawer invoiceId={selectedInvoiceId} onClose={() => setSelectedInvoiceId(null)} />
+    <ProductHistoryDrawer key={selectedProduct ? `${selectedProduct.product_id}-${selectedProduct.openAllHistory ? 'all' : 'period'}` : 'none'} product={selectedProduct} range={range} onClose={() => setSelectedProduct(null)} onOpenInvoice={invoiceId => { setSelectedProduct(null); setSelectedInvoiceId(invoiceId); }} />
     <ExpenseBreakdownDrawer
       open={expenseBreakdownOpen}
       onClose={() => setExpenseBreakdownOpen(false)}

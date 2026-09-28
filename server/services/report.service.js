@@ -280,6 +280,77 @@ const productProfitability = (items, returnItems, operatingExpenses) => {
 
 const changePct = (current, previous) => previous ? round(((current - previous) / Math.abs(previous)) * 100) : null;
 
+exports.productSalesCatalog = async tenantId => db.product.findAll({
+  where: { tenant_id: tenantId },
+  attributes: ['id', 'name', 'code'],
+  order: [['name', 'ASC']]
+});
+
+exports.productSalesHistory = async (tenantId, productId, fromDate, toDate) => {
+  const product = await db.product.findOne({ where: { id: productId, tenant_id: tenantId }, attributes: ['id', 'name', 'code'] });
+  if (!product) return null;
+
+  const variantInclude = () => ({
+    model: db.finishedGood,
+    attributes: ['id', 'name', 'sku', 'size_label'],
+    where: { tenant_id: tenantId, product_id: productId },
+    required: true
+  });
+  const saleDate = fromDate ? { sale_date: { [Op.between]: [fromDate, toDate] } } : {};
+  const returnDate = fromDate ? { return_date: { [Op.between]: [fromDate, toDate] } } : {};
+  const [soldItems, returnedItems] = await Promise.all([
+    db.retailSaleItem.findAll({
+      attributes: ['id', 'quantity', 'total', 'tax_amount', 'cost_amount'],
+      include: [
+        { model: db.retailSale, attributes: ['id', 'sale_number', 'sale_date'], where: { tenant_id: tenantId, ...saleDate }, required: true, include: [{ model: db.customer, attributes: ['name'] }] },
+        variantInclude()
+      ]
+    }),
+    db.salesReturnItem.findAll({
+      attributes: ['id', 'quantity', 'total', 'tax_amount', 'cost_amount'],
+      include: [
+        { model: db.salesReturn, attributes: ['id', 'return_number', 'return_date', 'retail_sale_id'], where: { tenant_id: tenantId, ...returnDate }, required: true,
+          include: [{ model: db.retailSale, attributes: ['id', 'sale_number'], include: [{ model: db.customer, attributes: ['name'] }] }] },
+        variantInclude()
+      ]
+    })
+  ]);
+
+  const rows = [
+    ...soldItems.map(item => ({
+      id: `sale:${item.id}`, type: 'sale', date: item.retailSale.sale_date,
+      invoice_id: item.retailSale.id, invoice: item.retailSale.sale_number,
+      reference: item.retailSale.sale_number, customer: item.retailSale.customer?.name || 'Walk-in customer',
+      variant: item.finishedGood.size_label || item.finishedGood.name || item.finishedGood.sku || 'Standard',
+      quantity: number(item.quantity), sales: round(number(item.total) - number(item.tax_amount)), cost: round(number(item.cost_amount))
+    })),
+    ...returnedItems.map(item => ({
+      id: `return:${item.id}`, type: 'return', date: item.salesReturn.return_date,
+      invoice_id: item.salesReturn.retail_sale_id, invoice: item.salesReturn.retailSale?.sale_number || '—',
+      reference: item.salesReturn.return_number, customer: item.salesReturn.retailSale?.customer?.name || 'Walk-in customer',
+      variant: item.finishedGood.size_label || item.finishedGood.name || item.finishedGood.sku || 'Standard',
+      quantity: -number(item.quantity), sales: -round(number(item.total) - number(item.tax_amount)), cost: -round(number(item.cost_amount))
+    }))
+  ].map(row => ({ ...row, gross_profit: round(row.sales - row.cost) }))
+    .sort((a, b) => b.date.localeCompare(a.date) || b.reference.localeCompare(a.reference));
+
+  const totals = rows.reduce((sum, row) => {
+    sum.quantity += row.quantity;
+    sum.sales += row.sales;
+    sum.cost += row.cost;
+    sum.gross_profit += row.gross_profit;
+    if (row.type === 'return') sum.returns += 1;
+    return sum;
+  }, { quantity: 0, sales: 0, cost: 0, gross_profit: 0, returns: 0 });
+  const invoices = new Set(rows.filter(row => row.type === 'sale').map(row => row.invoice_id)).size;
+  return {
+    product: { id: product.id, name: product.name, code: product.code },
+    period: fromDate ? { from: fromDate, to: toDate } : null,
+    summary: { ...totals, quantity: round(totals.quantity), sales: round(totals.sales), cost: round(totals.cost), gross_profit: round(totals.gross_profit), invoices, gross_margin_pct: percent(totals.gross_profit, totals.sales) },
+    rows
+  };
+};
+
 exports.profitAndLoss = async (tenantId, fromDate, toDate, groupBy = 'month') => {
   const start = new Date(`${fromDate}T00:00:00Z`);
   const end = new Date(`${toDate}T00:00:00Z`);

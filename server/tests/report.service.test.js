@@ -72,3 +72,43 @@ test('offsetting unbalanced journals still require accounting review', async () 
     reports.trialBalance = originals.trial;
   }
 });
+
+test('product history nets returns using recorded restocked cost and filters by transaction date', async () => {
+  const originals = {
+    product: db.product.findOne,
+    sales: db.retailSaleItem.findAll,
+    returns: db.salesReturnItem.findAll
+  };
+  const queries = {};
+  db.product.findOne = async () => ({ id: 'product-a', name: 'Rose', code: 'R-1' });
+  db.retailSaleItem.findAll = async options => {
+    queries.sales = options;
+    return [{ id: 'line-a', quantity: '2', total: '118', tax_amount: '18', cost_amount: '50',
+      retailSale: { id: 'sale-a', sale_number: 'INV-1', sale_date: '2026-09-01', customer: { name: 'Asha' } },
+      finishedGood: { size_label: '50 ml' } }];
+  };
+  db.salesReturnItem.findAll = async options => {
+    queries.returns = options;
+    return [{ id: 'return-line-a', quantity: '1', total: '47.20', tax_amount: '7.20', cost_amount: '20',
+      salesReturn: { return_date: '2026-09-03', return_number: 'SR-1', retail_sale_id: 'sale-a', retailSale: { sale_number: 'INV-1', customer: { name: 'Asha' } } },
+      finishedGood: { size_label: '50 ml' } }];
+  };
+  try {
+    const result = await reports.productSalesHistory('tenant-a', 'product-a', '2026-09-01', '2026-09-03');
+    assert.equal(result.summary.quantity, 1);
+    assert.equal(result.summary.sales, 60);
+    assert.equal(result.summary.cost, 30);
+    assert.equal(result.summary.gross_profit, 30);
+    assert.equal(result.summary.gross_margin_pct, 50);
+    assert.equal(result.summary.invoices, 1);
+    assert.equal(result.rows[0].type, 'return');
+    assert.equal(result.rows[0].gross_profit, -20);
+    assert.deepEqual(queries.sales.include[0].where.sale_date[Op.between], ['2026-09-01', '2026-09-03']);
+    assert.deepEqual(queries.returns.include[0].where.return_date[Op.between], ['2026-09-01', '2026-09-03']);
+    assert.equal(queries.sales.include[1].where.product_id, 'product-a');
+  } finally {
+    db.product.findOne = originals.product;
+    db.retailSaleItem.findAll = originals.sales;
+    db.salesReturnItem.findAll = originals.returns;
+  }
+});

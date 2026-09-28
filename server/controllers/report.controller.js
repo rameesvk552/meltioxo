@@ -51,6 +51,21 @@ exports.profitLoss = async (req, res, next) => {
     res.json(await reportService.profitAndLoss(req.tenantId, from, to, groupBy));
   } catch (error) { next(error); }
 };
+exports.productSalesHistory = async (req, res, next) => {
+  try {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.productId)) throw new AppError('Product not found.', 404);
+    const { from, to } = req.query;
+    if ((from || to) && (!validDate(from) || !validDate(to) || from > to || (Date.parse(to) - Date.parse(from)) / 86400000 > 3660)) {
+      throw new AppError('Choose a valid date range of up to ten years.', 400);
+    }
+    const result = await reportService.productSalesHistory(req.tenantId, req.params.productId, from, to);
+    if (!result) throw new AppError('Product not found.', 404);
+    res.json(result);
+  } catch (error) { next(error); }
+};
+exports.productSalesCatalog = async (req, res, next) => {
+  try { res.json(await reportService.productSalesCatalog(req.tenantId)); } catch (error) { next(error); }
+};
 exports.profitLossStatement = async (req, res, next) => {
   try {
     const { from, to } = reportRange(req.query);

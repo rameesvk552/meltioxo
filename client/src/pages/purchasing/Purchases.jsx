@@ -34,6 +34,8 @@ export default function Purchases() {
   const [viewingPurchase, setViewingPurchase] = useState(null);
   const [postingId, setPostingId] = useState(null);
   const [paymentSplits, setPaymentSplits] = useState([]);
+  const [discountMode, setDiscountMode] = useState('amount');
+  const [discountInput, setDiscountInput] = useState(0);
   const [quickMaterialForm] = Form.useForm();
   const [quickMaterial, setQuickMaterial] = useState(null);
   const [savingQuickMaterial, setSavingQuickMaterial] = useState(false);
@@ -63,13 +65,23 @@ export default function Purchases() {
   const packagingCategories = [...new Set([...defaultPackagingCategories, ...packagingMaterials.map(material => material.category).filter(Boolean)])].sort();
   const update = (key, field, value) => setItems(all => all.map(item => { if (item.key !== key) return item; const next = { ...item, [field]: value }; if (field === 'materialType') { next.materialId = null; next.unitPrice = 0; } if (field === 'materialId') next.unitPrice = materialOptions(next.materialType).find(x => x.id === value)?.price ?? 0; return next; }));
   const subtotal = items.reduce((sum, x) => sum + Number(x.quantity || 0) * Number(x.unitPrice || 0), 0);
-  const tax = items.reduce((sum, x) => sum + Number(x.quantity || 0) * Number(x.unitPrice || 0) * Number(x.taxRate || 0) / 100, 0);
-  const reset = () => { form.resetFields(); setItems([blankItem()]); setPaymentSplits([]); setEditingId(null); setCreating(false); };
+  const discount = Math.min(Math.round(subtotal * 100), Math.round(discountMode === 'percent' ? subtotal * Number(discountInput || 0) : Number(discountInput || 0) * 100)) / 100;
+  const bases = items.map(item => Math.round(Number(item.quantity || 0) * Number(item.unitPrice || 0) * 100));
+  let discountRemaining = Math.round(discount * 100);
+  const tax = items.reduce((sum, item, index) => {
+    const share = index === items.length - 1 ? discountRemaining : Math.round(Math.round(discount * 100) * bases[index] / Math.max(1, bases.reduce((total, base) => total + base, 0)));
+    discountRemaining -= share;
+    return sum + Math.round((bases[index] - share) * Number(item.taxRate || 0) / 100);
+  }, 0) / 100;
+  const grandTotal = Math.round((subtotal - discount + tax) * 100) / 100;
+  const reset = () => { form.resetFields(); setItems([blankItem()]); setPaymentSplits([]); setDiscountMode('amount'); setDiscountInput(0); setEditingId(null); setCreating(false); };
   const openNewPurchase = () => {
     form.resetFields();
     form.setFieldsValue({ invoiceDate: dayjs(), paidImmediately: 'no' });
     setItems([blankItem()]);
     setPaymentSplits([]);
+    setDiscountMode('amount');
+    setDiscountInput(0);
     setEditingId(null);
     setCreating(true);
   };
@@ -195,6 +207,7 @@ export default function Purchases() {
     invoice_date: values.invoiceDate.format('YYYY-MM-DD'),
     due_date: values.paidImmediately === 'yes' ? undefined : values.dueDate?.format('YYYY-MM-DD'),
     notes: values.notes,
+    discount_amount: discount,
     paid_immediately: values.paidImmediately === 'yes',
     payments: values.paidImmediately === 'yes' ? validPayments.map(row => ({ payment_method_id: row.payment_method_id, amount: row.amount })) : undefined,
     items: items.map(item => ({ material_type: item.materialType, material_id: item.materialId, quantity: item.quantity, unit_price: item.unitPrice, tax_rate: item.taxRate }))
@@ -203,10 +216,10 @@ export default function Purchases() {
     const valid = items.filter(x => x.materialId && x.quantity > 0);
     if (valid.length !== items.length) return message.error('Select an item and quantity for every purchase line.');
     const validPayments = paymentSplits.filter(row => row.payment_method_id && Number(row.amount) > 0);
-    if (values.paidImmediately === 'yes') {
+    if (values.paidImmediately === 'yes' && grandTotal > 0) {
       const paidCents = validPayments.reduce((sum, row) => sum + Math.round(Number(row.amount) * 100), 0);
       if (!validPayments.length) return message.error('Select at least one payment method.');
-      if (paidCents !== Math.round((subtotal + tax) * 100)) return message.error('Split payments must equal the purchase total.');
+      if (paidCents !== Math.round(grandTotal * 100)) return message.error('Split payments must equal the purchase total.');
     }
     setSaving(true);
     try {
@@ -238,6 +251,8 @@ export default function Purchases() {
       taxRate: Number(item.tax_rate || 0)
     })) : [blankItem()]);
     setPaymentSplits(Array.isArray(purchase.payment_splits) ? purchase.payment_splits : []);
+    setDiscountMode('amount');
+    setDiscountInput(Number(purchase.discount_amount || 0));
     setEditingId(purchase.id);
     setCreating(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -306,7 +321,6 @@ export default function Purchases() {
   const columns = [{ title: 'Invoice #', dataIndex: 'invoice_number' }, { title: 'Supplier', render: (_, purchase) => purchase.supplier?.name || '—' }, { title: 'Date', dataIndex: 'invoice_date', render: value => value ? dayjs(value).format('DD MMM YYYY') : '—' }, { title: 'Amount', dataIndex: 'total_amount', align: 'right', render: value => formatMoney(value) }, { title: 'Status', dataIndex: 'status', render: statusTag }, { title: 'Actions', width: 300, render: (_, purchase) => <Space size="small"><Button size="small" icon={<EyeOutlined />} onClick={() => viewPurchase(purchase)}>View</Button>{purchase.status === 'draft' && draftActions(purchase)}<Button size="small" danger icon={<DeleteOutlined />} onClick={() => deletePurchase(purchase)}>Delete</Button></Space> }];
   const viewItems = viewingPurchase?.purchaseReceipt?.purchaseReceiptItems || [];
   const viewSubtotal = viewItems.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unit_price || 0), 0);
-  const viewTax = viewItems.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unit_price || 0) * Number(item.tax_rate || 0) / 100, 0);
   const viewColumns = [
     { title: 'Item', render: (_, item) => materialName(item) },
     { title: 'Type', dataIndex: 'material_type', render: type => purchaseTypeOptions.find(option => option.value === type)?.label || type || '—' },
@@ -361,7 +375,7 @@ export default function Purchases() {
             <Col xs={24} sm={12} md={6} xl={5}><Form.Item name="invoiceDate" label="Invoice date" rules={[{ required: true, message: 'Select an invoice date' }]}><DatePicker format="DD MMM YYYY" /></Form.Item></Col>
             <Col xs={24} sm={12} md={6} xl={5}><Form.Item name="paidImmediately" label="Payment status"><Segmented block onChange={value => { if (value === 'yes') form.setFieldValue('dueDate', undefined); }} options={[{ value: 'no', label: 'Pay later' }, { value: 'yes', label: 'Paid now' }]} /></Form.Item></Col>
             <Form.Item noStyle shouldUpdate={(previous, current) => previous.paidImmediately !== current.paidImmediately}>{({ getFieldValue }) => getFieldValue('paidImmediately') === 'yes'
-              ? <Col xs={24} md={18} xl={12}><Form.Item label="Payment allocation" required><PaymentSplitEditor paymentMethods={paymentMethods} total={subtotal + tax} value={paymentSplits} onChange={setPaymentSplits} /></Form.Item></Col>
+              ? grandTotal > 0 && <Col xs={24} md={18} xl={12}><Form.Item label="Payment allocation" required><PaymentSplitEditor paymentMethods={paymentMethods} total={grandTotal} value={paymentSplits} onChange={setPaymentSplits} /></Form.Item></Col>
               : <Col xs={24} sm={12} md={6} xl={6}><Form.Item name="dueDate" label="Due date" extra="Optional"><DatePicker format="DD MMM YYYY" /></Form.Item></Col>}
             </Form.Item>
           </Row>
@@ -384,7 +398,7 @@ export default function Purchases() {
 
         <div className="purchase-checkout">
           <div className="purchase-checkout__note"><InfoCircleOutlined /><span><strong>Saved safely as a draft</strong>Inventory and accounting are updated only when you post the purchase from the history below.</span></div>
-          <div className="purchase-checkout__summary"><div><span>Subtotal</span><span>{formatMoney(subtotal)}</span></div><div><span>GST</span><span>{formatMoney(tax)}</span></div><div className="purchase-checkout__total"><span>Grand total</span><strong>{formatMoney(subtotal + tax)}</strong></div></div>
+          <div className="purchase-checkout__summary"><div><span>Subtotal</span><span>{formatMoney(subtotal)}</span></div><div><span>Discount before GST</span><Space.Compact><Select aria-label="Discount type" value={discountMode} onChange={value => { setDiscountMode(value); setDiscountInput(0); }} options={[{ value: 'amount', label: '₹' }, { value: 'percent', label: '%' }]} style={{ width: 65 }} /><InputNumber aria-label="Purchase discount" min={0} max={discountMode === 'percent' ? 100 : subtotal} precision={2} value={discountInput} onChange={value => setDiscountInput(value || 0)} style={{ width: 120 }} /></Space.Compact></div><div><span>Discount received</span><span>−{formatMoney(discount)}</span></div><div><span>GST</span><span>{formatMoney(tax)}</span></div><div className="purchase-checkout__total"><span>Grand total</span><strong>{formatMoney(grandTotal)}</strong></div></div>
           <div className="purchase-checkout__actions"><Button size="large" onClick={reset}>Cancel</Button><Button size="large" type="primary" htmlType="submit" loading={saving} icon={<SaveOutlined />}>{editingId ? 'Update draft' : 'Save draft'}</Button></div>
         </div>
       </Card>
@@ -414,7 +428,7 @@ export default function Purchases() {
           <div><span>Status</span>{statusTag(viewingPurchase.status)}</div>
         </div>
         <Table className="purchase-view__items" rowKey="id" dataSource={viewItems} columns={viewColumns} pagination={false} size="small" scroll={{ x: 680 }} />
-        <div className="purchase-view__totals"><span>Subtotal {formatMoney(viewSubtotal)}</span><span>GST {formatMoney(viewTax)}</span><strong>Total {formatMoney(viewingPurchase.total_amount)}</strong></div>
+        <div className="purchase-view__totals"><span>Subtotal {formatMoney(viewSubtotal)}</span><span>Discount −{formatMoney(viewingPurchase.discount_amount)}</span><span>GST {formatMoney(Number(viewingPurchase.total_amount) - viewSubtotal + Number(viewingPurchase.discount_amount || 0))}</span><strong>Total {formatMoney(viewingPurchase.total_amount)}</strong></div>
         {viewingPurchase.purchaseReceipt?.notes && <div className="purchase-view__notes"><strong>Notes</strong><span>{viewingPurchase.purchaseReceipt.notes}</span></div>}
       </div>}
     </Modal>

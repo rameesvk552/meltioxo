@@ -10,6 +10,7 @@ module.exports = (sequelize, DataTypes) => {
     invoice_date: { type: DataTypes.DATEONLY },
     due_date: { type: DataTypes.DATEONLY },
     total_amount: { type: DataTypes.DECIMAL(15,2) },
+    discount_amount: { type: DataTypes.DECIMAL(15,2), allowNull: false, defaultValue: 0 },
     paid_amount: { type: DataTypes.DECIMAL(15,2), defaultValue: 0 },
     status: { type: DataTypes.ENUM('draft','unpaid','partial','paid','overdue'), defaultValue: 'draft' },
     paid_immediately: { type: DataTypes.BOOLEAN, defaultValue: false },

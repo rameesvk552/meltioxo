@@ -11,6 +11,8 @@ router.get('/accounting-health', authenticate, tenantContext, requireViewPermiss
 router.get('/account-balances', authenticate, tenantContext, requireViewPermission('finance.accounts'), ctrl.trialBalance);
 router.get('/whatsapp-invoices', authenticate, tenantContext, requireViewPermission('reports.whatsapp_invoices'), ctrl.whatsappInvoices);
 router.get('/profit-loss', authenticate, tenantContext, requireViewPermission('reports.profit_loss'), ctrl.profitLoss);
+router.get('/product-sales-catalog', authenticate, tenantContext, requireViewPermission('reports.profit_loss'), ctrl.productSalesCatalog);
+router.get('/product-sales/:productId', authenticate, tenantContext, requireViewPermission('reports.profit_loss'), ctrl.productSalesHistory);
 router.get('/profit-loss-statement', authenticate, tenantContext, requireViewPermission('reports.profit_loss'), ctrl.profitLossStatement);
 router.get('/purchases', authenticate, tenantContext, requireViewPermission('purchases'), ctrl.purchaseReport);
 router.get('/balance-sheet', authenticate, tenantContext, requireViewPermission('reports.balance_sheet'), ctrl.balanceSheet);

@@ -5,12 +5,13 @@ const accounting = require('../services/accounting.service');
 const inventoryReceipt = require('../services/inventoryReceipt.service');
 const { ACCOUNT_CODES } = require('../config/constants');
 const { Op } = require('sequelize');
+const { calculatePurchaseTotals } = require('../services/purchaseDiscount.service');
 
 const directPurchaseWhere = req => ({ id: req.params.id, tenant_id: req.tenantId, purchase_order_id: null });
 const invoiceIncludes = [db.supplier, { model: purchaseReceipt, include: [purchaseReceiptItem] }];
 
 const prepareDraft = async (tenantId, payload, transaction) => {
-  const { supplier_id, invoice_date, due_date, notes, items = [], paid_immediately = false, payments = [] } = payload;
+  const { supplier_id, invoice_date, due_date, notes, items = [], discount_amount = 0, paid_immediately = false, payments = [] } = payload;
   if (!items.length) throw new AppError('Direct purchase must contain at least one item', 400);
   const supplier = await db.supplier.findOne({ where: { id: supplier_id, tenant_id: tenantId, is_active: true }, transaction });
   if (!supplier) throw new AppError('Select an active supplier', 400);
@@ -20,8 +21,6 @@ const prepareDraft = async (tenantId, payload, transaction) => {
     throw new AppError('Future-dated purchases are not allowed', 400);
   }
 
-  let subtotal = 0;
-  let taxAmount = 0;
   const calculatedItems = items.map((row, index) => {
     const quantity = Number(row.quantity);
     const unitPrice = accounting.money(row.unit_price, `Item ${index + 1} unit price`);
@@ -31,15 +30,12 @@ const prepareDraft = async (tenantId, payload, transaction) => {
     if (!Number.isFinite(quantity) || quantity <= 0) throw new AppError('Purchase quantity must be greater than zero', 400);
     if (unitPrice < 0) throw new AppError('Unit price cannot be negative', 400);
     if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100) throw new AppError('Tax rate must be between 0 and 100', 400);
-    const itemSubtotal = accounting.money(quantity * unitPrice);
-    const itemTax = accounting.money(itemSubtotal * taxRate / 100);
-    subtotal += itemSubtotal;
-    taxAmount += itemTax;
     return { material_type: row.material_type, material_id: row.material_id, quantity, unit_price: unitPrice, tax_rate: taxRate };
   });
 
-  const totalAmount = accounting.money(accounting.money(subtotal) + accounting.money(taxAmount));
-  const paymentSplits = paid_immediately ? accounting.normalizePaymentSplits({ payments }, totalAmount) : null;
+  const totals = calculatePurchaseTotals(calculatedItems, accounting.money(discount_amount, 'Discount'));
+  const totalAmount = totals.total_amount;
+  const paymentSplits = paid_immediately && totalAmount > 0 ? accounting.normalizePaymentSplits({ payments }, totalAmount) : null;
   return {
     supplier_id,
     invoice_date: effectiveInvoiceDate,
@@ -47,6 +43,7 @@ const prepareDraft = async (tenantId, payload, transaction) => {
     notes: notes || null,
     items: calculatedItems,
     total_amount: totalAmount,
+    discount_amount: totals.discount_amount,
     paid_immediately: Boolean(paid_immediately),
     payment_splits: paymentSplits
   };
@@ -101,6 +98,7 @@ exports.create = async (req, res, next) => {
       invoice_date: draft.invoice_date,
       due_date: draft.due_date,
       total_amount: draft.total_amount,
+      discount_amount: draft.discount_amount,
       paid_amount: 0,
       status: 'draft',
       paid_immediately: draft.paid_immediately,
@@ -136,6 +134,7 @@ exports.update = async (req, res, next) => {
       invoice_date: draft.invoice_date,
       due_date: draft.due_date,
       total_amount: draft.total_amount,
+      discount_amount: draft.discount_amount,
       paid_immediately: draft.paid_immediately,
       payment_splits: draft.payment_splits
     }, { transaction });
@@ -168,13 +167,12 @@ exports.post = async (req, res, next) => {
       throw new AppError('Future-dated purchases are not allowed', 400);
     }
 
-    let taxAmount = 0;
+    const totals = calculatePurchaseTotals(items, Number(invoice.discount_amount || 0));
+    if (totals.total_amount !== accounting.money(invoice.total_amount)) throw new AppError('Purchase totals changed; update the draft before posting', 409);
     const deficitVariances = [];
     for (const [index, row] of items.entries()) {
       const quantity = Number(row.quantity);
       const unitPrice = accounting.money(row.unit_price, `Item ${index + 1} unit price`);
-      const taxRate = Number(row.tax_rate || 0);
-      taxAmount += accounting.money(quantity * unitPrice * taxRate / 100);
       const received = await inventoryReceipt.receiveMaterial({
         tenantId: req.tenantId,
         materialType: row.material_type,
@@ -196,10 +194,11 @@ exports.post = async (req, res, next) => {
       await row.update({ batch_number: batch.batch_number }, { transaction });
     }
 
-    taxAmount = accounting.money(taxAmount);
+    const taxAmount = totals.tax_amount;
+    const discountAmount = totals.discount_amount;
     const totalAmount = accounting.money(invoice.total_amount);
     const codes = ACCOUNT_CODES;
-    const accounts = await accounting.getAccountsByCode(req.tenantId, [codes.RAW_INVENTORY, codes.PKG_INVENTORY, codes.FG_INVENTORY, codes.INPUT_TAX, codes.AP, codes.PURCHASE_VARIANCE], transaction);
+    const accounts = await accounting.getAccountsByCode(req.tenantId, [codes.RAW_INVENTORY, codes.PKG_INVENTORY, codes.FG_INVENTORY, codes.INPUT_TAX, codes.AP, codes.PURCHASE_VARIANCE, ...(discountAmount ? [codes.DISCOUNT_RECEIVED] : [])], transaction);
     const supplierLedger = await accounting.getSupplierLedger(req.tenantId, supplier.id, transaction);
     const inventoryAccountFor = materialType => accounts[materialType === 'raw' ? codes.RAW_INVENTORY : materialType === 'packaging' ? codes.PKG_INVENTORY : codes.FG_INVENTORY];
     const inventoryLines = items.map(row => ({
@@ -218,10 +217,11 @@ exports.post = async (req, res, next) => {
       }
     });
     if (taxAmount) inventoryLines.push({ account_id: accounts[codes.INPUT_TAX].id, debit_amount: taxAmount, description: `Input tax on ${invoice.invoice_number}` });
-    inventoryLines.push({ account_id: supplierLedger.id, credit_amount: totalAmount, description: `Supplier invoice ${invoice.invoice_number}` });
+    if (discountAmount) inventoryLines.push({ account_id: accounts[codes.DISCOUNT_RECEIVED].id, credit_amount: discountAmount, description: `Purchase discount on ${invoice.invoice_number}` });
+    if (totalAmount > 0) inventoryLines.push({ account_id: supplierLedger.id, credit_amount: totalAmount, description: `Supplier invoice ${invoice.invoice_number}` });
 
     let purchaseJournal = null;
-    if (totalAmount > 0) {
+    if (totals.subtotal > 0) {
       purchaseJournal = await accounting.createAndPost(req.tenantId, {
         entry_date: invoice.invoice_date,
         reference_type: 'purchase_invoice',
@@ -232,9 +232,9 @@ exports.post = async (req, res, next) => {
       await receipt.update({ journal_entry_id: purchaseJournal.id }, { transaction });
     }
 
-    let finalStatus = 'unpaid';
+    let finalStatus = totalAmount === 0 ? 'paid' : 'unpaid';
     let paidAmount = 0;
-    if (invoice.paid_immediately) {
+    if (invoice.paid_immediately && totalAmount > 0) {
       const paymentSplits = await accounting.resolvePaymentSplits(req.tenantId, { payments: invoice.payment_splits || [] }, totalAmount, transaction);
       const paymentSequence = await payment.count({ where: { tenant_id: req.tenantId, payment_type: 'outgoing' }, transaction }) + 1;
       const paymentRecords = [];
