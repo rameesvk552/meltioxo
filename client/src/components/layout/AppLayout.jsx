@@ -28,8 +28,8 @@ export default function AppLayout() {
         style={{ borderRight: '1px solid var(--color-border)' }}
         width={260}
       >
-        <div style={{ height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid var(--color-border)' }}>
-          <WayonLogo compact size={collapsed ? 38 : 36} logoUrl={tenant.logo_url} companyName={tenant.name} />
+        <div style={{ height: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid var(--color-border)' }}>
+          <WayonLogo compact size={72} logoUrl={tenant.logo_url} companyName={tenant.name} />
         </div>
         <Sidebar />
       </Sider>
@@ -43,8 +43,8 @@ export default function AppLayout() {
         size={260}
         className="mobile-only"
       >
-        <div style={{ height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid var(--color-border)' }}>
-          <WayonLogo compact size={36} logoUrl={tenant.logo_url} companyName={tenant.name} />
+        <div style={{ height: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid var(--color-border)' }}>
+          <WayonLogo compact size={72} logoUrl={tenant.logo_url} companyName={tenant.name} />
         </div>
         <Sidebar onNavigate={() => setMobileDrawerOpen(false)} />
       </Drawer>
