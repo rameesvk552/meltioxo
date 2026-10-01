@@ -242,7 +242,7 @@
 }
 
 @media (max-width: 767px) {
-  .app-content > .pos-page { padding: 3px !important; }
+  .app-content > .pos-page { padding: var(--page-gutter) !important; }
   .pos-topbar { display: none; }
   .pos-form { gap: 4px; }
   .pos-layout, .pos-main { gap: 4px; }
@@ -459,7 +459,7 @@
   .pos-product-field .ant-select-selection-item { overflow: hidden; padding-block: 6px; line-height: 1.3; white-space: nowrap; text-overflow: ellipsis; }
   .pos-item-grid { grid-template-columns: minmax(0, 1fr) 76px 104px; column-gap: 6px; row-gap: 8px; }
   .pos-product-field, .pos-packing-kit-field { grid-column: 1 / -1; }
-  .pos-field > span { font-size: 10px; }
+  .pos-field > span { font-size: var(--font-size-xs); }
   .ant-select-dropdown { min-width: calc(100vw - 16px) !important; max-width: calc(100vw - 16px); }
   .ant-select-dropdown .ant-select-item { height: auto; min-height: 42px; }
   .ant-select-dropdown .ant-select-item-option-content { overflow: visible; font-size: 14px; line-height: 1.4; white-space: nowrap; text-overflow: clip; }
@@ -475,3 +475,26 @@
 .pos-day-warning .ant-alert-description { font-size: 12px; }
 .pos-day-gate-icon { width: 64px; height: 64px; display: grid; place-items: center; border-radius: 50%; color: var(--color-gold); background: #fff4e8; font-size: 27px; }
 .pos-day-status { cursor: pointer; font: inherit; }
+
+/* POS keeps a compact task title within its fixed workflow header. */
+.app-content .pos-title h1 { font-size: var(--font-size-xl) !important; }
+
+@media (max-width: 767px) {
+  .app-content .pos-title h1 { font-size: var(--font-size-lg) !important; }
+  .pos-page .pos-title span,
+  .pos-page .pos-section-label span,
+  .pos-page .pos-items-toolbar span,
+  .pos-page .pos-item-head,
+  .pos-page .pos-field > span,
+  .pos-page .pos-line-total,
+  .pos-page .pos-summary > div,
+  .pos-page .pos-discount-label,
+  .pos-page .pos-payment .ant-form-item-label > label,
+  .pos-page .pos-auto-note { font-size: var(--font-size-xs); line-height: 1.4; }
+  .pos-page .pos-section-label strong,
+  .pos-page .pos-items-toolbar strong,
+  .pos-page .pos-checkout-heading strong { font-size: var(--font-size-sm); }
+  .pos-page .pos-item-bottom .ant-radio-button-wrapper,
+  .pos-page .pos-discount .ant-radio-button-wrapper { height: 36px; font-size: var(--font-size-xs); line-height: 36px; }
+  .pos-page .pos-complete.ant-btn { min-height: 44px; font-size: var(--font-size-md); }
+}

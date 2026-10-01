@@ -186,10 +186,10 @@ export default function PackagingMaterials() {
   const filters = <><Input placeholder="Search packaging..." prefix={<SearchOutlined />} value={searchText} onChange={handleSearch} /><Select value={typeFilter} onChange={handleTypeChange} options={packageTypeFilterOptions} /><Select value={stockFilter} onChange={handleStockChange} options={['All Stock', 'Low Stock', 'Out of Stock'].map(value => ({ value, label: value }))} /></>;
 
   return (
-    <div style={{ padding: '24px' }}>
+    <div className="standard-page">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
-          <Title className="mobile-page-title" level={2} style={{ color: 'var(--color-gold)', fontFamily: 'Playfair Display', margin: 0 }}>Packaging Materials</Title>
+          <Title className="mobile-page-title" level={2} style={{ margin: 0 }}>Packaging Materials</Title>
         </div>
         <Space><PageDrawerControls title="Packaging materials" summary={summary} filters={filters} activeFilterCount={[searchText, typeFilter !== 'All Package Types', stockFilter !== 'All Stock'].filter(Boolean).length} onReset={() => { setSearchText(''); setTypeFilter('All Package Types'); setStockFilter('All Stock'); }} /><Button type="primary" icon={<PlusOutlined />} onClick={openAddMaterial}>Add Material</Button></Space>
       </div>

@@ -24,8 +24,8 @@ export default defineConfig({
         display: 'standalone',
         display_override: ['window-controls-overlay', 'standalone'],
         orientation: 'any',
-        background_color: '#f7f3ee',
-        theme_color: '#b54230',
+        background_color: '#f4f6f8',
+        theme_color: '#a53727',
         categories: ['business', 'productivity', 'finance'],
         icons: [
           {

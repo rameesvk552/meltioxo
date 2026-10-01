@@ -156,10 +156,10 @@ export default function RawMaterials() {
   );
 
   return (
-    <div style={{ padding: '24px' }}>
+    <div className="standard-page">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
-          <Title className="mobile-page-title" level={2} style={{ color: 'var(--color-gold)', fontFamily: 'Playfair Display', margin: 0 }}>Raw Materials</Title>
+          <Title className="mobile-page-title" level={2} style={{ margin: 0 }}>Raw Materials</Title>
         </div>
         <Space>
           <PageDrawerControls title="Raw materials" summary={summary} filters={filters} activeFilterCount={[searchText, categoryFilter !== 'All Categories', stockFilter !== 'All Stock'].filter(Boolean).length} onReset={() => { setSearchText(''); setCategoryFilter('All Categories'); setStockFilter('All Stock'); }} />

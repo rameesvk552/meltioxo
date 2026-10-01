@@ -129,6 +129,7 @@ const CompanySettings = () => {
         logo_url: logoUrl,
       });
       setLogoNeedsSave(false);
+      window.dispatchEvent(new Event('tenant-settings-updated'));
       message.success('Company information saved.');
     } catch (error) {
       message.error(error.response?.data?.message || 'Could not save company information.');
@@ -475,8 +476,8 @@ const CompanySettings = () => {
   ];
 
   return (
-    <div style={{ padding: 24 }}>
-      <Title level={2} style={{ fontFamily: "'Playfair Display', serif", color: 'var(--color-gold)', marginBottom: 24 }}>Company Settings</Title>
+    <div className="standard-page">
+      <Title level={2} style={{ marginBottom: 'var(--section-gap)' }}>Company Settings</Title>
 
       <Card >
         <Tabs items={items} />

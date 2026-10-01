@@ -1,22 +1,30 @@
+const colors = {
+  primary: '#a53727', primaryHover: '#b84432', primaryActive: '#86291d',
+  surface: '#ffffff', background: '#f4f6f8', border: '#e9ecef',
+  text: '#1c1c1e', secondary: '#5e6e82', muted: '#64748b',
+};
+
 export const antdTheme = {
   token: {
-    colorPrimary: '#b54230',
-    colorPrimaryHover: '#c95442',
-    colorPrimaryActive: '#9a3222',
-    colorBgContainer: '#ffffff',
-    colorBgElevated: '#ffffff',
-    colorBgLayout: '#f4f6f8',
-    colorBorder: '#e9ecef',
+    colorPrimary: colors.primary,
+    colorPrimaryHover: colors.primaryHover,
+    colorPrimaryActive: colors.primaryActive,
+    colorBgContainer: colors.surface,
+    colorBgElevated: colors.surface,
+    colorBgLayout: colors.background,
+    colorBorder: colors.border,
     colorBorderSecondary: '#f1f3f5',
-    colorText: '#1c1c1e',
-    colorTextSecondary: '#5e6e82',
-    colorTextDescription: '#8492a6',
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', sans-serif",
-    borderRadius: 14,
-    boxShadow: '0 1px 3px rgba(0,0,0,0.05), 0 10px 20px -5px rgba(28, 28, 30, 0.04)',
+    colorText: colors.text,
+    colorTextSecondary: colors.secondary,
+    colorTextDescription: colors.muted,
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif",
+    fontSize: 14,
+    borderRadius: 8,
+    controlHeight: 36,
+    boxShadow: '0 1px 3px rgba(28, 28, 30, 0.07)',
     
     // Explicit control item states to prevent calculation issues from CSS variables
-    controlItemBgHover: '#f4f6f8',
+    controlItemBgHover: colors.background,
     controlItemBgActive: 'rgba(181, 66, 48, 0.08)',
     controlItemBgActiveHover: 'rgba(181, 66, 48, 0.12)',
   },
@@ -24,21 +32,21 @@ export const antdTheme = {
     Card: {
       colorBgContainer: '#ffffff',
       borderColor: '#e9ecef',
-      boxShadow: '0 1px 3px rgba(0,0,0,0.05), 0 10px 20px -5px rgba(28, 28, 30, 0.04)',
+      boxShadow: '0 1px 3px rgba(28, 28, 30, 0.07)',
     },
     Menu: {
       colorBgContainer: 'transparent',
       itemSelectedBg: 'rgba(181, 66, 48, 0.08)',
-      itemSelectedColor: '#b54230',
-      itemColor: '#5e6e82',
-      itemHoverColor: '#b54230',
-      activeBarColor: '#b54230',
+      itemSelectedColor: colors.primary,
+      itemColor: colors.secondary,
+      itemHoverColor: colors.primary,
+      activeBarColor: colors.primary,
     },
     Input: {
       colorBgContainer: '#ffffff',
       colorBorder: '#dcdfe3',
-      activeBorderColor: '#b54230',
-      hoverBorderColor: '#c95442',
+      activeBorderColor: colors.primary,
+      hoverBorderColor: colors.primaryHover,
       colorTextPlaceholder: 'rgba(28, 28, 30, 0.35)',
     },
     InputNumber: {
@@ -48,7 +56,7 @@ export const antdTheme = {
     Select: {
       colorBgContainer: '#ffffff',
       colorBorder: '#dcdfe3',
-      colorPrimaryHover: '#c95442',
+      colorPrimaryHover: colors.primaryHover,
       controlOutline: 'rgba(181, 66, 48, 0.05)',
     },
     DatePicker: {
@@ -56,11 +64,11 @@ export const antdTheme = {
       colorBorder: '#dcdfe3',
     },
     Button: {
-      colorPrimary: '#b54230',
-      colorPrimaryHover: '#c95442',
-      colorPrimaryActive: '#9a3222',
-      colorLink: '#b54230',
-      colorLinkHover: '#c95442',
+      colorPrimary: colors.primary,
+      colorPrimaryHover: colors.primaryHover,
+      colorPrimaryActive: colors.primaryActive,
+      colorLink: colors.primary,
+      colorLinkHover: colors.primaryHover,
       borderRadius: 8,
       fontWeight: 500,
     },
@@ -77,8 +85,8 @@ export const antdTheme = {
       iconSize: 34,
     },
     Typography: {
-      colorLink: '#b54230',
-      colorLinkHover: '#c95442',
+      colorLink: colors.primary,
+      colorLinkHover: colors.primaryHover,
     }
   }
 };

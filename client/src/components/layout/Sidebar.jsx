@@ -25,12 +25,6 @@ export default function Sidebar({ onNavigate }) {
   const location = useLocation();
   const { user } = useContext(AuthContext);
 
-  const selectedKey = location.pathname === '/app/retail-sales/new'
-    ? '/app/retail-sales/new'
-    : location.pathname.startsWith('/app/retail-sales/')
-      ? '/app/retail-sales'
-      : location.pathname;
-
   const items = [
     { key: '/app/dashboard', icon: <DashboardOutlined />, label: 'Dashboard' },
     { key: 'inventory', icon: <AppstoreOutlined />, label: 'Inventory', children: [
@@ -81,13 +75,19 @@ export default function Sidebar({ onNavigate }) {
     }
     return hasAnyViewPermission(user, getViewPermissionsForPath(item.key)) ? item : null;
   }).filter(Boolean);
+  const routes = permittedItems.flatMap(item => item.children || [item]);
+  const selectedKey = routes
+    .filter(item => location.pathname === item.key || location.pathname.startsWith(`${item.key}/`))
+    .sort((a, b) => b.key.length - a.key.length)[0]?.key;
+  const selectedGroup = permittedItems.find(item => item.children?.some(child => child.key === selectedKey))?.key;
 
   return (
     <Menu 
       mode="inline"
       theme="light"
       items={permittedItems}
-      selectedKeys={[selectedKey]}
+      selectedKeys={selectedKey ? [selectedKey] : []}
+      defaultOpenKeys={selectedGroup ? [selectedGroup] : []}
       onClick={({ key }) => {
         // Parent menu keys only expand/collapse their submenu; route selections
         // should also dismiss the mobile drawer after navigation.

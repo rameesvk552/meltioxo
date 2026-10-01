@@ -83,7 +83,7 @@ export default function SupplierDetail() {
   ];
 
   return (
-    <div style={{ padding: 24 }}>
+    <div className="standard-page">
       <Breadcrumb style={{ marginBottom: 16 }}>
         <Breadcrumb.Item><Link to="/app/dashboard" style={{ color: 'var(--color-text-secondary)' }}>Dashboard</Link></Breadcrumb.Item>
         <Breadcrumb.Item><Link to="/app/suppliers" style={{ color: 'var(--color-text-secondary)' }}>Suppliers</Link></Breadcrumb.Item>
@@ -93,7 +93,7 @@ export default function SupplierDetail() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <Space size="middle">
           <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/app/suppliers')} />
-          <h1 style={{ fontFamily: "'Playfair Display', serif", color: 'var(--color-gold)', margin: 0 }}>{supplier.name}</h1>
+          <h1 style={{ margin: 0 }}>{supplier.name}</h1>
         </Space>
         <Space>
           <Button icon={<PrinterOutlined />} onClick={() => window.print()}>Print Profile</Button>

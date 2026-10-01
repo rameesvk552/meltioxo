@@ -16,7 +16,7 @@ export default function ResponsiveListPageHeader({
 }) {
   return (
     <div className="responsive-list-page-header">
-      <h1 style={{ fontFamily: "'Playfair Display', serif", color: 'var(--color-primary, var(--color-gold))', margin: 0 }}>{title}</h1>
+      <h1>{title}</h1>
       <div className="responsive-list-page-actions">
         {(filters || summary) && <PageDrawerControls title={title} filters={filters} summary={summary} activeFilterCount={activeFilterCount} onReset={onReset} />}
         {primaryAction}

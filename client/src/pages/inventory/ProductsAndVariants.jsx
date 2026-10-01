@@ -611,7 +611,7 @@ export default function ProductsAndVariants() {
   );
 
   return (
-    <div style={{ padding: 24 }}>
+    <div className="standard-page">
       <div className="responsive-list-page-header">
         <div className="responsive-list-page-description">
           <Text type="secondary">Variants can be made live from a formula or purchased ready-made from a supplier.</Text>

@@ -35,7 +35,7 @@ export default function RawMaterialDetail() {
   const cardStyle = { background: '#ffffff', border: '1px solid var(--color-border)', borderRadius: 12, marginBottom: 24 };
 
   return (
-    <div style={{ padding: '24px' }}>
+    <div className="standard-page">
       <Breadcrumb style={{ marginBottom: 16 }}>
         <Breadcrumb.Item><Link to="/app/raw-materials" style={{ color: 'var(--color-text-secondary)' }}>Inventory</Link></Breadcrumb.Item>
         <Breadcrumb.Item><Link to="/app/raw-materials" style={{ color: 'var(--color-text-secondary)' }}>Raw Materials</Link></Breadcrumb.Item>
@@ -47,7 +47,7 @@ export default function RawMaterialDetail() {
           <Link to="/app/raw-materials">
             <Button type="text" icon={<ArrowLeftOutlined />} style={{ color: 'inherit' }} />
           </Link>
-          <Title level={2} style={{ color: 'var(--color-gold)', fontFamily: 'Playfair Display', margin: 0 }}>{material.name || 'Material'} ({material.sku || '—'})</Title>
+          <Title level={2} style={{ margin: 0 }}>{material.name || 'Material'} ({material.sku || '—'})</Title>
           <Tag color={stock <= reorder ? 'warning' : 'success'}>{stock <= 0 ? 'Out of Stock' : stock <= reorder ? 'Low Stock' : 'In Stock'}</Tag>
         </Space>
         <Space>

@@ -1,13 +1,10 @@
 import React, { useContext, useMemo, useState } from 'react';
-import { Layout, Button, Badge, Avatar, Dropdown, Input, Tooltip, Typography, Select } from 'antd';
+import { Layout, Button, Avatar, Dropdown, Tooltip, Typography, Select } from 'antd';
 import { 
   MenuUnfoldOutlined, 
   MenuFoldOutlined, 
-  BellOutlined, 
   UserOutlined,
-  ArrowLeftOutlined,
-  SearchOutlined,
-  CloseOutlined
+  ArrowLeftOutlined
 } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { usePageTitle } from '../../context/PageTitleContext';
@@ -27,14 +24,20 @@ export default function Header({ collapsed, setCollapsed, setMobileDrawerOpen })
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout, branches, branchId, selectBranch } = useContext(AuthContext);
-  const [searchOpen, setSearchOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const detailParents = [
+    '/app/raw-materials', '/app/suppliers', '/app/purchases',
+    '/app/formulas', '/app/production', '/app/retail-sales',
+    '/app/journal-entries', '/app/payments', '/app/expenses'
+  ];
+  const showBack = detailParents.some(route => location.pathname.startsWith(`${route}/`));
 
   const pageTitle = useMemo(() => {
     const path = location.pathname;
     const titles = [
       ['/app/dashboard', 'Dashboard'], ['/app/raw-materials', 'Raw Materials'],
       ['/app/packaging', 'Packaging Materials'], ['/app/finished-goods', 'Finished Goods'],
+      ['/app/packing-kits', 'Packing Kits'],
       ['/app/suppliers', 'Suppliers'], ['/app/purchases', 'Purchases'],
       ['/app/direct-purchases', 'Purchases'], ['/app/formulas', 'Formulas'],
       ['/app/production', 'Production Orders'], ['/app/customers', 'Customers'],
@@ -44,7 +47,10 @@ export default function Header({ collapsed, setCollapsed, setMobileDrawerOpen })
       ['/app/expenses', 'Expenses'], ['/app/reports/profit-loss', 'Profit & Loss'],
       ['/app/reports/sales-profit', 'Daily Sales & Profit'],
       ['/app/reports/balance-sheet', 'Balance Sheet'], ['/app/reports/trial-balance', 'Trial Balance'],
-      ['/app/reports/stock', 'Stock Valuation'], ['/app/settings', 'Company Settings']
+      ['/app/reports/stock', 'Stock Valuation'], ['/app/settings', 'Company Settings'],
+      ['/app/reports/management', 'Management Report'], ['/app/reports/cash-bank', 'Cash & Bank Movements'],
+      ['/app/reports/production', 'Production Report'], ['/app/reports/audit-log', 'Audit Log'],
+      ['/app/reports/whatsapp-invoices', 'WhatsApp Invoice Report']
     ];
     const match = titles.find(([route]) => path === route || path.startsWith(`${route}/`));
     // Route names must win here: some pages set a contextual title, but that
@@ -53,11 +59,6 @@ export default function Header({ collapsed, setCollapsed, setMobileDrawerOpen })
   }, [location.pathname, title]);
 
   const goBack = () => {
-    const detailParents = [
-      '/app/raw-materials', '/app/suppliers', '/app/purchases',
-      '/app/formulas', '/app/production', '/app/retail-sales',
-      '/app/journal-entries', '/app/payments', '/app/expenses'
-    ];
     const parentPath = detailParents.find((route) => location.pathname.startsWith(`${route}/`));
     if (parentPath && hasAnyViewPermission(user, getViewPermissionsForPath(parentPath))) {
       navigate(parentPath);
@@ -97,6 +98,7 @@ export default function Header({ collapsed, setCollapsed, setMobileDrawerOpen })
           onClick={() => setCollapsed(!collapsed)}
           className="desktop-only"
           style={{ color: 'var(--color-text-primary)' }}
+          aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
         />
         <Button 
           type="text" 
@@ -104,8 +106,9 @@ export default function Header({ collapsed, setCollapsed, setMobileDrawerOpen })
           onClick={() => setMobileDrawerOpen(true)}
           className="mobile-only"
           style={{ color: 'var(--color-text-primary)' }}
+          aria-label="Open navigation"
         />
-        <Tooltip title="Back">
+        {showBack && <Tooltip title="Back">
           <Button
             type="text"
             icon={<ArrowLeftOutlined />}
@@ -113,12 +116,11 @@ export default function Header({ collapsed, setCollapsed, setMobileDrawerOpen })
             className="mobile-only mobile-back-button"
             aria-label="Go back"
           />
-        </Tooltip>
+        </Tooltip>}
         {pageTitle && (
           <Title level={4} style={{ 
             margin: 0, 
-            color: 'var(--color-gold)', 
-            fontFamily: 'Playfair Display', 
+            color: 'var(--color-text-primary)',
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -129,7 +131,7 @@ export default function Header({ collapsed, setCollapsed, setMobileDrawerOpen })
         )}
       </div>
 
-      <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+      <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
         {branches?.length > 0 && (
           <Select
             size="small"
@@ -140,24 +142,6 @@ export default function Header({ collapsed, setCollapsed, setMobileDrawerOpen })
             aria-label="Current branch"
           />
         )}
-        <div className="mobile-only mobile-header-search">
-          {searchOpen ? (
-            <Input
-              autoFocus
-              size="small"
-              placeholder="Search this page"
-              suffix={<CloseOutlined onClick={() => setSearchOpen(false)} />}
-              aria-label="Search this page"
-            />
-          ) : (
-            <Tooltip title="Search">
-              <Button type="text" icon={<SearchOutlined />} onClick={() => setSearchOpen(true)} aria-label="Search this page" />
-            </Tooltip>
-          )}
-        </div>
-        <Badge count={5} size="small">
-          <BellOutlined style={{ fontSize: '20px', color: 'var(--color-text-primary)', cursor: 'pointer' }} />
-        </Badge>
         <Dropdown menu={{ onClick: handleAccountMenu, items: [
           ...(hasViewPermission(user, 'settings') ? [
             { key: 'profile', label: 'Profile' },
@@ -166,10 +150,10 @@ export default function Header({ collapsed, setCollapsed, setMobileDrawerOpen })
           ] : []),
           { key: 'logout', label: loggingOut ? 'Signing out…' : 'Logout', disabled: loggingOut },
         ]}} trigger={['click']}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+          <button type="button" aria-label={`Account menu for ${user?.name || 'user'}`} className="header-account-trigger">
             <Avatar icon={<UserOutlined />} style={{ backgroundColor: 'var(--color-gold)' }} />
             <span className="desktop-only">{user?.name || 'Admin User'}</span>
-          </div>
+          </button>
         </Dropdown>
       </div>
     </AntHeader>

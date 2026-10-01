@@ -135,9 +135,9 @@ const JournalEntryForm = () => {
   ];
 
   return (
-    <div style={{ padding: 24 }}>
+    <div className="standard-page">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <Title level={2} style={{ fontFamily: "'Playfair Display', serif", color: 'var(--color-gold)', margin: 0 }}>Create Journal Entry</Title>
+        <Title level={2} style={{ margin: 0 }}>Create Journal Entry</Title>
       </div>
 
       <Form form={form} layout="vertical" onFinish={onFinish} initialValues={{ date: dayjs() }}>

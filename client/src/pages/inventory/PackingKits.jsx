@@ -56,7 +56,7 @@ export default function PackingKits() {
     { title: '', width: 110, render: (_, kit) => <Space><Button type="text" icon={<EditOutlined />} onClick={() => openKit(kit)} /><Button type="text" danger icon={<DeleteOutlined />} onClick={() => removeKit(kit)} /></Space> }
   ];
 
-  return <div style={{ padding: 24 }}>
+  return <div className="standard-page">
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'center', marginBottom: 20 }}>
       <div><Title level={2} style={{ margin: 0 }}>Packing Kits</Title><Text type="secondary">Group bottles, caps, sprays, labels and boxes by fill quantity.</Text></div>
       <Button type="primary" icon={<PlusOutlined />} onClick={() => openKit(null)}>New Kit</Button>

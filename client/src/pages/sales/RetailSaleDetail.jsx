@@ -24,7 +24,7 @@ export default function RetailSaleDetail() {
   if (!sale.id) return <Empty description="Sale not found" />;
 
   return (
-    <div style={{ padding: 24 }}>
+    <div className="standard-page">
       <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
         <Space wrap>
           <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/app/retail-sales')}>Sales</Button>

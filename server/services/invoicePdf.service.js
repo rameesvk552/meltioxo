@@ -68,15 +68,17 @@ const decodeLogo = dataUrl => {
 const createInvoicePdf = ({ sale, company }) => {
   const customer = sale.customer || {};
   const items = sale.retailSaleItems || [];
-  const isArabelegance = /arabelegance|arabglaance/i.test(String(company?.name || ''));
+  const isArabelegance = /arabelegance|arabglance|arabglaance/i.test(String(company?.name || ''));
   const companyAddress = escapePdfText(company?.address || '').trim();
   const extractedPhones = [...companyAddress.matchAll(/(?:\+?91[ -]?)?[6-9]\d{9}/g)].map(match => match[0].trim());
   const cleanAddress = companyAddress.replace(/(?:\+?91[ -]?)?[6-9]\d{9}/g, '').replace(/[;,|]+\s*$/g, '').replace(/\s{2,}/g, ' ').trim();
   const phoneList = [company?.phone, ...extractedPhones].filter(Boolean).filter((value,index,array)=>array.indexOf(value)===index).join('  |  ');
-  const lines = [fill(0, 674, 595, 168, '0.94 0.93 1.00')];
+  const headerColor = isArabelegance ? '0.588 0.529 0.475' : '0.94 0.93 1.00';
+  const invoiceTitleColor = isArabelegance ? '1 1 1' : '0 0 0';
+  const lines = [fill(0, 674, 595, 168, headerColor)];
   const logo = decodeLogo(company?.logo_url);
   if (logo) lines.push('q 185 0 0 94 42 722 cm /Logo Do Q');
-  lines.push(textLine(472, 805, Number(sale.tax_amount||0)>0?'Tax Invoice':'Invoice', 15, true));
+  lines.push(textLine(472, 805, Number(sale.tax_amount||0)>0?'Tax Invoice':'Invoice', 15, true, invoiceTitleColor));
   lines.push(textLine(42, 654, 'Invoice No:', 11, true), textLine(112, 654, crop(sale.sale_number || sale.id, 25), 11));
   lines.push(textLine(425, 654, 'Date:', 11, true), textLine(458, 654, date(sale.sale_date), 11));
   lines.push(rule(42, 638, 553, 638));

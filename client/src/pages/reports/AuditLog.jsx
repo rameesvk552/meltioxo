@@ -60,9 +60,9 @@ export default function AuditLog() {
   ];
 
   return (
-    <div style={{ padding: 24 }}>
+    <div className="standard-page">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginBottom: 24 }}>
-        <div><Title level={2} style={{ fontFamily: "'Playfair Display', serif", color: 'var(--color-gold)', margin: 0 }}>Audit Log</Title><Text type="secondary">Who did what, when, and exactly what changed.</Text></div>
+        <div><Title level={2} style={{ margin: 0 }}>Audit Log</Title><Text type="secondary">Who did what, when, and exactly what changed.</Text></div>
         <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
       </div>
       <Card style={{ marginBottom: 16 }}>

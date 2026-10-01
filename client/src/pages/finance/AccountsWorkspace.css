@@ -75,11 +75,12 @@
 
 /* Accounting type and spacing scale: 12/13/14/18/32 px, 4/8/12/16/24/32 px. */
 .accounts-page {
+  padding: var(--page-gutter);
   --account-text-caption: 12px;
   --account-text-secondary: 13px;
   --account-text-body: 14px;
-  --account-text-section: 18px;
-  --account-text-page: 32px;
+  --account-text-section: var(--font-size-xl);
+  --account-text-page: var(--font-size-3xl);
   --account-space-1: 4px;
   --account-space-2: 8px;
   --account-space-3: 12px;

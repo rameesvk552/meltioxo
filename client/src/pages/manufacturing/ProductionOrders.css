@@ -1,11 +1,11 @@
 .production-page {
   min-height: 100%;
-  padding: 30px 36px 48px;
-  background: #f7f8fa;
+  padding: var(--page-gutter);
+  background: var(--color-bg-primary);
 }
 
 .production-page .responsive-list-page-header {
-  margin-bottom: 22px;
+  margin-bottom: var(--section-gap);
 }
 
 .production-page .responsive-list-page-header h1,

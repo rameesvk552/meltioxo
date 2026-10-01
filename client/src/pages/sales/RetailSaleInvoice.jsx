@@ -33,7 +33,7 @@ export default function RetailSaleInvoice() {
 
   const items = sale.retailSaleItems || [];
   const customer = sale.customer || {};
-  const isArabelegance = /arabelegance|arabglaance/i.test(String(company.name || ''));
+  const isArabelegance = /arabelegance|arabglance|arabglaance/i.test(String(company.name || ''));
   const hasTax = Number(sale.tax_amount || 0) > 0 || items.some(item => Number(item.tax_rate || 0) > 0 || Number(item.tax_amount || 0) > 0);
   const hasDiscount = Number(sale.discount_amount || 0) > 0 || items.some(item => Number(item.discount_pct || 0) > 0);
 
@@ -89,7 +89,7 @@ export default function RetailSaleInvoice() {
       )}
 
       <article id="retail-sale-invoice" className="invoice-sheet">
-        <header className="invoice-header">
+        <header className={`invoice-header${isArabelegance ? ' invoice-header--gold' : ''}`}>
           <section className="invoice-company">
             {company.logo_url
               ? <img src={company.logo_url} alt={`${company.name || 'Company'} logo`} />

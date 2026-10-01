@@ -167,10 +167,10 @@ export default function PurchaseOrderForm() {
   ];
 
   return (
-    <div style={{ padding: 24 }}>
+    <div className="standard-page">
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
         <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/app/purchase-orders')} />
-        <h1 style={{ fontFamily: "'Playfair Display', serif", color: 'var(--color-gold)', margin: 0 }}>Create Purchase Order</h1>
+        <h1 style={{ margin: 0 }}>Create Purchase Order</h1>
       </div>
 
       <Form form={form} layout="vertical" onFinish={onFinish}>

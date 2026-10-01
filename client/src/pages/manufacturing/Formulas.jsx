@@ -93,7 +93,7 @@ export default function Formulas() {
   const filters = <Input placeholder="Search formulas..." prefix={<SearchOutlined />} value={searchText} onChange={e => setSearchText(e.target.value)} />;
 
   return (
-    <div style={{ padding: 24 }}>
+    <div className="standard-page">
       <ResponsiveListPageHeader title="Formulas" summary={summary} filters={filters} activeFilterCount={searchText ? 1 : 0} onReset={() => setSearchText('')} primaryAction={<Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/app/formulas/new')}>New Formula</Button>} />
 
       <Row className="page-summary-inline" gutter={[16, 16]} style={{ marginBottom: 24 }}>

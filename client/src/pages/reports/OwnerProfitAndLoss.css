@@ -1,7 +1,7 @@
 .sales-report-page {
   max-width: 1680px;
   margin: 0 auto;
-  padding: 22px 24px 40px;
+  padding: var(--page-gutter);
 }
 
 .sales-report-heading {

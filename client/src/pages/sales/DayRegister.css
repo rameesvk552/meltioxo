@@ -1,4 +1,4 @@
-.day-register-page { padding: 28px; display: grid; gap: 18px; max-width: 1440px; margin: 0 auto; }
+.day-register-page { padding: var(--page-gutter); display: grid; gap: var(--section-gap); max-width: 1440px; margin: 0 auto; }
 .day-register-heading, .day-register-hero { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .day-register-heading h2 { margin: 3px 0 2px; }
 .day-register-eyebrow { color: var(--color-gold); font-size: 11px; font-weight: 800; letter-spacing: .16em; }

@@ -6,6 +6,8 @@
 
 body {
   font-family: var(--font-family);
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-body);
   background-color: var(--color-bg-primary);
   color: var(--color-text-primary);
   -webkit-font-smoothing: antialiased;
@@ -67,14 +69,33 @@ body {
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-heading);
   color: var(--color-text-primary);
-  font-weight: 700;
-  letter-spacing: -0.01em;
+  font-weight: 650;
+  line-height: var(--line-height-heading);
+  letter-spacing: -0.02em;
 }
 
 h1, h2, h3, h4, h5, h6,
 .ant-typography[class*="ant-typography-h"] {
   font-family: var(--font-family) !important;
 }
+
+/* Operational page hierarchy; keep section headings below page titles. */
+.app-content h1,
+.app-content .ant-typography.ant-typography-h2 {
+  color: var(--color-text-primary) !important;
+  font-size: var(--font-size-3xl) !important;
+  font-weight: 650 !important;
+  line-height: var(--line-height-heading) !important;
+  letter-spacing: -0.02em !important;
+}
+
+.app-content h2:not(.ant-typography-h2) { font-size: var(--font-size-xl); }
+.app-content h3 { font-size: var(--font-size-lg); }
+.app-content :is(p, .ant-typography) { line-height: var(--line-height-body); }
+.app-content .standard-page { padding: var(--page-gutter); }
+.app-content .ant-card-body { padding: var(--card-padding); }
+.app-content .ant-form-item { margin-bottom: var(--field-gap); }
+.app-content .ant-form-item-label { padding-bottom: var(--space-xs); }
 
 /* Scrollbar styling - Apple light style */
 ::-webkit-scrollbar {
@@ -94,10 +115,10 @@ h1, h2, h3, h4, h5, h6,
 
 /* Antd overrides for ivory white luxury cards */
 .ant-card {
-  background: #ffffff !important;
+  background: var(--color-bg-card) !important;
   border: 1px solid var(--color-border) !important;
-  border-radius: 14px !important;
-  box-shadow: var(--shadow-md) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-sm) !important;
   transition: border-color var(--transition-normal);
 }
 
@@ -137,7 +158,7 @@ h1, h2, h3, h4, h5, h6,
 }
 
 .ant-btn-primary:hover {
-  background: #c95442 !important;
+  background: var(--color-gold-light) !important;
   box-shadow: 0 4px 12px rgba(181, 66, 48, 0.25) !important;
 }
 
@@ -152,6 +173,22 @@ h1, h2, h3, h4, h5, h6,
   border-color: var(--color-border-hover) !important;
   color: #000000 !important;
 }
+
+.ant-btn:focus-visible,
+.ant-menu-item:focus-visible,
+.ant-menu-submenu-title:focus-visible,
+.mobile-bottom-nav__item:focus-visible {
+  outline: 2px solid var(--color-gold);
+  outline-offset: 2px;
+}
+
+.ant-table-tbody > tr > td { padding-block: 12px; }
+.ant-tag { border-radius: var(--radius-sm); font-weight: 500; }
+.ant-form-item-label > label { font-weight: 500; }
+
+.header-account-trigger { display: inline-flex; align-items: center; gap: 8px; padding: 4px; color: var(--color-text-primary); background: transparent; border: 0; border-radius: var(--radius-md); cursor: pointer; font: inherit; }
+.header-account-trigger:hover { background: var(--color-bg-secondary); }
+.header-account-trigger:focus-visible { outline: 2px solid var(--color-gold); outline-offset: 2px; }
 
 /* Input custom focus */
 .ant-input-affinity-wrapper-focused, 
@@ -245,6 +282,9 @@ h1, h2, h3, h4, h5, h6,
   :root {
     --header-height: 60px;
     --mobile-nav-height: 66px;
+    --page-gutter: 16px;
+    --section-gap: 20px;
+    --card-padding: 16px;
   }
 
   body {
@@ -265,8 +305,8 @@ h1, h2, h3, h4, h5, h6,
 
   .app-header .mobile-back-button,
   .app-header .mobile-header-search .ant-btn {
-    width: 34px;
-    min-width: 34px;
+    width: 40px;
+    min-width: 40px;
     padding: 0;
     color: var(--color-text-primary);
   }
@@ -283,23 +323,11 @@ h1, h2, h3, h4, h5, h6,
   }
 
   .app-header .header-actions {
-    gap: 4px !important;
+    gap: 8px !important;
     margin-left: 6px;
   }
 
-  .app-header .mobile-header-search {
-    width: 34px;
-    transition: width 160ms ease;
-  }
-
-  .app-header .mobile-header-search:has(.ant-input) {
-    width: min(150px, 40vw);
-  }
-
-  .app-header .mobile-header-search .ant-input-affix-wrapper {
-    min-height: 32px;
-    padding-inline: 8px;
-  }
+  .app-header .header-actions .ant-select { min-width: 96px !important; max-width: 112px; }
 
   .app-header .header-actions > .ant-dropdown-trigger .ant-avatar {
     width: 30px;
@@ -320,7 +348,7 @@ h1, h2, h3, h4, h5, h6,
   /* Page components use inline desktop padding. Important is deliberate here so
      they all share one mobile gutter without duplicating page-specific code. */
   .app-content > div {
-    padding: 20px 16px !important;
+    padding: var(--section-gap) var(--page-gutter) !important;
   }
 
   .app-content > div > div[style*="justify-content: space-between"] {
@@ -335,21 +363,20 @@ h1, h2, h3, h4, h5, h6,
   }
 
   .app-content h1,
-  .app-content .ant-typography.ant-typography-h2,
-  .app-content h2 {
+  .app-content .ant-typography.ant-typography-h2 {
     font-size: 22px !important;
     line-height: 1.25 !important;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow-wrap: anywhere;
   }
+
+  .app-content h2:not(.ant-typography-h2) { font-size: 18px; }
 
   .app-content .ant-card {
     border-radius: 12px !important;
   }
 
   .app-content .ant-card .ant-card-body {
-    padding: 16px !important;
+    padding: var(--card-padding) !important;
   }
 
   .app-content .ant-statistic-title,
@@ -597,8 +624,12 @@ h1, h2, h3, h4, h5, h6,
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
+  gap: 16px;
+  margin-bottom: var(--space-lg);
 }
+
+.responsive-list-page-header h1 { font-family: var(--font-family); font-size: var(--font-size-3xl); font-weight: 650; line-height: 1.2; color: var(--color-text-primary); }
+.mobile-data-list__pagination { display: flex; justify-content: center; margin-top: 16px; }
 
 .responsive-list-page-actions {
   display: flex;

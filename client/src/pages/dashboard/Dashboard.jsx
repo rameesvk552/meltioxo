@@ -1,6 +1,6 @@
 import React from 'react';
 import { Row, Col, Card, Statistic, Table, Tag, Button, Typography, List, Avatar, Empty, Progress } from 'antd';
-import { ArrowUpOutlined, BankOutlined, CreditCardOutlined, AlertOutlined, FallOutlined, PlusOutlined, ShoppingCartOutlined, WalletOutlined, WarningOutlined, DollarOutlined } from '@ant-design/icons';
+import { BankOutlined, CreditCardOutlined, AlertOutlined, FallOutlined, PlusOutlined, ShoppingCartOutlined, WalletOutlined, WarningOutlined, DollarOutlined } from '@ant-design/icons';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import useApiData from '../../hooks/useApiData';
 import { AuthContext } from '../../context/AuthContext';
@@ -37,7 +37,7 @@ function LegacyDashboard() {
   if (!ALL_DASHBOARD_WIDGET_KEYS.some(show)) {
     return (
       <div style={{ padding: 24 }}>
-        <Title level={2} style={{ color: 'var(--color-gold)', fontFamily: 'Playfair Display', marginBottom: 24 }}>Dashboard</Title>
+        <Title level={2} style={{ marginBottom: 'var(--section-gap)' }}>Dashboard</Title>
         <Card style={cardStyle}><Empty description="No dashboard widgets are assigned to your account" /></Card>
       </div>
     );
@@ -45,7 +45,7 @@ function LegacyDashboard() {
   
   return (
     <div style={{ padding: '24px' }}>
-      <Title level={2} style={{ color: 'var(--color-gold)', fontFamily: 'Playfair Display', marginBottom: 24 }}>Dashboard</Title>
+      <Title level={2} style={{ marginBottom: 'var(--section-gap)' }}>Dashboard</Title>
       
       {/* Row 1: Financial KPIs */}
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
@@ -194,10 +194,10 @@ function LegacyDashboard() {
 
 const dashboardCurrency = value => `₹${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const dashboardStatCards = [
-  { key: 'today_sales', label: 'Sales', icon: <CreditCardOutlined />, tone: 'mint' },
-  { key: 'overdue_receivables', label: 'Sales Due', icon: <WalletOutlined />, tone: 'amber' },
-  { key: 'inventory_value', label: 'Purchases', icon: <ShoppingCartOutlined />, tone: 'green' },
-  { key: 'overdue_payables', label: 'Purchases Due', icon: <BankOutlined />, tone: 'orange' },
+  { key: 'today_sales', label: "Today's sales", hint: 'Current business day', icon: <CreditCardOutlined />, tone: 'mint' },
+  { key: 'overdue_receivables', label: 'Overdue receivables', hint: 'Customer invoices past due', icon: <WalletOutlined />, tone: 'amber' },
+  { key: 'inventory_value', label: 'Inventory value', hint: 'Estimated stock value', icon: <ShoppingCartOutlined />, tone: 'green' },
+  { key: 'overdue_payables', label: 'Overdue payables', hint: 'Supplier invoices past due', icon: <BankOutlined />, tone: 'orange' },
 ];
 
 const stockAlertTabs = [
@@ -221,11 +221,17 @@ export default function Dashboard() {
   const canOpenPos = canView('pos');
   const hasRevenueFlowAccess = revenueFlowItems.some(item => show(item.key));
   const needsInventory = show('inventory_value') || show('low_stock_count') || show('low_stock_list');
-  const { data: businessDayState } = useApiData('/business-days/current', { initialData: {}, enabled: show('today_sales') });
-  const { data: rawMaterials } = useApiData('/raw-materials', { enabled: needsInventory });
-  const { data: packagingMaterials } = useApiData('/packaging-materials', { enabled: needsInventory });
-  const { data: finishedGoods } = useApiData('/finished-goods', { enabled: needsInventory });
+  const businessDayQuery = useApiData('/business-days/current', { initialData: {}, enabled: show('today_sales') });
+  const businessDayState = businessDayQuery.data;
+  const rawMaterialsQuery = useApiData('/raw-materials', { enabled: needsInventory });
+  const packagingMaterialsQuery = useApiData('/packaging-materials', { enabled: needsInventory });
+  const finishedGoodsQuery = useApiData('/finished-goods', { enabled: needsInventory });
+  const rawMaterials = rawMaterialsQuery.data;
+  const packagingMaterials = packagingMaterialsQuery.data;
+  const finishedGoods = finishedGoodsQuery.data;
   const { data: revenueFlow } = useApiData('/dashboard/revenue-flow', { initialData: {}, enabled: hasRevenueFlowAccess });
+  const receivablesQuery = useApiData('/reports/aging-receivables', { initialData: {}, enabled: show('overdue_receivables') && canView('finance.receivables') });
+  const payablesQuery = useApiData('/reports/aging-payables', { initialData: {}, enabled: show('overdue_payables') && canView('finance.payables') });
   const { data: expenses } = useApiData('/expenses', { initialData: [], enabled: canView('finance.expenses') });
   const [stockTab, setStockTab] = React.useState('raw');
   const todaysSales = Number(businessDayState.today_record?.total_sales || 0);
@@ -241,22 +247,29 @@ export default function Dashboard() {
     canView('finance.payments') && { to: '/app/payments', icon: <DollarOutlined />, label: 'Payment' },
   ].filter(Boolean);
   if (!ALL_DASHBOARD_WIDGET_KEYS.some(show)) return <div className="dashboard-page"><Card className="dashboard-empty"><Empty description="No dashboard widgets are assigned to your account" /></Card></div>;
-  const statValue = key => key === 'today_sales' ? todaysSales : key === 'inventory_value' ? inventoryValue : 0;
+  const overdueTotal = report => ['1-30', '31-60', '60+'].reduce((sum, bucket) => sum + Number(report?.[bucket] || 0), 0);
+  const statValue = key => {
+    if (key === 'today_sales') return businessDayQuery.loading || businessDayQuery.error ? '—' : todaysSales;
+    if (key === 'inventory_value') return [rawMaterialsQuery, packagingMaterialsQuery, finishedGoodsQuery].some(query => query.loading || query.error) ? '—' : inventoryValue;
+    const query = key === 'overdue_receivables' ? receivablesQuery : payablesQuery;
+    const allowed = key === 'overdue_receivables' ? canView('finance.receivables') : canView('finance.payables');
+    return !allowed || query.loading || query.error ? '—' : overdueTotal(query.data);
+  };
   return <div className="dashboard-page">
     <section className="dashboard-top-row" aria-label="Business overview">
       <div className="dashboard-stat-stack">
         <div className="dashboard-stat-grid dashboard-primary-stats">
         {dashboardStatCards.slice(0, 2).map(stat => show(stat.key) && <Card className={`dashboard-stat ${stat.tone}`} bordered={false} key={stat.key}>
           <div className="stat-topline"><span>{stat.label}</span><span className="stat-icon">{stat.icon}</span></div>
-          <Statistic value={statValue(stat.key)} precision={2} prefix="₹" />
-          <Text className="stat-hint"><ArrowUpOutlined /> For The Current Day</Text>
+          <Statistic value={statValue(stat.key)} precision={2} prefix={typeof statValue(stat.key) === 'number' ? '₹' : undefined} />
+          <Text className="stat-hint">{stat.hint}</Text>
         </Card>)}
         </div>
         <div className="dashboard-secondary-stats" aria-label="Purchase overview">
           {dashboardStatCards.slice(2).map(stat => show(stat.key) && <Card className={`dashboard-stat ${stat.tone}`} bordered={false} key={stat.key}>
             <div className="stat-topline"><span>{stat.label}</span><span className="stat-icon">{stat.icon}</span></div>
-            <Statistic value={statValue(stat.key)} precision={2} prefix="₹" />
-            <Text className="stat-hint"><ArrowUpOutlined /> For The Current Day</Text>
+            <Statistic value={statValue(stat.key)} precision={2} prefix={typeof statValue(stat.key) === 'number' ? '₹' : undefined} />
+            <Text className="stat-hint">{stat.hint}</Text>
           </Card>)}
         </div>
       </div>

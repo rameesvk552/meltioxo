@@ -80,7 +80,7 @@ export default function ProductionOrderDetail() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <Space size="middle">
           <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/app/production')} />
-          <h1 style={{ fontFamily: "'Playfair Display', serif", color: 'var(--color-gold)', margin: 0 }}>Production Order Detail</h1>
+          <h1 style={{ margin: 0 }}>Production Order Detail</h1>
         </Space>
         <Space>
           {order.status === 'Planned' && (

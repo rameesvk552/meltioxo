@@ -103,9 +103,9 @@
   max-width: none;
   min-height: calc(100dvh - 82px);
   grid-template-rows: auto auto minmax(220px, 1fr);
-  gap: 12px;
-  padding: 12px;
-  background: #fff;
+  gap: var(--space-md);
+  padding: var(--page-gutter);
+  background: var(--color-bg-primary);
   color: #253342;
   font-size: 14px;
 }
@@ -144,7 +144,7 @@
   border-radius: 9px;
   color: #a9392a;
   background: #fff;
-  font-size: 16px;
+  font-size: var(--font-size-md);
 }
 .quick-actions a:hover { border-color: #bd432f; color: #fff; background: #bd432f; }
 .quick-actions a svg { color: #bd432f; font-size: 26px; }
@@ -161,8 +161,18 @@
   .dashboard-top-row .quick-actions-panel { min-height: 280px; }
 }
 @media (max-width: 600px) {
-  .dashboard-page { min-height: 0; display: block; padding: 8px; }
+  .dashboard-page { min-height: 0; display: block; padding: var(--page-gutter); }
   .dashboard-top-row .quick-actions-panel { min-height: 280px; margin-top: 10px; }
   .dashboard-page .quick-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(86px, 1fr)); gap: 10px; }
   .dashboard-middle-grid, .dashboard-bottom-row { margin-top: 10px; }
 }
+
+/* Keep compact operational cards readable at normal zoom. */
+.dashboard-page .stat-hint,
+.dashboard-page .expense-item .ant-typography,
+.dashboard-page .stock-alert-item,
+.dashboard-page .stock-alert-tabs button,
+.dashboard-page .finance-panel-heading .ant-typography { font-size: var(--font-size-xs); line-height: 1.4; }
+.dashboard-page .dashboard-panel .ant-card-head-title,
+.dashboard-page .expense-item strong,
+.dashboard-page .stock-alert-item .ant-tag { font-size: var(--font-size-sm); }

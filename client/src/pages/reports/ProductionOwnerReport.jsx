@@ -30,7 +30,7 @@ export default function ProductionOwnerReport() {
     <div style={{ display: 'flex', gap: 16, justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', marginBottom: 20 }}>
       <div>
         <Text type="secondary" style={{ letterSpacing: 1, fontSize: 11 }}>OWNER VIEW · PRODUCTION</Text>
-        <Title level={2} style={{ margin: '4px 0', fontFamily: "'Playfair Display', serif", color: 'var(--color-gold)' }}>Batch Profit & Yield</Title>
+        <Title level={2} style={{ margin: '4px 0' }}>Batch Profit & Yield</Title>
         <Text type="secondary">A clear view of output, cost, yield and material risk.</Text>
       </div>
       <Select value={batch.id} onChange={setBatchId} style={{ width: 280, maxWidth: '100%' }} options={batches.map(item => ({ value: item.id, label: `${item.order_number} · ${item.formula}` }))} />

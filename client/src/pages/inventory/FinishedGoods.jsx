@@ -152,10 +152,10 @@ export default function FinishedGoods() {
   const filters = <><Input placeholder="Search products..." prefix={<SearchOutlined />} value={searchText} onChange={handleSearch} /><Select value={sizeFilter} onChange={handleSizeChange} options={['All Sizes', '50ml', '100ml'].map(value => ({ value, label: value }))} /><Select value={stockFilter} onChange={handleStockChange} options={['All Stock', 'Low Stock', 'Out of Stock'].map(value => ({ value, label: value }))} /></>;
 
   return (
-    <div style={{ padding: '24px' }}>
+    <div className="standard-page">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
-          <Title level={2} style={{ color: 'var(--color-gold)', fontFamily: 'Playfair Display', margin: 0 }}>Finished Goods</Title>
+          <Title level={2} style={{ margin: 0 }}>Finished Goods</Title>
         </div>
         <Space><PageDrawerControls title="Finished goods" summary={summary} filters={filters} activeFilterCount={[searchText, sizeFilter !== 'All Sizes', stockFilter !== 'All Stock'].filter(Boolean).length} onReset={() => { setSearchText(''); setSizeFilter('All Sizes'); setStockFilter('All Stock'); }} /><Button type="primary" icon={<PlusOutlined />} onClick={() => setIsModalOpen(true)}>New Product</Button></Space>
       </div>

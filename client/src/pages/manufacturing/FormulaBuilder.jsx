@@ -173,7 +173,7 @@ export default function FormulaBuilder() {
   ];
 
   return (
-    <div style={{ padding: 24 }}>
+    <div className="standard-page">
       <Form form={form} layout="vertical" onFinish={onFinish}>
         <Row gutter={24}>
           <Col xs={24} lg={16}>

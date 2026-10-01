@@ -81,10 +81,10 @@ export default function WhatsAppInvoiceReport() {
     { title: 'Reason / provider ID', key: 'details', width: 260, render: (_, row) => row.error_message || row.provider_message_id || '—' }
   ];
 
-  return <div style={{ padding: 24 }}>
+  return <div className="standard-page">
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginBottom: 24 }}>
       <div>
-        <Title level={2} style={{ fontFamily: "'Playfair Display', serif", color: 'var(--color-gold)', margin: 0 }}><WhatsAppOutlined style={{ color: '#25D366', marginRight: 8 }} />WhatsApp Invoice Report</Title>
+        <Title level={2} style={{ margin: 0 }}><WhatsAppOutlined style={{ color: '#25D366', marginRight: 8 }} />WhatsApp Invoice Report</Title>
         <Text type="secondary">Invoice delivery attempts recorded by the ERP.</Text>
       </div>
       <Space>

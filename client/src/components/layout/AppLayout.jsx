@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Layout, Drawer } from 'antd';
+import React, { Suspense, useEffect, useState } from 'react';
+import { Layout, Drawer, Spin } from 'antd';
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
@@ -13,7 +13,12 @@ const { Content, Sider } = Layout;
 export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
-  const { data: tenant } = useApiData('/tenant/settings', { initialData: {} });
+  const { data: tenant, reload: reloadTenant } = useApiData('/tenant/settings', { initialData: {} });
+
+  useEffect(() => {
+    window.addEventListener('tenant-settings-updated', reloadTenant);
+    return () => window.removeEventListener('tenant-settings-updated', reloadTenant);
+  }, [reloadTenant]);
 
   return (
     <PageTitleProvider>
@@ -57,7 +62,9 @@ export default function AppLayout() {
           setMobileDrawerOpen={setMobileDrawerOpen}
         />
         <Content className="app-content" style={{ overflowY: 'auto' }}>
-          <Outlet />
+          <Suspense fallback={<div style={{ minHeight: 240, display: 'grid', placeItems: 'center' }}><Spin tip="Loading page"><div style={{ width: 120, height: 80 }} /></Spin></div>}>
+            <Outlet />
+          </Suspense>
         </Content>
       </Layout>
       <MobileBottomNav />

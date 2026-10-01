@@ -2,15 +2,15 @@
   width: 100%;
   max-width: 1680px;
   margin: 0 auto;
-  padding: clamp(20px, 2.2vw, 32px);
+  padding: var(--page-gutter);
 }
 
 .purchases-page__header {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 24px;
+  gap: var(--section-gap);
+  margin-bottom: var(--section-gap);
 }
 
 .purchases-page__eyebrow {
@@ -26,7 +26,7 @@
 .purchases-page__header h1 {
   margin: 0;
   color: #202b37;
-  font-size: clamp(29px, 2.3vw, 38px);
+  font-size: var(--font-size-3xl);
   line-height: 1.12;
 }
 

@@ -81,7 +81,7 @@ const SalesOrders = () => {
   const summary = <Row gutter={[12, 12]}><Col span={12}><Card size="small"><Statistic title="Total Sales" value={salesRows.length} /></Card></Col><Col span={12}><Card size="small"><Statistic title="Net Revenue" value={salesRows.reduce((sum, row) => sum + row.netTotal, 0)} prefix="₹" /></Card></Col><Col span={12}><Card size="small"><Statistic title="Customers" value={new Set(salesData.map(item => item.customer_id).filter(Boolean)).size} /></Card></Col><Col span={12}><Card size="small"><Statistic title="Returns" value={salesRows.reduce((sum, row) => sum + row.returned, 0)} prefix="₹" /></Card></Col></Row>;
 
   return (
-    <div style={{ padding: 24 }}>
+    <div className="standard-page">
       <ResponsiveListPageHeader title="Sales & Invoices" summary={summary} primaryAction={<Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/app/retail-sales/new')}>New Sale</Button>} />
       
       <Row className="page-summary-inline" gutter={[16, 16]} style={{ marginBottom: 24 }}>

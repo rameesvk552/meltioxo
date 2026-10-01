@@ -1,7 +1,7 @@
 .stock-report-page {
   min-height: 100%;
-  padding: 18px;
-  background: #f5f6f8;
+  padding: var(--page-gutter);
+  background: var(--color-bg-primary);
   color: #253342;
 }
 
@@ -10,7 +10,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 18px;
+  margin-bottom: var(--section-gap);
 }
 
 .stock-report-eyebrow {

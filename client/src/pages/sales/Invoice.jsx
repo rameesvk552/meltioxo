@@ -81,14 +81,14 @@ const Invoice = () => {
               {company.logo_url
                 ? <img src={company.logo_url} alt={`${company.name || 'Company'} logo`} style={{ width: 64, height: 64, objectFit: 'contain', marginRight: 16 }} />
                 : <div style={{ width: 50, height: 50, background: 'var(--color-gold)', borderRadius: 4, marginRight: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 'bold', fontSize: 24 }}>{(company.name || 'Company').charAt(0).toUpperCase()}</div>}
-              <Title level={2} style={{ margin: 0, color: 'var(--color-gold)', fontFamily: "'Playfair Display', serif" }}>{company.name || 'Company'}</Title>
+              <Title level={2} style={{ margin: 0, color: 'var(--color-gold)' }}>{company.name || 'Company'}</Title>
             </div>
             <Text style={{ display: 'block' }}>{company.address || ''}</Text>
             <Text style={{ display: 'block' }}>Phone: {company.phone || '—'}</Text>
             {hasTax && company.tax_id && <Text style={{ display: 'block' }}>GSTIN: {company.tax_id}</Text>}
           </Col>
           <Col span={10} style={{ textAlign: 'right' }}>
-            <Title level={2} style={{ color: '#333', marginBottom: 16, fontFamily: "'Playfair Display', serif" }}>{hasTax ? 'TAX INVOICE' : 'INVOICE'}</Title>
+            <Title level={2} style={{ color: '#333', marginBottom: 16 }}>{hasTax ? 'TAX INVOICE' : 'INVOICE'}</Title>
             <Row>
               <Col span={12}><Text strong>Invoice No:</Text></Col>
               <Col span={12}><Text>{order.order_number || id}</Text></Col>

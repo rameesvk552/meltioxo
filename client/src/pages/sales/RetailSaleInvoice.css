@@ -46,6 +46,10 @@
   background: linear-gradient(112deg, #f5f4ff 0%, #e9e5ff 55%, #f8f7ff 100%);
 }
 
+.invoice-header--gold {
+  background: linear-gradient(112deg, #a99a89 0%, #968779 55%, #b0a18f 100%);
+}
+
 .invoice-company {
   display: flex;
   align-items: center;
@@ -58,12 +62,12 @@
   width: 185px;
   height: 94px;
   flex: 0 0 185px;
-  padding: 12px;
+  padding: 0;
   border: 0;
-  border-radius: 22px;
+  border-radius: 0;
   object-fit: contain;
-  background: #fff;
-  box-shadow: 0 8px 22px rgba(92, 76, 155, .08);
+  background: transparent;
+  box-shadow: none;
 }
 
 .invoice-logo {
@@ -79,6 +83,8 @@
   margin: 0 !important;
   color: #1e1b18 !important;
 }
+
+.invoice-header--gold .invoice-identity h2 { color: #fff !important; }
 
 .invoice-identity {
   display: flex;
