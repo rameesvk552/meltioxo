@@ -266,6 +266,25 @@ const addReturnSummary = sale => {
   return data;
 };
 
+const attachPayments = async (tenantId, sales) => {
+  const data = sales.map(addReturnSummary);
+  const journalIds = [...new Set(data.map(sale => sale.journal_entry_id).filter(Boolean))];
+  if (!journalIds.length) return data;
+  const payments = await db.payment.findAll({
+    where: { tenant_id: tenantId, journal_entry_id: { [Op.in]: journalIds } },
+    include: [db.paymentMethod],
+    order: [['created_at', 'ASC']]
+  });
+  const paymentsByJournal = new Map();
+  payments.forEach(payment => {
+    const row = typeof payment.toJSON === 'function' ? payment.toJSON() : payment;
+    const rows = paymentsByJournal.get(row.journal_entry_id) || [];
+    rows.push(row);
+    paymentsByJournal.set(row.journal_entry_id, rows);
+  });
+  return data.map(sale => ({ ...sale, payments: paymentsByJournal.get(sale.journal_entry_id) || [] }));
+};
+
 const enrichSaleMaterials = async (tenantId, sale) => {
   const data = addReturnSummary(sale);
   const orders = (data.retailSaleItems || []).map(item => item.productionOrder).filter(Boolean);
@@ -302,7 +321,7 @@ const enrichSaleMaterials = async (tenantId, sale) => {
 exports.getAll = async (req, res, next) => {
   try {
     const sales = await db.retailSale.findAll({ where: { tenant_id: req.tenantId }, include: saleListInclude, order: [['sale_date', 'DESC'], ['created_at', 'DESC']] });
-    res.json(sales.map(addReturnSummary));
+    res.json(await attachPayments(req.tenantId, sales));
   } catch (error) { next(error); }
 };
 

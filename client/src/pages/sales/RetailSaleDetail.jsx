@@ -9,6 +9,14 @@ import { AuthContext } from '../../context/AuthContext';
 
 const { Title, Text } = Typography;
 const money = value => `₹${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const paymentLabel = sale => {
+  const payments = (sale.payments || []).filter(payment => Number(payment.amount || 0) > 0);
+  if (payments.length > 1) {
+    return payments.map(payment => `${payment.paymentMethod?.name || payment.payment_mode || 'Payment'} ${money(payment.amount)}`).join(' + ');
+  }
+  if (payments.length === 1) return payments[0].paymentMethod?.name || payments[0].payment_mode || 'Payment';
+  return sale.paymentAccount?.name || sale.paymentMethod?.name || '—';
+};
 
 export default function RetailSaleDetail() {
   const { id } = useParams();
@@ -43,7 +51,7 @@ export default function RetailSaleDetail() {
         <Descriptions column={{ xs: 1, sm: 2, lg: 4 }}>
           <Descriptions.Item label="Date">{sale.sale_date}</Descriptions.Item>
           <Descriptions.Item label="Customer">{sale.customer?.name || 'Walk-in customer'}</Descriptions.Item>
-          <Descriptions.Item label="Received in">{sale.paymentAccount?.name || sale.paymentMethod?.name || '—'}</Descriptions.Item>
+          <Descriptions.Item label="Received in">{paymentLabel(sale)}</Descriptions.Item>
           <Descriptions.Item label="Total">{money(sale.total_amount)}</Descriptions.Item>
           <Descriptions.Item label="Returned">{money(sale.returned_amount)}</Descriptions.Item>
           <Descriptions.Item label="Net sale">{money(Number(sale.total_amount || 0) - Number(sale.returned_amount || 0))}</Descriptions.Item>

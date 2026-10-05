@@ -6,6 +6,16 @@ import useApiData from '../../hooks/useApiData';
 import ResponsiveDataTable from '../../components/common/ResponsiveDataTable';
 import ResponsiveListPageHeader from '../../components/common/ResponsiveListPageHeader';
 
+const money = value => `₹${Number(value || 0).toLocaleString('en-IN')}`;
+const paymentLabel = sale => {
+  const payments = (sale.payments || []).filter(payment => Number(payment.amount || 0) > 0);
+  if (payments.length > 1) {
+    return payments.map(payment => `${payment.paymentMethod?.name || payment.payment_mode || 'Payment'} ${money(payment.amount)}`).join(' + ');
+  }
+  if (payments.length === 1) return payments[0].paymentMethod?.name || payments[0].payment_mode || 'Payment';
+  return sale.paymentAccount?.name || sale.paymentMethod?.name || 'Cash / Bank';
+};
+
 const SalesOrders = () => {
   const navigate = useNavigate();
   const { data: salesData, loading } = useApiData('/retail-sales');
@@ -14,7 +24,7 @@ const SalesOrders = () => {
     customer: item.customer?.name || item.customer_id || '—',
     customerPhone: item.customer?.phone || '',
     date: item.sale_date,
-    deliveryDate: item.paymentAccount?.name || 'Cash / Bank',
+    deliveryDate: paymentLabel(item),
     items: item.retailSaleItems?.length || 0,
     total: Number(item.total_amount || 0),
     returned: Number(item.returned_amount || 0),
