@@ -134,6 +134,7 @@ const createJournalEntry = async (tenantId, data, transaction) => {
     entry_date: entryDate,
     reference_type: data.reference_type || 'manual_journal',
     reference_id: data.reference_id || null,
+    branch_id: data.branch_id || null,
     narration: String(data.narration || '').trim() || 'Journal entry',
     total_debit: validated.totalDebit,
     total_credit: validated.totalCredit,
