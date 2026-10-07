@@ -21,6 +21,16 @@ const money = value => new Intl.NumberFormat('en-IN', {
 const quantity = value => Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 4 });
 const percentage = value => `${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 1 })}%`;
 const dateLabel = value => value ? dayjs(value).format('DD MMM YYYY') : '—';
+const salePaymentLabel = sale => {
+  const payments = (sale.payments || []).filter(payment => Number(payment.amount || 0) > 0);
+  if (payments.length) {
+    return payments.map(payment => {
+      const method = payment.paymentMethod?.name || payment.payment_mode?.replaceAll('_', ' ') || 'Payment';
+      return `${method} ${money(payment.amount)}`;
+    }).join(' + ');
+  }
+  return sale.paymentMethod?.name || sale.paymentAccount?.name || '—';
+};
 
 const presetRange = preset => {
   const today = dayjs();
@@ -165,7 +175,7 @@ function InvoiceDrawer({ invoiceId, onClose }) {
       <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }} style={{ marginBottom: 18 }}>
         <Descriptions.Item label="Date">{dateLabel(sale.sale_date)}</Descriptions.Item>
         <Descriptions.Item label="Customer">{sale.customer?.name || 'Walk-in customer'}</Descriptions.Item>
-        <Descriptions.Item label="Payment">{sale.paymentMethod?.name || sale.paymentAccount?.name || '—'}</Descriptions.Item>
+        <Descriptions.Item label="Payment">{salePaymentLabel(sale)}</Descriptions.Item>
         <Descriptions.Item label="Status"><Tag color={sale.return_status === 'none' ? 'success' : 'orange'}>{sale.return_status === 'none' ? 'POSTED' : `${String(sale.return_status).toUpperCase()} RETURN`}</Tag></Descriptions.Item>
       </Descriptions>
 
