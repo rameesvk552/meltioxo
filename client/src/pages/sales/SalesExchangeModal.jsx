@@ -15,6 +15,8 @@ export default function SalesExchangeModal({ sale, open, onClose, onCreated }) {
   const [form] = Form.useForm();
   const navigate = useNavigate();
   const productsQuery = useApiData('/finished-goods');
+  const packagingQuery = useApiData('/packaging-materials');
+  const settingsQuery = useApiData('/tenant/settings', { initialData: {} });
   const methodsQuery = useApiData('/accounts/payment-methods');
   const [returnRows, setReturnRows] = useState([]);
   const [replacements, setReplacements] = useState([newReplacement()]);
@@ -23,6 +25,13 @@ export default function SalesExchangeModal({ sale, open, onClose, onCreated }) {
   const products = useMemo(() => productsQuery.data
     .filter(item => item.is_active !== false && item.product?.is_active !== false)
     .map(item => ({ ...item, price: Number(item.selling_price || 0), tax: Number(item.tax_rate || 0) })), [productsQuery.data]);
+  const packagingMaterials = useMemo(() => packagingQuery.data
+    .filter(item => item.is_active !== false)
+    .map(item => ({ ...item, price: Number(item.selling_price || 0), tax: Number(item.tax_rate || 0) })), [packagingQuery.data]);
+  const replacementOptions = useMemo(() => [
+    ...products.map(item => ({ value: `product:${item.id}`, label: `${item.sku ? `${item.sku} · ` : ''}${item.product?.name || item.name} · ${item.size_label || item.name}` })),
+    ...(settingsQuery.data.packaging_material_sales_enabled ? packagingMaterials.map(item => ({ value: `packaging:${item.id}`, label: `${item.sku ? `${item.sku} · ` : ''}${item.name} · Packing material` })) : [])
+  ], [packagingMaterials, products, settingsQuery.data.packaging_material_sales_enabled]);
   const saleItems = useMemo(() => new Map((sale.retailSaleItems || []).map(item => [item.id, item])), [sale.retailSaleItems]);
 
   useEffect(() => {
@@ -51,7 +60,8 @@ export default function SalesExchangeModal({ sale, open, onClose, onCreated }) {
   const updateReturn = (id, changes) => setReturnRows(current => current.map(row => row.id === id ? { ...row, ...changes } : row));
   const updateReplacement = (key, changes) => setReplacements(current => current.map(row => row.key === key ? { ...row, ...changes } : row));
   const chooseProduct = (key, productId) => {
-    const product = products.find(item => item.id === productId);
+    const [type, id] = String(productId || '').split(':');
+    const product = (type === 'packaging' ? packagingMaterials : products).find(item => item.id === id);
     if (!product) return;
     const minimum = 1;
     updateReplacement(key, { product: productId, quantity: minimum, unit_price: product.price, tax_rate: product.tax });
@@ -76,7 +86,10 @@ export default function SalesExchangeModal({ sale, open, onClose, onCreated }) {
       if (replacementTotal <= 0) return message.error('Replacement sale total must be greater than zero.');
       setSaving(true);
 
-      const replacementItems = selectedReplacements.map(row => ({ finished_good_id: row.product, quantity: Number(row.quantity), unit_price: Number(row.unit_price), discount_pct: 0, tax_rate: Number(row.tax_rate || 0) }));
+      const replacementItems = selectedReplacements.map(row => {
+        const [type, id] = String(row.product).split(':');
+        return { ...(type === 'packaging' ? { packaging_material_id: id } : { finished_good_id: id }), quantity: Number(row.quantity), unit_price: Number(row.unit_price), discount_pct: 0, tax_rate: Number(row.tax_rate || 0) };
+      });
       const { data: preview } = await client.post('/retail-sales/preview', { items: replacementItems });
       let allowNegativeMaterials = false;
       if (preview.requires_negative_confirmation) {
@@ -123,8 +136,8 @@ export default function SalesExchangeModal({ sale, open, onClose, onCreated }) {
     { title: 'Inventory', width: 130, render: (_, row) => <Checkbox checked={row.restock} disabled={!Number(row.quantity)} onChange={event => updateReturn(row.id, { restock: event.target.checked })}>Restock</Checkbox> }
   ];
   const replacementColumns = [
-    { title: 'Replacement product', render: (_, row) => <Select showSearch optionFilterProp="label" value={row.product} placeholder="Search product / SKU" loading={productsQuery.loading} onChange={value => chooseProduct(row.key, value)} style={{ width: '100%' }} options={products.map(product => ({ value: product.id, label: `${product.sku ? `${product.sku} · ` : ''}${product.product?.name || product.name} · ${product.size_label || product.name}` }))} /> },
-    { title: 'Quantity', width: 135, render: (_, row) => { const product = products.find(item => item.id === row.product); const measured = Boolean(product?.product?.sell_by_measurement); return <InputNumber min={measured ? 0.0001 : 1} step={1} precision={measured ? 4 : 0} value={row.quantity} onChange={value => updateReplacement(row.key, { quantity: Number(value || 0) })} style={{ width: '100%' }} />; } },
+    { title: 'Replacement item', render: (_, row) => <Select showSearch optionFilterProp="label" value={row.product} placeholder="Search product or packing material" loading={productsQuery.loading || packagingQuery.loading} onChange={value => chooseProduct(row.key, value)} style={{ width: '100%' }} options={replacementOptions} /> },
+    { title: 'Quantity', width: 135, render: (_, row) => { const [type, id] = String(row.product || '').split(':'); const product = (type === 'packaging' ? packagingMaterials : products).find(item => item.id === id); const measured = type !== 'packaging' && Boolean(product?.product?.sell_by_measurement); return <InputNumber min={measured ? 0.0001 : 1} step={1} precision={measured ? 4 : 0} value={row.quantity} onChange={value => updateReplacement(row.key, { quantity: Number(value || 0) })} style={{ width: '100%' }} />; } },
     { title: 'Unit price', width: 145, render: (_, row) => <InputNumber min={0} precision={2} prefix="₹" value={row.unit_price} onChange={value => updateReplacement(row.key, { unit_price: Number(value || 0) })} style={{ width: '100%' }} /> },
     { title: '', width: 46, render: (_, row) => <Button type="text" danger icon={<DeleteOutlined />} disabled={replacements.length === 1} onClick={() => setReplacements(current => current.filter(item => item.key !== row.key))} /> }
   ];
