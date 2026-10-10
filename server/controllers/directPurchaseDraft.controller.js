@@ -69,7 +69,25 @@ exports.getById = async (req, res, next) => {
   try {
     const invoice = await purchaseInvoice.findOne({ where: directPurchaseWhere(req), include: invoiceIncludes });
     if (!invoice) throw new AppError('Purchase not found', 404);
-    res.status(200).json(invoice);
+    const allocations = await paymentAllocation.findAll({
+      where: { invoice_type: 'purchase', invoice_id: invoice.id },
+      attributes: ['payment_id', 'allocated_amount']
+    });
+    const payments = allocations.length
+      ? await payment.findAll({
+        where: { id: allocations.map(row => row.payment_id), tenant_id: req.tenantId },
+        attributes: ['id', 'payment_mode', 'amount', 'payment_date'],
+        include: [{ model: db.paymentMethod, attributes: ['name'] }]
+      })
+      : [];
+    const allocationByPayment = new Map(allocations.map(row => [row.payment_id, Number(row.allocated_amount || 0)]));
+    res.status(200).json({
+      ...invoice.toJSON(),
+      payments: payments.map(row => ({
+        ...row.toJSON(),
+        allocated_amount: allocationByPayment.get(row.id) ?? Number(row.amount || 0)
+      }))
+    });
   } catch (error) { next(error); }
 };
 

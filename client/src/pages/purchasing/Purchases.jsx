@@ -320,6 +320,7 @@ export default function Purchases() {
   </Space> : null;
   const columns = [{ title: 'Invoice #', dataIndex: 'invoice_number' }, { title: 'Supplier', render: (_, purchase) => purchase.supplier?.name || '—' }, { title: 'Date', dataIndex: 'invoice_date', render: value => value ? dayjs(value).format('DD MMM YYYY') : '—' }, { title: 'Amount', dataIndex: 'total_amount', align: 'right', render: value => formatMoney(value) }, { title: 'Status', dataIndex: 'status', render: statusTag }, { title: 'Actions', width: 300, render: (_, purchase) => <Space size="small"><Button size="small" icon={<EyeOutlined />} onClick={() => viewPurchase(purchase)}>View</Button>{purchase.status === 'draft' && draftActions(purchase)}<Button size="small" danger icon={<DeleteOutlined />} onClick={() => deletePurchase(purchase)}>Delete</Button></Space> }];
   const viewItems = viewingPurchase?.purchaseReceipt?.purchaseReceiptItems || [];
+  const viewPaymentModes = [...new Set((viewingPurchase?.payments || []).map(payment => payment.paymentMethod?.name || payment.payment_mode).filter(Boolean))];
   const viewSubtotal = viewItems.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unit_price || 0), 0);
   const viewColumns = [
     { title: 'Item', render: (_, item) => materialName(item) },
@@ -426,6 +427,7 @@ export default function Purchases() {
           <div><span>Invoice date</span><strong>{viewingPurchase.invoice_date ? dayjs(viewingPurchase.invoice_date).format('DD MMM YYYY') : '—'}</strong></div>
           <div><span>Due date</span><strong>{viewingPurchase.due_date ? dayjs(viewingPurchase.due_date).format('DD MMM YYYY') : '—'}</strong></div>
           <div><span>Status</span>{statusTag(viewingPurchase.status)}</div>
+          <div><span>Payment mode</span><strong>{viewPaymentModes.length ? viewPaymentModes.join(' · ') : '—'}</strong></div>
         </div>
         <Table className="purchase-view__items" rowKey="id" dataSource={viewItems} columns={viewColumns} pagination={false} size="small" scroll={{ x: 680 }} />
         <div className="purchase-view__totals"><span>Subtotal {formatMoney(viewSubtotal)}</span><span>Discount −{formatMoney(viewingPurchase.discount_amount)}</span><span>GST {formatMoney(Number(viewingPurchase.total_amount) - viewSubtotal + Number(viewingPurchase.discount_amount || 0))}</span><strong>Total {formatMoney(viewingPurchase.total_amount)}</strong></div>
