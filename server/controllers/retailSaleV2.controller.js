@@ -335,6 +335,11 @@ exports.getById = async (req, res, next) => {
       include: [db.paymentMethod],
       order: [['created_at', 'ASC']]
     }) : [];
+    const allocations=await db.paymentAllocation.findAll({where:{invoice_type:'retail_sale',invoice_id:sale.id}});
+    const allocated=allocations.reduce((sum,row)=>sum+number(row.allocated_amount),0);
+    const originalPaid=data.payments.reduce((sum,row)=>sum+number(row.amount),0);
+    data.paid_amount=accounting.money(allocations.length?allocated:originalPaid);
+    data.balance_due=accounting.money(Math.max(0,number(sale.total_amount)-data.paid_amount));
     res.json(data);
   } catch (error) { next(error); }
 };
@@ -525,6 +530,10 @@ const saveSale = async (req, res, next, isEdit = false) => {
   const transaction = await db.sequelize.transaction();
   try {
     const { items = [], customer_id = null, notes, allow_negative_materials = false, exchange_return_id = null, order_discount_amount } = req.body;
+    const creditSale=Boolean(req.body.credit_sale);
+    const tenantSettings=await db.tenant.findByPk(req.tenantId,{transaction});
+    if(creditSale&&!tenantSettings?.credit_sales_enabled)throw new AppError('Credit sales are not enabled in Settings',403);
+    if(creditSale&&!customer_id)throw new AppError('Select a customer for a credit sale',400);
     const existingSale = isEdit ? await db.retailSale.findOne({ where: { id: req.params.id, tenant_id: req.tenantId }, transaction, lock: transaction.LOCK.UPDATE }) : null;
     if (isEdit && !existingSale) throw new AppError('Sale not found', 404);
     if (isEdit) await removeSaleDataForRebuild(req.tenantId, existingSale, transaction);
@@ -568,12 +577,16 @@ const saveSale = async (req, res, next, isEdit = false) => {
     });
     subtotal = accounting.money(subtotal); discountAmount = accounting.money(discountAmount); taxAmount = accounting.money(taxAmount);
     const totalAmount = accounting.money(subtotal - discountAmount + taxAmount);
-    const paymentSplits = await accounting.resolvePaymentSplits(req.tenantId, req.body, totalAmount, transaction);
-    const primaryPayment = paymentSplits[0];
+    const paymentSplits=await accounting.resolvePaymentSplits(req.tenantId,req.body,totalAmount,transaction,{allowPartial:creditSale});
+    const paidAmount=accounting.money(paymentSplits.reduce((sum,row)=>sum+row.amount,0));
+    const balanceDue=accounting.money(totalAmount-paidAmount);
+    const customerLedger=creditSale?await accounting.getCustomerLedger(req.tenantId,customer_id,transaction):null;
+    if(creditSale&&balanceDue>0){const customer=await db.customer.findOne({where:{id:customer_id,tenant_id:req.tenantId},transaction});const limit=number(customer?.credit_limit);if(limit>0&&number(customerLedger.balance)+balanceDue>limit+0.005)throw new AppError("This sale exceeds the customer's available credit limit of "+limit.toFixed(2),409);}
+    const primaryPayment=paymentSplits[0]||null;
     const sale = isEdit
       ? existingSale
-      : await db.retailSale.create({ tenant_id: req.tenantId, business_day_id: businessDay.id, exchange_return_id, sale_number: saleNumber, sale_date, customer_id, payment_account_id: primaryPayment.method.account.id, payment_method_id: primaryPayment.method.id, notes, subtotal, discount_amount: discountAmount, tax_amount: taxAmount, total_amount: totalAmount, created_by: req.user.id }, { transaction });
-    if (isEdit) await sale.update({ customer_id, payment_account_id: primaryPayment.method.account.id, payment_method_id: primaryPayment.method.id, notes, subtotal, discount_amount: discountAmount, tax_amount: taxAmount, total_amount: totalAmount, cogs_amount: 0, journal_entry_id: null, cogs_journal_id: null }, { transaction });
+      : await db.retailSale.create({ tenant_id: req.tenantId, business_day_id: businessDay.id, exchange_return_id, sale_number: saleNumber, sale_date, customer_id, payment_account_id: primaryPayment?.method.account.id || customerLedger.id, payment_method_id: primaryPayment?.method.id || null, notes, subtotal, discount_amount: discountAmount, tax_amount: taxAmount, total_amount: totalAmount, created_by: req.user.id }, { transaction });
+    if (isEdit) await sale.update({ customer_id, payment_account_id: primaryPayment?.method.account.id || customerLedger?.id || existingSale.payment_account_id, payment_method_id: primaryPayment?.method.id || null, notes, subtotal, discount_amount: discountAmount, tax_amount: taxAmount, total_amount: totalAmount, cogs_amount: 0, journal_entry_id: null, cogs_journal_id: null }, { transaction });
     let cogs = 0, rawInventoryCost = 0, packagingInventoryCost = 0, finishedInventoryCost = 0;
     for (const line of calculated) {
       const variant = line.item_type === 'packaging_material' ? null : await loadVariant(req.tenantId, line.finished_good_id, transaction);
@@ -638,6 +651,7 @@ const saveSale = async (req, res, next, isEdit = false) => {
     ], transaction);
     const revenueJournal = await accounting.createAndPost(req.tenantId, { entry_date: sale_date, reference_type: 'retail_sale_revenue', reference_id: sale.id, narration: 'Retail sale revenue', lines: [
       ...paymentSplits.map(split => ({ account_id: split.method.account.id, debit_amount: split.amount, description: `${split.method.name} received for ${sale.sale_number}` })),
+      ...(balanceDue>0?[{account_id:customerLedger.id,debit_amount:balanceDue,description:`Credit balance for ${sale.sale_number}`}]:[]),
       ...(discountAmount ? [{ account_id: accounts[ACCOUNT_CODES.DISCOUNT_ALLOWED].id, debit_amount: discountAmount, description: `Discount allowed on ${sale.sale_number}` }] : []),
       { account_id: accounts[ACCOUNT_CODES.SALES_REVENUE].id, credit_amount: subtotal, description: `Retail sale ${sale.sale_number}` },
       ...(taxAmount ? [{ account_id: accounts[ACCOUNT_CODES.TAX_PAYABLE].id, credit_amount: taxAmount, description: `Tax on ${sale.sale_number}` }] : [])
@@ -652,7 +666,9 @@ const saveSale = async (req, res, next, isEdit = false) => {
     const paymentSequence = await db.payment.count({ where: { tenant_id: req.tenantId, payment_type: 'incoming' }, transaction }) + 1;
     const paymentRecords = [];
     for (const [index, split] of paymentSplits.entries()) {
-      paymentRecords.push(await db.payment.create({ tenant_id: req.tenantId, business_day_id: businessDay.id, payment_number: `PAY-IN-${new Date(sale_date).getFullYear()}-${String(paymentSequence + index).padStart(4, '0')}`, payment_type: 'incoming', party_type: 'customer', party_id: customer_id, payment_method_id: split.method.id, payment_mode: accounting.paymentModeForType(split.method.method_type), bank_account_id: split.method.account.id, amount: split.amount, payment_date: sale_date, notes: `Retail sale ${sale.sale_number}`, journal_entry_id: revenueJournal.id, created_by: req.user.id }, { transaction }));
+      const paymentRecord=await db.payment.create({tenant_id:req.tenantId,business_day_id:businessDay.id,payment_number:`PAY-IN-${new Date(sale_date).getFullYear()}-${String(paymentSequence+index).padStart(4,'0')}`,payment_type:'incoming',party_type:'customer',party_id:customer_id,payment_method_id:split.method.id,payment_mode:accounting.paymentModeForType(split.method.method_type),bank_account_id:split.method.account.id,amount:split.amount,payment_date:sale_date,notes:`Retail sale ${sale.sale_number}`,journal_entry_id:revenueJournal.id,created_by:req.user.id},{transaction});
+      paymentRecords.push(paymentRecord);
+      if(creditSale)await db.paymentAllocation.create({payment_id:paymentRecord.id,invoice_type:'retail_sale',invoice_id:sale.id,allocated_amount:split.amount},{transaction});
     }
     await sale.update({ cogs_amount: cogs, journal_entry_id: revenueJournal.id, cogs_journal_id: cogsJournal?.id || null }, { transaction });
     await transaction.commit();
@@ -665,7 +681,7 @@ const saveSale = async (req, res, next, isEdit = false) => {
     const whatsapp = isEdit ? { attempted: false, status: 'not_sent_for_update' } : await invoiceWhatsapp.sendInvoice({ sale: sale.toJSON(), customer, tenant });
     if (!isEdit) await invoiceWhatsapp.recordDeliveryAttempt({ sale: sale.toJSON(), customer, tenant, result: whatsapp });
     if (whatsapp.status === 'failed') console.error(`Invoice WhatsApp send failed for ${sale.sale_number}: ${whatsapp.reason}`);
-    res.status(isEdit ? 200 : 201).json({ ...sale.toJSON(), payment_id: paymentRecords[0].id, payment_ids: paymentRecords.map(record => record.id), whatsapp });
+    res.status(isEdit ? 200 : 201).json({ ...sale.toJSON(), paid_amount: paidAmount, balance_due: balanceDue, payment_id: paymentRecords[0]?.id || null, payment_ids: paymentRecords.map(record => record.id), whatsapp });
   } catch (error) {
     if (!transaction.finished) await transaction.rollback();
     next(error);

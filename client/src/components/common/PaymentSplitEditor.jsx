@@ -7,7 +7,7 @@ const cents = value => Math.round(Number(value || 0) * 100);
 const amount = centsValue => centsValue / 100;
 const newKey = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-export default function PaymentSplitEditor({ paymentMethods, total, value, onChange, compact = false, quick = false, cashTendered = 0, onCashTenderedChange }) {
+export default function PaymentSplitEditor({ paymentMethods, total, value, onChange, compact = false, quick = false, cashTendered = 0, onCashTenderedChange, allowPartial = false }) {
   const totalCents = cents(total);
   const [multiPayOpen, setMultiPayOpen] = useState(false);
   const findQuickMethod = (type, name) => paymentMethods.find(method => String(method.method_type || '').toUpperCase() === type)
@@ -26,7 +26,8 @@ export default function PaymentSplitEditor({ paymentMethods, total, value, onCha
 
   useEffect(() => {
     onChange(current => {
-      if (!current.length) return [{ key: newKey(), payment_method_id: defaultMethodId, amount: amount(totalCents) }];
+      if (!current.length) return [{ key: newKey(), payment_method_id: defaultMethodId, amount: allowPartial ? 0 : amount(totalCents) }];
+      if (allowPartial) return current;
       if (current.length === 1) {
         const methodId = current[0].payment_method_id || defaultMethodId;
         if (methodId === current[0].payment_method_id && cents(current[0].amount) === totalCents) return current;
@@ -34,7 +35,7 @@ export default function PaymentSplitEditor({ paymentMethods, total, value, onCha
       }
       return current;
     });
-  }, [defaultMethodId, onChange, totalCents]);
+  }, [allowPartial, defaultMethodId, onChange, totalCents]);
 
   useEffect(() => {
     if (value.length > 1) setMultiPayOpen(true);
@@ -128,13 +129,13 @@ export default function PaymentSplitEditor({ paymentMethods, total, value, onCha
               value={row.amount}
               onChange={nextValue => updateQuickAmount(row, nextValue)}
             />
-            <Button size="small" type="link" onClick={() => fillBalance(row.key)}>Balance</Button>
+            {!allowPartial && <Button size="small" type="link" onClick={() => fillBalance(row.key)}>Balance</Button>}
           </div>;
         })}
         <div className="payment-quick-status">
           {remainingCents === 0
             ? <Tag color="success">Fully allocated</Tag>
-            : <Tag color="error">{remainingCents > 0 ? 'Remaining' : 'Over'} ₹{amount(Math.abs(remainingCents)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Tag>}
+            : <Tag color={allowPartial && remainingCents > 0 ? 'gold' : 'error'}>{remainingCents > 0 ? (allowPartial ? 'Credit balance' : 'Remaining') : 'Over'} ₹{amount(Math.abs(remainingCents)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Tag>}
         </div>
       </div>}
 

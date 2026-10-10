@@ -154,6 +154,11 @@
 .pos-total { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 12px 0; padding: 11px 9px; border-radius: 7px; background: #2b201e; color: #fff; }
 .pos-total span { font-size: 10px; }
 .pos-total strong { font-size: 18px; letter-spacing: -.03em; }
+.pos-credit-toggle, .pos-credit-partial { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 12px; margin: 12px 0; border: 1px solid #e8e1d8; border-radius: 12px; background: #fffdf9; }
+.pos-credit-toggle span { display: grid; gap: 3px; }
+.pos-credit-toggle strong, .pos-credit-partial span { color: #30271c; font-size: 12px; }
+.pos-credit-toggle small { color: #8a8178; font-size: 10px; }
+.pos-credit-partial { margin-top: 0; }
 
 .pos-payment.ant-form-item { margin-bottom: 8px; }
 .pos-payment .ant-form-item-label { padding: 0 0 2px; }

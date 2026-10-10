@@ -113,7 +113,8 @@ const CompanySettings = () => {
       measuredPackagingRequired: tenant.measured_packaging_required !== false,
       measuredPackagingAutoSelect: tenant.measured_packaging_auto_select !== false,
       showFormulaInSales: Boolean(tenant.show_formula_in_sales),
-      packagingMaterialSalesEnabled: Boolean(tenant.packaging_material_sales_enabled)
+      packagingMaterialSalesEnabled: Boolean(tenant.packaging_material_sales_enabled),
+      creditSalesEnabled: Boolean(tenant.credit_sales_enabled)
     });
   }, [tenant, formCompany, formPrefs]);
 
@@ -171,7 +172,8 @@ const CompanySettings = () => {
         measured_packaging_required: Boolean(values.measuredPackagingRequired),
         measured_packaging_auto_select: Boolean(values.measuredPackagingAutoSelect),
         show_formula_in_sales: Boolean(values.showFormulaInSales),
-        packaging_material_sales_enabled: Boolean(values.packagingMaterialSalesEnabled)
+        packaging_material_sales_enabled: Boolean(values.packagingMaterialSalesEnabled),
+        credit_sales_enabled: Boolean(values.creditSalesEnabled)
       });
       await reloadTenant();
       message.success('Preferences saved successfully.');
@@ -405,6 +407,12 @@ const CompanySettings = () => {
           <Card size="small" title="Packing-material sales" style={{ marginTop: 16 }}>
             <Typography.Text type="secondary">Allow packing materials such as bottles, caps, and boxes to be added directly to retail sales. Stock and packaging inventory value are deducted when sold.</Typography.Text>
             <Form.Item name="packagingMaterialSalesEnabled" label="Allow packing materials in Sales" valuePropName="checked" style={{ marginTop: 16, marginBottom: 0 }}>
+              <Switch />
+            </Form.Item>
+          </Card>
+          <Card size="small" title="Customer credit sales" style={{ marginTop: 16 }}>
+            <Typography.Text type="secondary">Allow checkout to record a partial payment and post the remaining invoice balance to the customer’s receivable ledger.</Typography.Text>
+            <Form.Item name="creditSalesEnabled" label="Allow credit sales in POS" valuePropName="checked" style={{ marginTop: 16, marginBottom: 0 }}>
               <Switch />
             </Form.Item>
           </Card>

@@ -8,6 +8,18 @@ const ACCOUNT_TYPE_BASES = { asset: 1000, liability: 2000, equity: 3000, revenue
 const today = () => new Date().toISOString().slice(0, 10);
 
 const supplierLedgerName = supplier => `Vendor - ${String(supplier.name || '').trim()}`;
+const customerLedgerName = customer => 'Customer - ' + String(customer.name || '').trim();
+const ensureCustomerLedger = async (tenantId, customer, transaction) => {
+ const receivables=await db.account.findOne({where:{tenant_id:tenantId,code:ACCOUNT_CODES.AR},transaction});
+ if(!receivables) throw new AppError('Trade Receivables ledger is not configured',500);
+ if(!receivables.is_group) await receivables.update({is_group:true},{transaction});
+ let ledger=await db.account.findOne({where:{tenant_id:tenantId,customer_id:customer.id},transaction,lock:transaction?.LOCK?.UPDATE});
+ if(!ledger){const code=await generateNextAccountCode(tenantId,receivables,'asset',transaction);ledger=await db.account.create({tenant_id:tenantId,code,name:customerLedgerName(customer),customer_id:customer.id,type:'asset',parent_id:receivables.id,is_group:false,is_system:false,is_active:true},{transaction});}
+ else if(ledger.name!==customerLedgerName(customer)||ledger.parent_id!==receivables.id||ledger.type!=='asset') await ledger.update({name:customerLedgerName(customer),parent_id:receivables.id,type:'asset',is_group:false,is_active:true},{transaction});
+ return ledger;
+};
+const ensureCustomerLedgers=async(tenantId,transaction)=>{const customers=await db.customer.findAll({where:{tenant_id:tenantId},transaction,order:[['created_at','ASC']]});const ledgers=[];for(const customer of customers)ledgers.push(await ensureCustomerLedger(tenantId,customer,transaction));return ledgers;};
+const getCustomerLedger=async(tenantId,customerId,transaction)=>{const customer=await db.customer.findOne({where:{id:customerId,tenant_id:tenantId},transaction});if(!customer)throw new AppError('Customer not found',404);return ensureCustomerLedger(tenantId,customer,transaction);};
 
 const ensureSupplierLedger = async (tenantId, supplier, transaction) => {
   const creditors = await db.account.findOne({ where: { tenant_id: tenantId, code: ACCOUNT_CODES.AP }, transaction });
@@ -255,9 +267,9 @@ const resolvePaymentMethod = async (tenantId, payload = {}, transaction) => {
 // Split payments are validated in cents so Cash + UPI + Card always matches
 // the document total exactly. A missing payments array keeps older clients
 // compatible with the original single payment_method_id payload.
-const normalizePaymentSplits = (payload = {}, totalAmount) => {
+const normalizePaymentSplits = (payload = {}, totalAmount, { allowPartial = false } = {}) => {
   if (!Array.isArray(payload.payments)) return null;
-  if (!payload.payments.length) throw new AppError('Add at least one payment', 400);
+  if (!payload.payments.length && !allowPartial) throw new AppError('Add at least one payment', 400);
   const seen = new Set();
   const splits = payload.payments.map((row, index) => {
     const paymentMethodId = String(row.payment_method_id || '').trim();
@@ -270,14 +282,14 @@ const normalizePaymentSplits = (payload = {}, totalAmount) => {
   });
   const paidCents = splits.reduce((sum, row) => sum + Math.round(row.amount * 100), 0);
   const totalCents = Math.round(money(totalAmount, 'Document total') * 100);
-  if (paidCents !== totalCents) {
+  if (allowPartial ? paidCents > totalCents : paidCents !== totalCents) {
     throw new AppError(`Payment total ${(paidCents / 100).toFixed(2)} must equal document total ${(totalCents / 100).toFixed(2)}`, 400);
   }
   return splits;
 };
 
-const resolvePaymentSplits = async (tenantId, payload = {}, totalAmount, transaction) => {
-  const splits = normalizePaymentSplits(payload, totalAmount);
+const resolvePaymentSplits = async (tenantId, payload = {}, totalAmount, transaction, options = {}) => {
+  const splits = normalizePaymentSplits(payload, totalAmount, options);
   if (!splits) {
     const method = await resolvePaymentMethod(tenantId, payload, transaction);
     return [{ method, amount: money(totalAmount) }];
@@ -338,4 +350,4 @@ const reverseJournal = async (tenantId, journalId, userId, reversalDate, narrati
   return reversal;
 };
 
-module.exports = { PAYMENT_METHOD_TYPES, accountCodeRange, generateNextAccountCode, money, paymentModeForType, validateJournalLines, createJournalEntry, postJournal, generateAutoNumber, getAccountsByCode, createAndPost, getCashBankLedgers, assertCashBankLedger, ensureDefaultPaymentMethods, listPaymentMethods, getPaymentMethod, resolvePaymentMethod, normalizePaymentSplits, resolvePaymentSplits, createPaymentMethod, updatePaymentMethod, reverseJournal, ensureSupplierLedger, ensureSupplierLedgers, getSupplierLedger };
+module.exports = { PAYMENT_METHOD_TYPES, accountCodeRange, generateNextAccountCode, money, paymentModeForType, validateJournalLines, createJournalEntry, postJournal, generateAutoNumber, getAccountsByCode, createAndPost, getCashBankLedgers, assertCashBankLedger, ensureDefaultPaymentMethods, listPaymentMethods, getPaymentMethod, resolvePaymentMethod, normalizePaymentSplits, resolvePaymentSplits, createPaymentMethod, updatePaymentMethod, reverseJournal, ensureSupplierLedger, ensureSupplierLedgers, getSupplierLedger, ensureCustomerLedger, ensureCustomerLedgers, getCustomerLedger };

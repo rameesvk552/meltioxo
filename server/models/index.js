@@ -85,6 +85,8 @@ if(db.purchaseInvoice && db.supplier) db.purchaseInvoice.belongsTo(db.supplier, 
 if(db.purchaseInvoice && db.supplier) db.supplier.hasMany(db.purchaseInvoice, { foreignKey: 'supplier_id' });
 if(db.account && db.supplier) db.account.belongsTo(db.supplier, { foreignKey: 'supplier_id' });
 if(db.supplier && db.account) db.supplier.hasOne(db.account, { foreignKey: 'supplier_id', scope: { type: 'liability' }, constraints: false });
+if(db.account && db.customer) db.account.belongsTo(db.customer, { foreignKey: 'customer_id' });
+if(db.customer && db.account) db.customer.hasOne(db.account, { foreignKey: 'customer_id', scope: { type: 'asset' }, constraints: false });
 if(db.purchaseInvoice && db.purchaseReceipt) db.purchaseInvoice.belongsTo(db.purchaseReceipt, { foreignKey: 'receipt_id' });
 if(db.purchaseReceipt && db.purchaseInvoice) db.purchaseReceipt.hasOne(db.purchaseInvoice, { foreignKey: 'receipt_id' });
 

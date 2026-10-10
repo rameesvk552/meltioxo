@@ -38,6 +38,7 @@ export default function RetailSaleInvoice() {
   const hasDiscount = Number(sale.discount_amount || 0) > 0 || items.some(item => Number(item.discount_pct || 0) > 0);
 
   const handlePrint = () => printInvoice(sale.sale_number || id);
+  const handleSettle = () => navigate(`/app/payments/new?type=incoming&party_id=${sale.customer_id}&invoice_id=${sale.id}&amount=${Number(sale.balance_due || 0)}`);
 
   useEffect(() => {
     if (searchParams.get('created') !== '1' || loading || companyLoading || !sale.id || autoPrintStarted.current) return undefined;
@@ -80,12 +81,13 @@ export default function RetailSaleInvoice() {
         <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(`/app/retail-sales/${sale.id}`)}>Back to sale</Button>
         <Space wrap>
           <Button icon={<WhatsAppOutlined />} disabled={!customer.phone} onClick={handleWhatsAppShare}>WhatsApp</Button>
+          {Number(sale.balance_due || 0) > 0 && <Button type="primary" onClick={handleSettle}>Settle invoice · {money(sale.balance_due)}</Button>}
           <Button type="primary" icon={<PrinterOutlined />} onClick={handlePrint}>Print Invoice</Button>
         </Space>
       </div>
 
       {searchParams.get('created') === '1' && (
-        <Alert className="invoice-ready no-print" type="success" showIcon message="Sale completed. Your invoice is ready to print." />
+        <Alert className="invoice-ready no-print" type="success" showIcon message={Number(sale.balance_due || 0) > 0 ? 'Sale completed. The remaining balance is recorded as customer credit.' : 'Sale completed. Your invoice is ready to print.'} />
       )}
 
       <article id="retail-sale-invoice" className="invoice-sheet">
@@ -170,7 +172,10 @@ export default function RetailSaleInvoice() {
             <div><dt>Subtotal</dt><dd>{money(sale.subtotal)}</dd></div>
             {hasDiscount && <div><dt>Discount</dt><dd>− {money(sale.discount_amount)}</dd></div>}
             {hasTax && <div><dt>{company.tax_system || 'GST'}</dt><dd>{money(sale.tax_amount)}</dd></div>}
-            <div className="invoice-grand-total"><dt>Total paid</dt><dd>{money(sale.total_amount)}</dd></div>
+            <div className="invoice-grand-total"><dt>Total</dt><dd>{money(sale.total_amount)}</dd></div>
+            {Number(sale.store_credit_used || 0) > 0 && <div><dt>Store credit used</dt><dd>{money(sale.store_credit_used)}</dd></div>}
+            {Number(sale.paid_amount || 0) - Number(sale.store_credit_used || 0) > 0 && <div><dt>Amount received</dt><dd>{money(Number(sale.paid_amount || 0) - Number(sale.store_credit_used || 0))}</dd></div>}
+            {Number(sale.balance_due || 0) > 0 && <div><dt>Balance due</dt><dd>{money(sale.balance_due)}</dd></div>}
           </dl>
         </section>
 

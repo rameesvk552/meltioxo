@@ -2,7 +2,7 @@ module.exports = (sequelize, DataTypes) => {
   const PaymentAllocation = sequelize.define('paymentAllocation', {
     id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
     payment_id: { type: DataTypes.UUID },
-    invoice_type: { type: DataTypes.ENUM('purchase','sale') },
+    invoice_type: { type: DataTypes.ENUM('purchase','sale','retail_sale') },
     invoice_id: { type: DataTypes.UUID },
     allocated_amount: { type: DataTypes.DECIMAL(15,2) }
   }, {

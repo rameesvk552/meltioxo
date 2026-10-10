@@ -1,5 +1,5 @@
 ﻿import React, { useState } from 'react';
-import { Card, Row, Col, Statistic, Tag, Input, Button, Modal, Form, InputNumber, message } from 'antd';
+import { Card, Row, Col, Statistic, Tag, Input, Button, Modal, Form, InputNumber, message, Table } from 'antd';
 import { SearchOutlined, PlusOutlined, UserOutlined, GlobalOutlined, DollarOutlined } from '@ant-design/icons';
 import useApiData from '../../hooks/useApiData';
 import ResponsiveDataTable from '../../components/common/ResponsiveDataTable';
@@ -10,6 +10,9 @@ const Customers = () => {
   const [searchText, setSearchText] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [ledgerOpen, setLedgerOpen] = useState(false);
+  const [ledgerLoading, setLedgerLoading] = useState(false);
+  const [ledgerData, setLedgerData] = useState(null);
   const [form] = Form.useForm();
   const { data, loading, reload } = useApiData('/customers');
   const createCustomer = async values => {
@@ -26,11 +29,19 @@ const Customers = () => {
       setSaving(false);
     }
   };
+  const showLedger = async customer => {
+    setLedgerOpen(true);
+    setLedgerLoading(true);
+    try { const response = await client.get(`/customers/${customer.id}/ledger`); setLedgerData({ ...response.data, customer }); }
+    catch (error) { message.error(error.response?.data?.message || 'Could not load customer ledger.'); setLedgerOpen(false); }
+    finally { setLedgerLoading(false); }
+  };
   const customerRows = data.map(item => ({
     ...item,
     contact: item.contact_person || '',
     terms: item.payment_terms ? `Net ${item.payment_terms}` : '',
     outstanding: Number(item.outstanding || 0),
+    storeCredit: Number(item.store_credit_balance || 0),
     creditLimit: Number(item.credit_limit || 0),
     status: item.is_active === false ? 'Inactive' : 'Active'
   }));
@@ -54,6 +65,11 @@ const Customers = () => {
       sorter: (a, b) => a.outstanding - b.outstanding
     },
     { 
+      title: 'Store credit', align: 'right', dataIndex: 'storeCredit', key: 'storeCredit',
+      render: value => `₹${value.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+      sorter: (a, b) => a.storeCredit - b.storeCredit
+    },
+    {
       title: 'Credit Limit',
       align: 'right',
       dataIndex: 'creditLimit', 
@@ -61,6 +77,7 @@ const Customers = () => {
       render: (val) => `₹${val.toLocaleString('en-IN')}`,
       responsive: ['xl']
     },
+    { title: 'Ledger', key: 'ledger', render: (_, customer) => <Button size="small" onClick={() => showLedger(customer)}>View ledger</Button> },
     { 
       title: 'Status', 
       dataIndex: 'status', 
@@ -80,7 +97,7 @@ const Customers = () => {
     item.name.toLowerCase().includes(searchText.toLowerCase()) ||
     item.contact.toLowerCase().includes(searchText.toLowerCase())
   );
-  const summary = <Row gutter={[12, 12]}><Col span={12}><Card size="small"><Statistic title="Total Customers" value={customerRows.length} /></Card></Col><Col span={12}><Card size="small"><Statistic title="Active Customers" value={customerRows.filter(item => item.status === 'Active').length} /></Card></Col><Col span={24}><Card size="small"><Statistic title="Outstanding Receivable" value={customerRows.reduce((sum, item) => sum + item.outstanding, 0)} prefix="₹" /></Card></Col></Row>;
+  const summary = <Row gutter={[12, 12]}><Col span={12}><Card size="small"><Statistic title="Total Customers" value={customerRows.length} /></Card></Col><Col span={12}><Card size="small"><Statistic title="Active Customers" value={customerRows.filter(item => item.status === 'Active').length} /></Card></Col><Col span={12}><Card size="small"><Statistic title="Outstanding Receivable" value={customerRows.reduce((sum, item) => sum + item.outstanding, 0)} prefix="₹" /></Card></Col><Col span={12}><Card size="small"><Statistic title="Store credit owed" value={customerRows.reduce((sum, item) => sum + item.storeCredit, 0)} prefix="₹" /></Card></Col></Row>;
   const filters = <Input aria-label="Search customers" allowClear placeholder="Search customers" prefix={<SearchOutlined />} value={searchText} onChange={e => setSearchText(e.target.value)} />;
 
   return (
@@ -127,6 +144,15 @@ const Customers = () => {
           <Row gutter={16}><Col xs={24} sm={12}><Form.Item name="phone" label="Phone"><Input type="tel" autoComplete="tel" /></Form.Item></Col><Col xs={24} sm={12}><Form.Item name="email" label="Email" rules={[{ type: 'email', message: 'Enter a valid email address' }]}><Input type="email" autoComplete="email" /></Form.Item></Col></Row>
           <Row gutter={16}><Col xs={24} sm={12}><Form.Item name="payment_terms" label="Payment terms (days)"><InputNumber min={0} max={365} style={{ width: '100%' }} /></Form.Item></Col><Col xs={24} sm={12}><Form.Item name="credit_limit" label="Credit limit (₹)"><InputNumber min={0} precision={2} style={{ width: '100%' }} /></Form.Item></Col></Row>
         </Form>
+      </Modal>
+      <Modal title={`${ledgerData?.customer?.name || 'Customer'} · Ledger`} open={ledgerOpen} onCancel={() => setLedgerOpen(false)} footer={null} width={900}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}><span>Receivable balance</span><strong>₹{Number(ledgerData?.ledger?.balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></div>
+        <Table size="small" loading={ledgerLoading} rowKey="id" dataSource={ledgerData?.entries || []} pagination={{ pageSize: 8 }} scroll={{ x: 650 }} columns={[
+          { title: 'Date', dataIndex: 'date' }, { title: 'Entry', dataIndex: 'entry_number' }, { title: 'Description', dataIndex: 'description' },
+          { title: 'Debit', dataIndex: 'debit', align: 'right', render: value => `₹${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` },
+          { title: 'Credit', dataIndex: 'credit', align: 'right', render: value => `₹${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` },
+          { title: 'Balance', dataIndex: 'balance', align: 'right', render: value => `₹${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` }
+        ]} />
       </Modal>
     </div>
   );

@@ -1,9 +1,37 @@
 const db = require('../models');
 const { customer, salesOrder, salesOrderItem, salesInvoice } = db;
 const { AppError } = require('../middleware/errorHandler');
+const accounting = require('../services/accounting.service');
+const storeCredit = require('../services/storeCredit.service');
+const { Op } = require('sequelize');
 
 exports.getCustomers = async (req, res, next) => {
-  try { res.status(200).json(await customer.findAll({ where: { tenant_id: req.tenantId } })); } catch (error) { next(error); }
+  try {
+    const customers = await customer.findAll({ where: { tenant_id: req.tenantId } });
+    const ledgers = customers.length ? await db.account.findAll({ where: { tenant_id: req.tenantId, customer_id: customers.map(row => row.id) } }) : [];
+    const ledgerByCustomer = new Map(ledgers.map(row => [row.customer_id, row]));
+    const [creditsIssued, creditsUsed] = customers.length ? await Promise.all([
+      db.salesReturn.findAll({ where: { tenant_id: req.tenantId, store_credit_amount: { [Op.gt]: 0 } }, include: [{ model: db.retailSale, required: true, attributes: ['customer_id'] }], attributes: ['store_credit_amount'] }),
+      db.retailSale.findAll({ where: { tenant_id: req.tenantId, store_credit_used: { [Op.gt]: 0 } }, attributes: ['customer_id', 'store_credit_used'] })
+    ]) : [[], []];
+    const creditByCustomer = new Map();
+    creditsIssued.forEach(row => creditByCustomer.set(row.retailSale.customer_id, (creditByCustomer.get(row.retailSale.customer_id) || 0) + Number(row.store_credit_amount)));
+    creditsUsed.forEach(row => creditByCustomer.set(row.customer_id, (creditByCustomer.get(row.customer_id) || 0) - Number(row.store_credit_used)));
+    res.status(200).json(customers.map(row => ({ ...row.toJSON(), ledger: ledgerByCustomer.get(row.id) || null, outstanding: Number(ledgerByCustomer.get(row.id)?.balance || 0), store_credit_balance: accounting.money(creditByCustomer.get(row.id) || 0) })));
+  } catch (error) { next(error); }
+};
+exports.getCustomerLedger = async (req, res, next) => {
+  try {
+    const ledger = await accounting.getCustomerLedger(req.tenantId, req.params.id);
+    const lines = await db.journalEntryLine.findAll({ where: { account_id: ledger.id }, include: [{ model: db.journalEntry, where: { tenant_id: req.tenantId, status: 'posted' } }], order: [[db.journalEntry, 'entry_date', 'ASC'], ['created_at', 'ASC']] });
+    let balance = 0;
+    const entries = lines.map(line => { balance += Number(line.debit || 0) - Number(line.credit || 0); return { id: line.id, date: line.journalEntry.entry_date, entry_number: line.journalEntry.entry_number, reference_type: line.journalEntry.reference_type, reference_id: line.journalEntry.reference_id, description: line.description || line.journalEntry.narration, debit: Number(line.debit || 0), credit: Number(line.credit || 0), balance }; });
+    res.json({ ledger, entries });
+  } catch (error) { next(error); }
+};
+exports.getCustomerStoreCredit = async (req, res, next) => {
+  try { res.json({ customer_id: req.params.id, balance: await storeCredit.balance(req.tenantId, req.params.id) }); }
+  catch (error) { next(error); }
 };
 exports.getCustomerById = async (req, res, next) => {
   try { res.status(200).json(await customer.findOne({ where: { id: req.params.id, tenant_id: req.tenantId } })); } catch (error) { next(error); }

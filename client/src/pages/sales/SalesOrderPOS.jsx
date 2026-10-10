@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, Button, Card, Descriptions, Divider, Form, Input, InputNumber, Modal, Radio, Select, Space, Tag, Typography, message } from 'antd';
+import { Alert, Button, Card, Descriptions, Divider, Form, Input, InputNumber, Modal, Radio, Select, Space, Switch, Tag, Typography, message } from 'antd';
 import { ArrowLeftOutlined, CheckCircleOutlined, CreditCardOutlined, DeleteOutlined, FieldTimeOutlined, InfoCircleOutlined, LockOutlined, PlusOutlined, PrinterOutlined, SearchOutlined, ShoppingCartOutlined, UserAddOutlined, UserOutlined, WarningOutlined } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 import client from '../../api/client';
@@ -44,11 +44,15 @@ export default function SalesOrderPOS() {
   const { data: existingSale, loading: saleLoading } = useApiData(isEditing ? `/retail-sales/${editId}` : null, { initialData: {} });
   const [phone, setPhone] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const { data: storeCreditData, loading: storeCreditLoading } = useApiData(!isEditing && selectedCustomer?.id ? `/customers/${selectedCustomer.id}/store-credit` : null, { initialData: { balance: 0 } });
+  const [storeCreditRequested, setStoreCreditRequested] = useState(0);
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
   const [discount, setDiscount] = useState(0);
   const [discountMode, setDiscountMode] = useState('percentage');
   const [paymentSplits, setPaymentSplits] = useState([]);
   const [cashTendered, setCashTendered] = useState(0);
+  const [creditSale, setCreditSale] = useState(false);
+  const [collectPartial, setCollectPartial] = useState(false);
   const [confirmationOpen, setConfirmationOpen] = useState(false);
   const [packingKitModal, setPackingKitModal] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -140,11 +144,17 @@ export default function SalesOrderPOS() {
   const discountAmount = roundMoney(saleLineTotals.reduce((sum, line) => sum + line.lineDiscount, 0));
   const tax = roundMoney(saleLineTotals.reduce((sum, line) => sum + line.lineTax, 0));
   const total = roundMoney(subtotal - discountAmount + tax);
+  const availableStoreCredit = selectedCustomer && !storeCreditLoading && storeCreditData.customer_id === selectedCustomer.id ? Math.max(0, Number(storeCreditData.balance || 0)) : 0;
+  const storeCreditUsed = Math.min(Math.max(0, roundMoney(storeCreditRequested)), availableStoreCredit, total);
+  const cashDue = roundMoney(total - storeCreditUsed);
   const validPayments = paymentSplits.filter(row => row.payment_method_id && Number(row.amount) > 0);
   const paidCents = validPayments.reduce((sum, row) => sum + Math.round(Number(row.amount) * 100), 0);
   const cashMethodIds = new Set(paymentMethods.filter(method => String(method.method_type || '').toUpperCase() === 'CASH' || String(method.name || '').toLowerCase().includes('cash')).map(method => method.id));
   const cashPaymentAmount = validPayments.filter(row => cashMethodIds.has(row.payment_method_id)).reduce((sum, row) => sum + Number(row.amount || 0), 0);
   const changeAmount = Math.max(0, Number(cashTendered || 0) - cashPaymentAmount);
+  const unpaidAmount = Math.max(0, roundMoney(cashDue - paidCents / 100));
+
+  useEffect(() => { setStoreCreditRequested(0); }, [selectedCustomer?.id]);
 
   const updateProduct = (productId, key) => {
     const currentItem = items.find(item => item.key === key);
@@ -213,11 +223,15 @@ export default function SalesOrderPOS() {
       message.error(matchingKitsFor(missingKit.qty).length ? 'Select a packing kit for every measured product.' : `No packing kit supports ${quantityLabel(missingKit.qty)} ml.`);
       return false;
     }
-    if (!validPayments.length) {
+    if (creditSale && !selectedCustomer) {
+      message.error('Select a customer for a credit sale.');
+      return false;
+    }
+    if (!validPayments.length && cashDue > 0 && (!creditSale || collectPartial)) {
       message.error('Select a payment method.');
       return false;
     }
-    if (paidCents !== Math.round(total * 100)) {
+    if (creditSale ? paidCents > Math.round(cashDue * 100) : paidCents !== Math.round(cashDue * 100)) {
       message.error('Split payments must equal the total due.');
       return false;
     }
@@ -232,6 +246,8 @@ export default function SalesOrderPOS() {
     if (!validateSale()) return null;
     const response = await (isEditing ? client.put(`/retail-sales/${editId}`, {
       customer_id: selectedCustomer?.id,
+      credit_sale: creditSale,
+      store_credit_used: storeCreditUsed,
       payments: validPayments.map(row => ({ payment_method_id: row.payment_method_id, amount: row.amount })),
       allow_negative_materials: allowNegativeMaterials,
       order_discount_amount: discountMode === 'amount' ? Math.min(discountInput, subtotal) : undefined,
@@ -249,6 +265,8 @@ export default function SalesOrderPOS() {
       })),
     }) : client.post('/retail-sales', {
       customer_id: selectedCustomer?.id,
+      credit_sale: creditSale,
+      store_credit_used: storeCreditUsed,
       payments: validPayments.map(row => ({ payment_method_id: row.payment_method_id, amount: row.amount })),
       allow_negative_materials: allowNegativeMaterials,
       ...(discountMode === 'amount' ? { order_discount_amount: Math.min(discountInput, subtotal) } : {}),
@@ -381,13 +399,13 @@ export default function SalesOrderPOS() {
                 return <section className="pos-item" key={item.key}>
                   <div className="pos-item-head"><span className="pos-item-index">{index + 1}</span><strong>{selected ? (selected.product?.name || selected.name) : isPackaging ? `Packing material ${index + 1}` : `Product ${index + 1}`}</strong><Text type="secondary">{selected ? isPackaging ? `${selected.sku} · ${selected.unit || 'pcs'}` : isMeasured ? `Sold per ${unit}` : `${selected.size_label || selected.name} · ${selected.sku}` : 'Not selected'}</Text><Button type="text" danger size="small" icon={<DeleteOutlined />} disabled={items.length === 1} onClick={() => removeItem(item.key)} /></div>
                   <div className={`pos-item-grid${isMeasured ? ' is-measured' : ''}`}>
-                    <label className="pos-field pos-product-field"><span>{isPackaging ? 'Packing material / SKU' : 'Product / SKU'}</span><Select showSearch optionFilterProp="label" optionLabelProp="title" placeholder={isPackaging ? 'Search packing material or SKU' : 'Search product name, code, or SKU'} loading={isPackaging ? packagingLoading : productsLoading} notFoundContent={<span className="pos-select-empty">{isPackaging ? packagingLoading ? 'Loading packing materials…' : 'No matching packing material or SKU' : productsLoading ? 'Loading products…' : 'No matching product, code, or SKU'}</span>} value={item.product} onChange={value => updateProduct(value, item.key)}>{isPackaging ? packingMaterialsForSale.map(material => <Option key={material.id} value={material.id} label={`${material.sku || ''} ${material.name}`} title={`${material.name} · ${material.sku || 'No SKU'}`}>{material.sku ? `${material.sku} · ` : ''}{material.name} · {quantityLabel(material.current_stock)} {material.unit || 'pcs'} in stock</Option>) : products.map(product => {
+                    <label className="pos-field pos-product-field"><span>{isPackaging ? 'Packing material / SKU' : 'Product / SKU'}</span><Select showSearch optionFilterProp="label" optionLabelProp="title" placeholder={isPackaging ? 'Search packing material or SKU' : 'Search product name, code, or SKU'} loading={isPackaging ? packagingLoading : productsLoading} notFoundContent={<span className="pos-select-empty">{isPackaging ? packagingLoading ? 'Loading packing materials…' : 'No matching packing material or SKU' : productsLoading ? 'Loading products…' : 'No matching product, code, or SKU'}</span>} value={item.product} onChange={value => updateProduct(value, item.key)}>{isPackaging ? packingMaterialsForSale.map(material => <Option key={material.id} value={material.id} label={`${material.sku || ''} ${material.name}`} title={`${material.name} · ${material.sku || 'No SKU'}`}>{material.name}{material.sku ? ` · ${material.sku}` : ''} · ${quantityLabel(material.current_stock)} {material.unit || 'pcs'} in stock</Option>) : products.map(product => {
                       const productName = product.product?.name || product.name;
                       const productCode = product.product?.code || '';
                       const variantName = product.size_label || product.name;
                       const searchLabel = `${productCode} ${product.sku || ''} ${productName} ${variantName}`.trim();
                       const selectedLabel = product.product?.sell_by_measurement ? `${productName} · per ml` : `${productName} · ${variantName}`;
-                      return <Option key={product.id} value={product.id} label={searchLabel} title={selectedLabel}>{product.product?.sell_by_measurement ? `${productName} · Sold per ml${productCode ? ` · ${productCode}` : ''}` : <>{product.sku ? `${product.sku} · ` : ''}{productName} · {variantName}{productCode ? ` · ${productCode}` : ''}</>}</Option>;
+                      return <Option key={product.id} value={product.id} label={searchLabel} title={selectedLabel}>{product.product?.sell_by_measurement ? `${productName} · Sold per ml${productCode ? ` · ${productCode}` : ''}` : <>{productName} · {variantName}{product.sku ? ` · ${product.sku}` : ''}{productCode ? ` · ${productCode}` : ''}</>}</Option>;
                     })}</Select></label>
                     <label className="pos-field"><span>{isMeasured ? `Fill per pack (${unit})` : `Quantity (${unit})`}</span><InputNumber min={isMeasured ? 0 : isPackaging ? 0.0001 : 1} step={isMeasured ? 1 : isPackaging ? 0.0001 : 1} precision={isMeasured ? 0 : isPackaging ? 4 : undefined} value={item.qty} onChange={value => { updateItem(isMeasured ? (value ?? 0) : (value || 1), 'qty', item.key); updateItem(null, 'packingKit', item.key); updateItem(null, 'packingKitQuantities', item.key); }} /></label>
                     {isMeasured && <label className="pos-field"><span>Number of packs</span><InputNumber min={1} precision={0} value={item.packCount} onChange={value => updateItem(value || 1, 'packCount', item.key)} /></label>}
@@ -413,9 +431,17 @@ export default function SalesOrderPOS() {
             <label className="pos-discount-label">Order discount <span>Optional</span></label>
             <div className="pos-discount"><Radio.Group value={discountMode} onChange={event => { setDiscountMode(event.target.value); setDiscount(0); }} optionType="button" buttonStyle="solid" size="small"><Radio.Button value="percentage">%</Radio.Button><Radio.Button value="amount">₹</Radio.Button></Radio.Group><InputNumber min={0} max={discountMode === 'percentage' ? 100 : subtotal} value={discount} onChange={value => setDiscount(value || 0)} suffix={discountMode === 'percentage' ? '%' : undefined} prefix={discountMode === 'amount' ? '₹' : undefined} /></div>
             <div className="pos-total"><div><span>Total due</span><small>Taxes included where applicable</small></div><strong>{money(total)}</strong></div>
-            <Form.Item label="Payment" required className="pos-payment">
-              <PaymentSplitEditor paymentMethods={paymentMethods} total={total} value={paymentSplits} onChange={setPaymentSplits} cashTendered={cashTendered} onCashTenderedChange={setCashTendered} compact quick />
-            </Form.Item>
+            {!isEditing && selectedCustomer && availableStoreCredit > 0 && <div className="pos-credit-toggle" style={{ display: 'block' }}>
+              <strong>Use store credit</strong><small style={{ display: 'block' }}>Available {money(availableStoreCredit)} · applied after the order discount</small>
+              <InputNumber aria-label="Store credit to use" min={0} max={Math.min(total, availableStoreCredit)} precision={2} prefix="₹" value={storeCreditRequested} onChange={value => setStoreCreditRequested(value || 0)} style={{ width: '100%', marginTop: 8 }} />
+            </div>}
+            {storeCreditUsed > 0 && <div className="pos-summary"><div><span>Store credit</span><strong>− {money(storeCreditUsed)}</strong></div><div><span>Remaining to pay</span><strong>{money(cashDue)}</strong></div></div>}
+            {tenantSettings.credit_sales_enabled && <div className="pos-credit-toggle"><span><strong>Credit sale</strong><small>Post the unpaid balance to this customer’s ledger</small></span><Switch checked={creditSale} disabled={isEditing} onChange={enabled => { setCreditSale(enabled); setCollectPartial(false); if (enabled) setPaymentSplits([]); else setPaymentSplits([]); }} /></div>}
+            {creditSale && <Alert type="info" showIcon message={selectedCustomer ? `Customer: ${selectedCustomer.name}` : 'Choose a customer above to use credit'} description={unpaidAmount > 0 ? `Credit balance: ${money(unpaidAmount)}` : 'Invoice will be fully settled at checkout.'} />}
+            {creditSale && <div className="pos-credit-partial"><span>Collect partial payment now</span><Switch checked={collectPartial} onChange={enabled => { setCollectPartial(enabled); setPaymentSplits(enabled ? [{ key: `partial-${Date.now()}`, payment_method_id: paymentMethods.find(method => method.is_default)?.id || paymentMethods[0]?.id, amount: 0 }] : []); }} /></div>}
+            {cashDue > 0 && (!creditSale || collectPartial) && <Form.Item label={creditSale ? 'Partial payment' : 'Payment'} required={!creditSale} className="pos-payment">
+              <PaymentSplitEditor paymentMethods={paymentMethods} total={cashDue} value={paymentSplits} onChange={setPaymentSplits} cashTendered={cashTendered} onCashTenderedChange={setCashTendered} compact={!creditSale} quick={!creditSale} allowPartial={creditSale} />
+            </Form.Item>}
             <Button type="primary" htmlType="submit" icon={<CheckCircleOutlined />} block className="pos-complete">{isEditing ? 'Save changes' : 'Complete sale'} · {money(total)}</Button>
             <Button type="text" size="small" block className="pos-cancel" onClick={() => navigate(isEditing ? `/app/retail-sales/${editId}` : '/app/retail-sales')}>{isEditing ? 'Cancel editing' : 'Cancel sale'}</Button>
             <p className="pos-auto-note"><CheckCircleOutlined /> Stock and accounts update automatically</p>
@@ -493,7 +519,7 @@ export default function SalesOrderPOS() {
       <div className="pos-confirm-customer">
         <span className="pos-confirm-icon"><UserOutlined /></span>
         <div><small>CUSTOMER</small><strong>{selectedCustomer?.name || 'Walk-in customer'}</strong><span>{selectedCustomer?.phone || 'No phone number'}</span></div>
-        <Tag color="success">Ready</Tag>
+        <Tag color={creditSale ? 'gold' : 'success'}>{creditSale ? 'Credit sale' : 'Ready'}</Tag>
       </div>
 
       <section className="pos-confirm-section">
@@ -516,9 +542,11 @@ export default function SalesOrderPOS() {
 
       <div className="pos-confirm-bottom">
         <section className="pos-confirm-section">
-          <div className="pos-confirm-heading"><strong><CreditCardOutlined /> Payment</strong><span>{validPayments.length} method{validPayments.length === 1 ? '' : 's'}</span></div>
+          <div className="pos-confirm-heading"><strong><CreditCardOutlined /> {creditSale ? 'Payment & credit' : 'Payment'}</strong><span>{validPayments.length} method{validPayments.length === 1 ? '' : 's'}</span></div>
           <div className="pos-confirm-payments">
             {validPayments.map(payment => <div key={payment.payment_method_id}><span>{paymentMethods.find(method => method.id === payment.payment_method_id)?.name || 'Payment'}</span><strong>{money(payment.amount)}</strong></div>)}
+            {storeCreditUsed > 0 && <div><span>Store credit</span><strong>{money(storeCreditUsed)}</strong></div>}
+            {creditSale && <div><span>Balance due</span><strong>{money(unpaidAmount)}</strong></div>}
             {cashPaymentAmount > 0 && <><div className="pos-confirm-cash-received"><span>Cash received</span><strong>{money(cashTendered)}</strong></div><div className="pos-confirm-change"><span>Change to customer</span><strong>{money(changeAmount)}</strong></div></>}
           </div>
         </section>

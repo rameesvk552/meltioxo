@@ -134,6 +134,8 @@ const migrateRetailSaleItemsForPackagingMaterials = async () => {
   }
 };
 
+const migratePaymentAllocationsForRetailSales=async()=>{const [types]=await db.sequelize.query("SELECT 1 FROM pg_type WHERE typname = 'enum_payment_allocations_invoice_type'");if (types.length) await db.sequelize.query('ALTER TYPE "enum_payment_allocations_invoice_type" ADD VALUE IF NOT EXISTS \'retail_sale\'');};
+
 // Upgrade every tenant to the same BS/PL hierarchy. Legacy ledger codes are
 // renamed in place so historical journals and production balances remain linked.
 const ensureDefaultAccountHierarchy = async () => {
@@ -144,6 +146,7 @@ const ensureDefaultAccountHierarchy = async () => {
     await ensureChartOfAccounts(tenant.id);
     await accounting.ensureDefaultPaymentMethods(tenant.id);
     await accounting.ensureSupplierLedgers(tenant.id);
+    await accounting.ensureCustomerLedgers(tenant.id);
   }
 };
 
@@ -159,7 +162,7 @@ const ensureDefaultBranches = async () => {
   }
 };
 
-migrateRawMaterialCategoryToText().then(migratePaymentModesToText).then(migratePurchaseItemEnums).then(migratePurchaseInvoiceStatus).then(migrateProductsForReadyMade).then(migrateRetailSaleItemsForPackagingMaterials).then(() => db.sequelize.sync({ alter: true })).then(ensureDefaultBranches).then(ensureDefaultAccountHierarchy).then(() => {
+migrateRawMaterialCategoryToText().then(migratePaymentModesToText).then(migratePurchaseItemEnums).then(migratePurchaseInvoiceStatus).then(migrateProductsForReadyMade).then(migrateRetailSaleItemsForPackagingMaterials).then(migratePaymentAllocationsForRetailSales).then(() => db.sequelize.sync({ alter: true })).then(ensureDefaultBranches).then(ensureDefaultAccountHierarchy).then(() => {
   console.log('Database synced');
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);

@@ -47,7 +47,20 @@ const PaymentForm = () => {
       const res = await client.get('/payments/unpaid-invoices', {
         params: { party_type: pType.toLowerCase(), party_id: partyId }
       });
-      if (request === invoiceRequest.current) setInvoices(Array.isArray(res.data) ? res.data : []);
+      if (request === invoiceRequest.current) {
+        const rows = Array.isArray(res.data) ? res.data : [];
+        setInvoices(rows);
+        const invoiceId = params.get('invoice_id');
+        const selectedInvoice = rows.find(row => row.id === invoiceId);
+        if (selectedInvoice) {
+          setAllocations({ [selectedInvoice.id]: Math.min(selectedInvoice.due, Number(params.get('amount') || selectedInvoice.due)) });
+          if (params.get('amount')) {
+            const suggestedAmount = Math.min(selectedInvoice.due, Number(params.get('amount')));
+            form.setFieldValue('amount', suggestedAmount);
+            setAmount(suggestedAmount);
+          }
+        }
+      }
     } catch (err) {
       if (request === invoiceRequest.current) {
         setInvoices([]);
@@ -56,7 +69,7 @@ const PaymentForm = () => {
     } finally {
       if (request === invoiceRequest.current) setLoadingInvoices(false);
     }
-  }, []);
+  }, [form, params]);
   useEffect(() => {
     const partyId = params.get('party_id');
     form.setFieldsValue({ date: dayjs() });

@@ -4,6 +4,8 @@ const { authenticate } = require('../middleware/auth');
 const { tenantContext } = require('../middleware/tenant');
 
 router.get('/', authenticate, tenantContext, ctrl.getCustomers);
+router.get('/:id/ledger', authenticate, tenantContext, ctrl.getCustomerLedger);
+router.get('/:id/store-credit', authenticate, tenantContext, ctrl.getCustomerStoreCredit);
 router.get('/:id', authenticate, tenantContext, ctrl.getCustomerById);
 router.post('/', authenticate, tenantContext, ctrl.createCustomer);
 router.put('/:id', authenticate, tenantContext, ctrl.updateCustomer);

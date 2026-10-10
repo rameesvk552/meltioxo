@@ -46,8 +46,20 @@ exports.updateWhatsappInvoiceSettings = async (req, res, next) => {
 
 exports.updateSettings = async (req, res, next) => {
   try {
-    const allowed = ['name', 'address', 'phone', 'email', 'tax_id', 'logo_url', 'currency', 'tax_system', 'fy_start_month', 'date_format', 'measured_packaging_enabled', 'measured_packaging_required', 'measured_packaging_auto_select', 'show_formula_in_sales', 'packaging_material_sales_enabled'];
+    const incentiveKeys = ['incentive_enabled', 'incentive_salesperson_mode', 'incentive_rate', 'incentive_basis', 'incentive_min_sale_amount'];
+    if (incentiveKeys.some(key => Object.hasOwn(req.body, key)) && !['super_admin', 'admin'].includes(req.user.role)) {
+      throw new AppError('Only administrators can change incentive settings', 403);
+    }
+    const allowed = ['name', 'address', 'phone', 'email', 'tax_id', 'logo_url', 'currency', 'tax_system', 'fy_start_month', 'date_format', 'measured_packaging_enabled', 'measured_packaging_required', 'measured_packaging_auto_select', 'show_formula_in_sales', 'packaging_material_sales_enabled', 'credit_sales_enabled', ...incentiveKeys];
     const values = Object.fromEntries(Object.entries(req.body).filter(([key]) => allowed.includes(key)));
+    if (values.incentive_salesperson_mode !== undefined && !['LOGGED_IN', 'SELECT'].includes(values.incentive_salesperson_mode)) throw new AppError('Invalid salesperson assignment mode', 400);
+    if (values.incentive_basis !== undefined && !['NET_EX_TAX', 'TOTAL_INCL_TAX'].includes(values.incentive_basis)) throw new AppError('Invalid incentive basis', 400);
+    for (const key of ['incentive_rate', 'incentive_min_sale_amount']) {
+      if (values[key] === undefined) continue;
+      const parsed = Number(values[key]);
+      if (!Number.isFinite(parsed) || parsed < 0 || (key === 'incentive_rate' && parsed > 100)) throw new AppError(`Invalid ${key.replaceAll('_', ' ')}`, 400);
+      values[key] = parsed;
+    }
     if (values.fy_start_month !== undefined) {
       const legacyMonths = { january: 1, april: 4, july: 7 };
       const month = legacyMonths[String(values.fy_start_month).toLowerCase()] || Number(values.fy_start_month);
