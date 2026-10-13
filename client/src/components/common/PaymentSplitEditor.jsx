@@ -7,7 +7,7 @@ const cents = value => Math.round(Number(value || 0) * 100);
 const amount = centsValue => centsValue / 100;
 const newKey = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-export default function PaymentSplitEditor({ paymentMethods, total, value, onChange, compact = false, quick = false, cashTendered = 0, onCashTenderedChange, allowPartial = false }) {
+export default function PaymentSplitEditor({ paymentMethods, cashBankLedgers = [], total, value, onChange, compact = false, quick = false, cashTendered = 0, onCashTenderedChange, allowPartial = false }) {
   const totalCents = cents(total);
   const [multiPayOpen, setMultiPayOpen] = useState(false);
   const findQuickMethod = (type, name) => paymentMethods.find(method => String(method.method_type || '').toUpperCase() === type)
@@ -29,6 +29,10 @@ export default function PaymentSplitEditor({ paymentMethods, total, value, onCha
       if (!current.length) return [{ key: newKey(), payment_method_id: defaultMethodId, amount: allowPartial ? 0 : amount(totalCents) }];
       if (allowPartial) return current;
       if (current.length === 1) {
+        if (current[0].bank_account_id) {
+          if (cents(current[0].amount) === totalCents) return current;
+          return [{ ...current[0], amount: amount(totalCents) }];
+        }
         const methodId = current[0].payment_method_id || defaultMethodId;
         if (methodId === current[0].payment_method_id && cents(current[0].amount) === totalCents) return current;
         return [{ ...current[0], payment_method_id: methodId, amount: amount(totalCents) }];
@@ -44,6 +48,7 @@ export default function PaymentSplitEditor({ paymentMethods, total, value, onCha
   const paidCents = value.reduce((sum, row) => sum + cents(row.amount), 0);
   const remainingCents = totalCents - paidCents;
   const usedMethodIds = value.map(row => row.payment_method_id).filter(Boolean);
+  const usedLedgerIds = value.map(row => row.bank_account_id).filter(Boolean);
 
   const update = (key, field, nextValue) => onChange(current => current.map(row => row.key === key ? { ...row, [field]: nextValue } : row));
   const remove = key => onChange(current => {
@@ -129,13 +134,13 @@ export default function PaymentSplitEditor({ paymentMethods, total, value, onCha
               value={row.amount}
               onChange={nextValue => updateQuickAmount(row, nextValue)}
             />
-            {!allowPartial && <Button size="small" type="link" onClick={() => fillBalance(row.key)}>Balance</Button>}
+            <Button size="small" type="link" onClick={() => fillBalance(row.key)}>Balance</Button>
           </div>;
         })}
         <div className="payment-quick-status">
           {remainingCents === 0
             ? <Tag color="success">Fully allocated</Tag>
-            : <Tag color={allowPartial && remainingCents > 0 ? 'gold' : 'error'}>{remainingCents > 0 ? (allowPartial ? 'Credit balance' : 'Remaining') : 'Over'} ₹{amount(Math.abs(remainingCents)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Tag>}
+            : <Tag color="error">{remainingCents > 0 ? 'Remaining' : 'Over'} ₹{amount(Math.abs(remainingCents)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Tag>}
         </div>
       </div>}
 
@@ -154,14 +159,15 @@ export default function PaymentSplitEditor({ paymentMethods, total, value, onCha
       {value.map((row, index) => <div className="payment-split-row" key={row.key}>
         <Select
           aria-label={`Payment method ${index + 1}`}
-          placeholder="Payment method"
-          value={row.payment_method_id}
-          onChange={nextValue => update(row.key, 'payment_method_id', nextValue)}
-          options={paymentMethods.map(method => ({
-            value: method.id,
-            label: `${method.name}${method.account ? ` — ${method.account.name}` : ''}`,
-            disabled: method.id !== row.payment_method_id && usedMethodIds.includes(method.id),
-          }))}
+          placeholder="Select cash, payment method, or bank ledger"
+          value={row.bank_account_id ? `ledger:${row.bank_account_id}` : row.payment_method_id}
+          onChange={nextValue => nextValue.startsWith('ledger:')
+            ? onChange(current => current.map(item => item.key === row.key ? { ...item, payment_method_id: undefined, bank_account_id: nextValue.slice(7) } : item))
+            : onChange(current => current.map(item => item.key === row.key ? { ...item, payment_method_id: nextValue, bank_account_id: undefined } : item))}
+          options={[
+            ...paymentMethods.map(method => ({ value: method.id, label: `${method.name}${method.account ? ` — ${method.account.name}` : ''}`, disabled: method.id !== row.payment_method_id && usedMethodIds.includes(method.id) })),
+            ...cashBankLedgers.filter(ledger => !paymentMethods.some(method => method.account_id === ledger.id)).map(ledger => ({ value: `ledger:${ledger.id}`, label: `Bank ledger — ${ledger.code} ${ledger.name}`, disabled: ledger.id !== row.bank_account_id && usedLedgerIds.includes(ledger.id) })),
+          ]}
         />
         <InputNumber
           aria-label={`Payment amount ${index + 1}`}
@@ -171,7 +177,7 @@ export default function PaymentSplitEditor({ paymentMethods, total, value, onCha
           value={row.amount}
           onChange={nextValue => update(row.key, 'amount', nextValue || 0)}
         />
-        <Button size="small" type="link" onClick={() => fillBalance(row.key)}>Balance</Button>
+        {!allowPartial && <Button size="small" type="link" onClick={() => fillBalance(row.key)}>Balance</Button>}
         <Button aria-label={`Remove payment ${index + 1}`} type="text" danger size="small" icon={<DeleteOutlined />} disabled={value.length === 1} onClick={() => remove(row.key)} />
       </div>)}
     </div>
@@ -179,7 +185,7 @@ export default function PaymentSplitEditor({ paymentMethods, total, value, onCha
       <Button type="dashed" size="small" icon={<PlusOutlined />} disabled={paymentMethods.length <= value.length} onClick={addSplit}>Split payment</Button>
       {remainingCents === 0
         ? <Tag color="success">Fully allocated</Tag>
-        : <Tag color="error">{remainingCents > 0 ? 'Remaining' : 'Over'} ₹{amount(Math.abs(remainingCents)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Tag>}
+        : <Tag color={allowPartial && remainingCents > 0 ? 'gold' : 'error'}>{remainingCents > 0 ? (allowPartial ? 'Credit balance' : 'Remaining') : 'Over'} ₹{amount(Math.abs(remainingCents)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Tag>}
     </div>
   </div>;
 }

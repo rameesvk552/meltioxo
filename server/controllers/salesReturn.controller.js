@@ -3,6 +3,7 @@ const db = require('../models');
 const { AppError } = require('../middleware/errorHandler');
 const accounting = require('../services/accounting.service');
 const businessDays = require('../services/businessDay.service');
+const storeCredit = require('../services/storeCredit.service');
 const { ACCOUNT_CODES } = require('../config/constants');
 
 const number = value => Number(value || 0);
@@ -58,6 +59,19 @@ const allocateReturnAmounts = (saleItem, quantity, prior = {}) => {
   };
 };
 
+const calculateSettlement = ({ returnTotal, saleTotal, previouslyReturned = 0, collected = 0, originalStoreCredit = 0, previouslyReinstated = 0, settlementType = 'refund' }) => {
+  const receivableOffset = Math.min(returnTotal, accounting.money(Math.max(0, saleTotal - previouslyReturned - collected)));
+  const customerSettlement = accounting.money(returnTotal - receivableOffset);
+  const reinstatedCredit = Math.min(customerSettlement, accounting.money(Math.max(0, originalStoreCredit - previouslyReinstated)));
+  const otherSettlement = accounting.money(customerSettlement - reinstatedCredit);
+  return {
+    receivableOffset,
+    reinstatedCredit,
+    refundAmount: settlementType === 'store_credit' ? 0 : otherSettlement,
+    storeCreditAmount: accounting.money(reinstatedCredit + (settlementType === 'store_credit' ? otherSettlement : 0))
+  };
+};
+
 const returnInclude = [
   db.paymentMethod,
   { model: db.account, as: 'refundAccount' },
@@ -65,11 +79,15 @@ const returnInclude = [
 ];
 
 exports.create = async (req, res, next) => {
-  const transaction = await db.sequelize.transaction();
+  const internal = Boolean(req.exchangeTransaction);
+  const transaction = req.exchangeTransaction || await db.sequelize.transaction();
   try {
     const requestedItems = Array.isArray(req.body.items) ? req.body.items : [];
     if (!requestedItems.length) throw new AppError('Select at least one item to return', 400);
     const reason = String(req.body.reason || '').trim();
+    const settlementType = String(req.body.settlement_type || 'refund');
+    if (!['refund', 'store_credit', 'exchange'].includes(settlementType)) throw new AppError('Select refund, store credit, or exchange', 400);
+    if (settlementType === 'exchange' && !internal) throw new AppError('Post exchanges through the exchange action', 400);
     if (!reason) throw new AppError('Return reason is required', 400);
     if (reason.length > 250) throw new AppError('Return reason must be 250 characters or fewer', 400);
     const notes = String(req.body.notes || '').trim() || null;
@@ -155,11 +173,27 @@ exports.create = async (req, res, next) => {
       packagingCost: accounting.money(sum.packagingCost + (item.restockMaterialType === 'packaging' ? item.cost : 0))
     }), { subtotal: 0, discount: 0, tax: 0, total: 0, cost: 0, rawCost: 0, finishedCost: 0, packagingCost: 0 });
 
-    const paymentMethod = await accounting.getPaymentMethod(
-      req.tenantId,
-      req.body.refund_payment_method_id || sale.payment_method_id,
-      transaction
-    );
+    const earlierReturns = await db.salesReturn.findAll({ where: { tenant_id: req.tenantId, retail_sale_id: sale.id }, transaction });
+    const previouslyReturned = accounting.money(earlierReturns.reduce((sum, row) => sum + number(row.total_amount), 0));
+    const allocations = await db.paymentAllocation.findAll({ where: { invoice_type: 'retail_sale', invoice_id: sale.id }, transaction });
+    const originalPayments = allocations.length ? [] : await db.payment.findAll({ where: { tenant_id: req.tenantId, journal_entry_id: sale.journal_entry_id }, transaction });
+    const collected = accounting.money((allocations.length
+      ? allocations.reduce((sum, row) => sum + number(row.allocated_amount), 0)
+      : originalPayments.reduce((sum, row) => sum + number(row.amount), 0)) + number(sale.store_credit_used));
+    if (settlementType === 'store_credit' && !sale.customer_id) throw new AppError('Assign a customer to the original sale before issuing store credit', 400);
+    const { receivableOffset, reinstatedCredit, refundAmount, storeCreditAmount } = calculateSettlement({
+      returnTotal: totals.total,
+      saleTotal: number(sale.total_amount),
+      previouslyReturned,
+      collected,
+      originalStoreCredit: number(sale.store_credit_used),
+      previouslyReinstated: earlierReturns.reduce((sum, row) => sum + number(row.reinstated_credit_amount), 0),
+      settlementType
+    });
+    if (storeCreditAmount > 0) await storeCredit.balance(req.tenantId, sale.customer_id, transaction, true);
+    const paymentMethod = refundAmount > 0 ? await accounting.resolvePaymentMethod(
+      req.tenantId, { payment_method_id: req.body.refund_payment_method_id }, transaction
+    ) : null;
 
     if (db.sequelize.getDialect() === 'postgres') {
       await db.sequelize.query('SELECT pg_advisory_xact_lock(hashtext(:key))', { replacements: { key: `${req.tenantId}:sales-return` }, transaction });
@@ -172,8 +206,13 @@ exports.create = async (req, res, next) => {
       retail_sale_id: sale.id,
       return_number: returnNumber,
       return_date: businessDay.business_date,
-      refund_payment_method_id: paymentMethod.id,
-      refund_account_id: paymentMethod.account.id,
+      settlement_type: settlementType,
+      receivable_offset_amount: receivableOffset,
+      refund_amount: refundAmount,
+      store_credit_amount: storeCreditAmount,
+      reinstated_credit_amount: reinstatedCredit,
+      refund_payment_method_id: paymentMethod?.id || null,
+      refund_account_id: paymentMethod?.account.id || null,
       subtotal: totals.subtotal,
       discount_amount: totals.discount,
       tax_amount: totals.tax,
@@ -241,13 +280,16 @@ exports.create = async (req, res, next) => {
     if (grossRevenue > 0) codes.push(ACCOUNT_CODES.SALES_REVENUE);
     if (totals.discount > 0) codes.push(ACCOUNT_CODES.DISCOUNT_ALLOWED);
     if (totals.tax > 0) codes.push(ACCOUNT_CODES.TAX_PAYABLE);
+    if (receivableOffset > 0) codes.push(ACCOUNT_CODES.AR);
     if (totals.cost > 0) codes.push(ACCOUNT_CODES.COGS);
     if (totals.finishedCost > 0) codes.push(ACCOUNT_CODES.FG_INVENTORY);
     if (totals.rawCost > 0) codes.push(ACCOUNT_CODES.RAW_INVENTORY);
     if (totals.packagingCost > 0) codes.push(ACCOUNT_CODES.PKG_INVENTORY);
     const accounts = codes.length ? await accounting.getAccountsByCode(req.tenantId, [...new Set(codes)], transaction) : {};
-    const revenueJournal = totals.total > 0 ? await accounting.createAndPost(req.tenantId, {
+    if (storeCreditAmount > 0) accounts[ACCOUNT_CODES.STORE_CREDIT] = await storeCredit.account(req.tenantId, transaction);
+    const revenueJournal = grossRevenue > 0 || totals.tax > 0 || totals.discount > 0 ? await accounting.createAndPost(req.tenantId, {
       entry_date: businessDay.business_date,
+      business_day_id: businessDay.id,
       reference_type: 'sales_return_revenue',
       reference_id: salesReturn.id,
       narration: `Sales return ${returnNumber} against ${sale.sale_number}`,
@@ -255,7 +297,9 @@ exports.create = async (req, res, next) => {
         ...(grossRevenue ? [{ account_id: accounts[ACCOUNT_CODES.SALES_REVENUE].id, debit_amount: grossRevenue, description: `Revenue returned on ${returnNumber}` }] : []),
         ...(totals.tax ? [{ account_id: accounts[ACCOUNT_CODES.TAX_PAYABLE].id, debit_amount: totals.tax, description: `Tax reversed on ${returnNumber}` }] : []),
         ...(totals.discount ? [{ account_id: accounts[ACCOUNT_CODES.DISCOUNT_ALLOWED].id, credit_amount: totals.discount, description: `Discount allowed reversed on ${returnNumber}` }] : []),
-        { account_id: paymentMethod.account.id, credit_amount: totals.total, description: `${paymentMethod.name} refund for ${returnNumber}` }
+        ...(receivableOffset ? [{ account_id: (await accounting.getCustomerLedger(req.tenantId, sale.customer_id, transaction)).id, credit_amount: receivableOffset, description: `Unpaid balance reduced by ${returnNumber}` }] : []),
+        ...(refundAmount ? [{ account_id: paymentMethod.account.id, credit_amount: refundAmount, description: `${paymentMethod.name} refund for ${returnNumber}` }] : []),
+        ...(storeCreditAmount ? [{ account_id: accounts[ACCOUNT_CODES.STORE_CREDIT].id, credit_amount: storeCreditAmount, description: `Store credit issued by ${returnNumber}` }] : [])
       ]
     }, req.user.id, transaction) : null;
     const cogsJournal = totals.cost > 0 ? await accounting.createAndPost(req.tenantId, {
@@ -272,7 +316,7 @@ exports.create = async (req, res, next) => {
     }, req.user.id, transaction) : null;
 
     let refundPayment = null;
-    if (totals.total > 0) {
+    if (refundAmount > 0) {
       if (db.sequelize.getDialect() === 'postgres') {
         await db.sequelize.query('SELECT pg_advisory_xact_lock(hashtext(:key))', { replacements: { key: `${req.tenantId}:payment:outgoing` }, transaction });
       }
@@ -287,7 +331,7 @@ exports.create = async (req, res, next) => {
         payment_method_id: paymentMethod.id,
         payment_mode: accounting.paymentModeForType(paymentMethod.method_type),
         bank_account_id: paymentMethod.account.id,
-        amount: totals.total,
+        amount: refundAmount,
         payment_date: businessDay.business_date,
         notes: `Refund ${returnNumber} against retail sale ${sale.sale_number}`,
         journal_entry_id: revenueJournal.id,
@@ -300,9 +344,12 @@ exports.create = async (req, res, next) => {
       payment_id: refundPayment?.id || null
     }, { transaction });
 
-    await transaction.commit();
-    res.status(201).json(await db.salesReturn.findOne({ where: { id: salesReturn.id, tenant_id: req.tenantId }, include: returnInclude }));
+    if (!internal) await transaction.commit();
+    const result = await db.salesReturn.findOne({ where: { id: salesReturn.id, tenant_id: req.tenantId }, include: returnInclude, ...(internal ? { transaction } : {}) });
+    if (internal) return result.toJSON();
+    res.status(201).json(result);
   } catch (error) {
+    if (internal) throw error;
     if (!transaction.finished) await transaction.rollback();
     next(error);
   }
@@ -311,3 +358,4 @@ exports.create = async (req, res, next) => {
 exports.allocateReturnAmounts = allocateReturnAmounts;
 exports.originalAmounts = originalAmounts;
 exports.quantityNumber = quantityNumber;
+exports.calculateSettlement = calculateSettlement;

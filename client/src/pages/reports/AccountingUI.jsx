@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { AuthContext } from '../../context/AuthContext';
 import './AccountingReports.css';
+import { downloadReport } from './reportDownloads';
 
 export const money = value => {
   const amount = Number(value || 0);
@@ -44,7 +45,7 @@ export function ReportShell({ title, subtitle, query, controls, onExport, childr
     <header className="ar-heading no-print"><div>
       {!embedded && <Button className="ar-back" type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/app/accounts')}>Accounting workspace</Button>}
       <span className="ar-eyebrow">FINANCIAL REPORTS</span><h1>{title}</h1><p>{subtitle}</p>
-    </div><Space wrap><Button icon={<DownloadOutlined />} onClick={onExport} disabled={query.loading || !!query.error}>Export CSV</Button><Button icon={<PrinterOutlined />} onClick={() => window.print()} disabled={query.loading || !!query.error}>Print / PDF</Button></Space></header>
+    </div><Space wrap><Button icon={<DownloadOutlined />} onClick={() => downloadReport(onExport(), 'xlsx')} disabled={query.loading || !!query.error}>Excel</Button><Button icon={<DownloadOutlined />} onClick={() => downloadReport(onExport(), 'pdf')} disabled={query.loading || !!query.error}>PDF</Button><Button icon={<PrinterOutlined />} onClick={() => window.print()} disabled={query.loading || !!query.error}>Print</Button></Space></header>
     <div className="ar-toolbar no-print"><div className="ar-filter-controls">{controls}</div><Button icon={<ReloadOutlined />} onClick={query.reload} loading={query.loading}>Refresh</Button></div>
     <div className="ar-scope"><Tag>{branch?.name || 'Company'}</Tag><span>{basis}</span></div>
     {query.error ? <Alert showIcon type="error" message={`Could not load ${title.toLowerCase()}`} description={query.error.response?.data?.message || query.error.message} action={<Button onClick={query.reload}>Retry</Button>} />

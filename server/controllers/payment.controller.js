@@ -31,10 +31,21 @@ exports.getUnpaidInvoices = async (req, res, next) => {
         },
         order: [['invoice_date', 'ASC']]
       });
-      const sales=await db.retailSale.findAll({where:{tenant_id:req.tenantId,customer_id:party_id},order:[['sale_date','ASC']]});
-      const allocations=await db.paymentAllocation.findAll({where:{invoice_type:'retail_sale',invoice_id:sales.map(x=>x.id)}});const paidBySale=new Map();allocations.forEach(x=>paidBySale.set(x.invoice_id,(paidBySale.get(x.invoice_id)||0)+Number(x.allocated_amount||0)));
-      const noAlloc=sales.filter(x=>!paidBySale.has(x.id));const payments=noAlloc.length?await db.payment.findAll({where:{tenant_id:req.tenantId,journal_entry_id:noAlloc.map(x=>x.journal_entry_id).filter(Boolean)}}):[];const paidByJournal=new Map();payments.forEach(x=>paidByJournal.set(x.journal_entry_id,(paidByJournal.get(x.journal_entry_id)||0)+Number(x.amount||0)));
-      invoices=[...salesInvoices,...sales.filter(x=>Number(x.total_amount)-(paidBySale.get(x.id)||paidByJournal.get(x.journal_entry_id)||0)>0.005).map(x=>({id:x.id,invoice_number:x.sale_number,invoice_date:x.sale_date,total_amount:x.total_amount,paid_amount:paidBySale.get(x.id)||paidByJournal.get(x.journal_entry_id)||0,invoice_type:'retail_sale'}))];
+      const retailSales = await db.retailSale.findAll({ where: { tenant_id: req.tenantId, customer_id: party_id }, order: [['sale_date', 'ASC']] });
+      const allocations = await db.paymentAllocation.findAll({ where: { invoice_type: 'retail_sale', invoice_id: retailSales.map(row => row.id) } });
+      const paidBySale = new Map();
+      allocations.forEach(row => paidBySale.set(row.invoice_id, (paidBySale.get(row.invoice_id) || 0) + Number(row.allocated_amount || 0)));
+      const unallocatedSales = retailSales.filter(row => !paidBySale.has(row.id));
+      const originalPayments = unallocatedSales.length ? await db.payment.findAll({ where: { tenant_id: req.tenantId, journal_entry_id: unallocatedSales.map(row => row.journal_entry_id).filter(Boolean) } }) : [];
+      const originalPaidByJournal = new Map();
+      originalPayments.forEach(row => originalPaidByJournal.set(row.journal_entry_id, (originalPaidByJournal.get(row.journal_entry_id) || 0) + Number(row.amount || 0)));
+      const returns = retailSales.length ? await db.salesReturn.findAll({ where: { tenant_id: req.tenantId, retail_sale_id: retailSales.map(row => row.id) } }) : [];
+      const returnedBySale = new Map();
+      returns.forEach(row => returnedBySale.set(row.retail_sale_id, (returnedBySale.get(row.retail_sale_id) || 0) + Number(row.total_amount || 0)));
+      invoices = [...salesInvoices, ...retailSales.filter(row => Number(row.total_amount) - (returnedBySale.get(row.id) || 0) - (paidBySale.has(row.id) ? paidBySale.get(row.id) : originalPaidByJournal.get(row.journal_entry_id) || 0) - Number(row.store_credit_used || 0) > 0.005).map(row => ({
+        id: row.id, invoice_number: row.sale_number, invoice_date: row.sale_date, total_amount: Number(row.total_amount) - (returnedBySale.get(row.id) || 0),
+        paid_amount: (paidBySale.has(row.id) ? paidBySale.get(row.id) : originalPaidByJournal.get(row.journal_entry_id) || 0) + Number(row.store_credit_used || 0), status: 'partial', invoice_type: 'retail_sale'
+      }))];
     }
 
     // Normalise shape for the frontend
@@ -113,12 +124,28 @@ const createPayment = async (req, res, next, paymentType) => {
       if (!invoice) throw new AppError('Allocated invoice not found', 400);
       const invoicePartyId = invoiceType === 'purchase' ? invoice.supplier_id : invoice.customer_id;
       if (invoicePartyId !== party.id) throw new AppError('Allocated invoice belongs to a different party', 400);
-      let alreadyPaid=Number(invoice.paid_amount||0);if(invoiceType==='retail_sale'){const prior=await db.paymentAllocation.findAll({where:{invoice_type:'retail_sale',invoice_id:invoice.id},transaction});alreadyPaid=prior.reduce((sum,row)=>sum+Number(row.allocated_amount||0),0);}
-      const due=Number(invoice.total_amount)-alreadyPaid;if(amountAllocated>due+0.001)throw new AppError('Allocation exceeds invoice balance',400);
-      await paymentAllocation.create({payment_id:item.id,invoice_type:invoiceType,invoice_id:invoice.id,allocated_amount:amountAllocated},{transaction});
-      if(invoiceType!=='retail_sale'){const paid=Number(invoice.paid_amount||0)+amountAllocated;await invoice.update({paid_amount:paid,status:paid>=Number(invoice.total_amount)-0.001?'paid':'partial'},{transaction});}
+      let alreadyPaid = Number(invoice.paid_amount || 0);
+      if (invoiceType === 'retail_sale') {
+        const priorAllocations = await db.paymentAllocation.findAll({ where: { invoice_type: 'retail_sale', invoice_id: invoice.id }, transaction });
+        alreadyPaid = priorAllocations.reduce((sum, row) => sum + Number(row.allocated_amount || 0), 0);
+        if (!priorAllocations.length && invoice.journal_entry_id) {
+          const originalReceipts = await db.payment.findAll({ where: { tenant_id: req.tenantId, journal_entry_id: invoice.journal_entry_id }, transaction });
+          alreadyPaid = originalReceipts.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+        }
+        alreadyPaid += Number(invoice.store_credit_used || 0);
+      }
+      const returned = invoiceType === 'retail_sale'
+        ? (await db.salesReturn.findAll({ where: { tenant_id: req.tenantId, retail_sale_id: invoice.id }, transaction })).reduce((sum, row) => sum + Number(row.total_amount || 0), 0)
+        : 0;
+      const due = Number(invoice.total_amount) - returned - alreadyPaid;
+      if (amountAllocated > due + 0.001) throw new AppError('Allocation exceeds invoice balance', 400);
+      await paymentAllocation.create({ payment_id: item.id, invoice_type: invoiceType, invoice_id: invoice.id, allocated_amount: amountAllocated }, { transaction });
+      if (invoiceType !== 'retail_sale') {
+        const paid = Number(invoice.paid_amount || 0) + amountAllocated;
+        await invoice.update({ paid_amount: paid, status: paid >= Number(invoice.total_amount) - 0.001 ? 'paid' : 'partial' }, { transaction });
+      }
     }
-    await item.update({ journal_entry_id: journal.id }, { transaction });
+    await item.update({ journal_entry_id: journal.id, business_day_id: journal.business_day_id || null }, { transaction });
     await transaction.commit();
     res.status(201).json(await payment.findOne({ where: { id: item.id }, include: [paymentAllocation, db.paymentMethod] }));
   } catch (error) { await transaction.rollback(); next(error); }

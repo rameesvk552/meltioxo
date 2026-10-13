@@ -13,6 +13,9 @@ const Customers = () => {
   const [ledgerOpen, setLedgerOpen] = useState(false);
   const [ledgerLoading, setLedgerLoading] = useState(false);
   const [ledgerData, setLedgerData] = useState(null);
+  const [creditOpen, setCreditOpen] = useState(false);
+  const [creditLoading, setCreditLoading] = useState(false);
+  const [creditData, setCreditData] = useState(null);
   const [form] = Form.useForm();
   const { data, loading, reload } = useApiData('/customers');
   const createCustomer = async values => {
@@ -35,6 +38,18 @@ const Customers = () => {
     try { const response = await client.get(`/customers/${customer.id}/ledger`); setLedgerData({ ...response.data, customer }); }
     catch (error) { message.error(error.response?.data?.message || 'Could not load customer ledger.'); setLedgerOpen(false); }
     finally { setLedgerLoading(false); }
+  };
+  const showStoreCredit = async customer => {
+    setCreditOpen(true);
+    setCreditLoading(true);
+    setCreditData({ customer, balance: customer.storeCredit, entries: [] });
+    try {
+      const response = await client.get(`/customers/${customer.id}/store-credit?include_history=1`);
+      setCreditData({ ...response.data, customer });
+    } catch (error) {
+      message.error(error.response?.data?.message || 'Could not load store credit history.');
+      setCreditOpen(false);
+    } finally { setCreditLoading(false); }
   };
   const customerRows = data.map(item => ({
     ...item,
@@ -66,7 +81,7 @@ const Customers = () => {
     },
     { 
       title: 'Store credit', align: 'right', dataIndex: 'storeCredit', key: 'storeCredit',
-      render: value => `₹${value.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+      render: (value, customer) => <Button type="link" style={{ padding: 0 }} onClick={() => showStoreCredit(customer)}>₹{value.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Button>,
       sorter: (a, b) => a.storeCredit - b.storeCredit
     },
     {
@@ -151,6 +166,16 @@ const Customers = () => {
           { title: 'Date', dataIndex: 'date' }, { title: 'Entry', dataIndex: 'entry_number' }, { title: 'Description', dataIndex: 'description' },
           { title: 'Debit', dataIndex: 'debit', align: 'right', render: value => `₹${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` },
           { title: 'Credit', dataIndex: 'credit', align: 'right', render: value => `₹${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` },
+          { title: 'Balance', dataIndex: 'balance', align: 'right', render: value => `₹${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` }
+        ]} />
+      </Modal>
+      <Modal title={`${creditData?.customer?.name || 'Customer'} · Store credit`} open={creditOpen} onCancel={() => setCreditOpen(false)} footer={null} width={800}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}><span>Available to use</span><strong>₹{Number(creditData?.balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></div>
+        <Table size="small" loading={creditLoading} rowKey={row => `${row.type}-${row.id}`} dataSource={creditData?.entries || []} pagination={{ pageSize: 8 }} scroll={{ x: 600 }} columns={[
+          { title: 'Date', dataIndex: 'date' },
+          { title: 'Action', dataIndex: 'type', render: value => value === 'issued' ? 'Issued by return' : 'Used on sale' },
+          { title: 'Reference', dataIndex: 'reference' },
+          { title: 'Change', dataIndex: 'amount', align: 'right', render: value => `${value > 0 ? '+' : '−'} ₹${Math.abs(Number(value || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` },
           { title: 'Balance', dataIndex: 'balance', align: 'right', render: value => `₹${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` }
         ]} />
       </Modal>

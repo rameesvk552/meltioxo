@@ -4,7 +4,8 @@ import dayjs from 'dayjs';
 import useApiData from '../../hooks/useApiData';
 import { AuthContext } from '../../context/AuthContext';
 import { hasViewPermission } from '../../config/permissions';
-import { exportCsv, fyRange, Metric, money, ReportShell } from './AccountingUI';
+import { fyRange, Metric, money, ReportShell } from './AccountingUI';
+import { reportData } from './reportDownloads';
 import LedgerDrawer from './LedgerDrawer';
 
 export default function TrialBalance({ embedded = false }) {
@@ -25,7 +26,7 @@ export default function TrialBalance({ embedded = false }) {
     { title: 'Debit balance', dataIndex: 'debit', align: 'right', render: value => value ? money(value) : '—' },
     { title: 'Credit balance', dataIndex: 'credit', align: 'right', render: value => value ? money(value) : '—' }];
   const sum = key => filtered.reduce((total,row)=>total+cents(row[key]),0)/100;
-  return <><ReportShell title="Trial balance" subtitle="All account balances from posted journals. Debits and credits should agree." embedded={embedded} query={query} periodLabel={date.format('DD MMM YYYY')} controls={<><span>As of</span><DatePicker aria-label="Trial balance date" value={date} allowClear={false} onChange={setDate} format="DD MMM YYYY" /></>} onExport={() => exportCsv('trial-balance-'+date.format('YYYY-MM-DD')+'.csv', [['Trial balance', date.format('YYYY-MM-DD')], ['Code','Account','Type','Debit','Credit'], ...filtered.map(row => [row.code,row.name,row.type,row.debit,row.credit]), ['Filtered total','','',sum('debit'),sum('credit')]])}>
+  return <><ReportShell title="Trial balance" subtitle="All account balances from posted journals. Debits and credits should agree." embedded={embedded} query={query} periodLabel={date.format('DD MMM YYYY')} controls={<><span>As of</span><DatePicker aria-label="Trial balance date" value={date} allowClear={false} onChange={setDate} format="DD MMM YYYY" /></>} onExport={() => reportData('trial-balance-'+date.format('YYYY-MM-DD')+'.csv', [['Trial balance', date.format('YYYY-MM-DD')], ['Code','Account','Type','Debit','Credit'], ...filtered.map(row => [row.code,row.name,row.type,row.debit,row.credit]), ['Filtered total','','',sum('debit'),sum('credit')]])}>
     <div className="ar-metrics"><Metric label="Debit balances" value={debit} /><Metric label="Credit balances" value={credit} /><Metric label="Difference" value={difference} tone={difference === 0 ? 'positive' : 'negative'} detail={difference === 0 ? 'Debits and credits agree' : 'Review journal postings'} /><div className="ar-metric"><span>Accounts with a balance</span><strong>{rows.length}</strong><small>Zero balances excluded</small></div></div>
     {difference !== 0 && <Alert className="ar-health-banner" type="error" showIcon message="Debits and credits do not agree" />}
     <div className="ar-table-card"><div className="ar-table-tools"><Input.Search aria-label="Search trial balance" placeholder="Search account name or code" value={search} onChange={event => setSearch(event.target.value)} allowClear /><Select aria-label="Filter account type" value={type} onChange={setType} style={{ minWidth: 170 }} options={['all','asset','liability','equity','revenue','expense'].map(value=>({ value,label:value==='all'?'All account types':value[0].toUpperCase()+value.slice(1) }))} /><span>{filtered.length} of {rows.length} accounts</span></div>

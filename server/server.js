@@ -134,7 +134,26 @@ const migrateRetailSaleItemsForPackagingMaterials = async () => {
   }
 };
 
-const migratePaymentAllocationsForRetailSales=async()=>{const [types]=await db.sequelize.query("SELECT 1 FROM pg_type WHERE typname = 'enum_payment_allocations_invoice_type'");if (types.length) await db.sequelize.query('ALTER TYPE "enum_payment_allocations_invoice_type" ADD VALUE IF NOT EXISTS \'retail_sale\'');};
+// Finished-product opening stock and production batches are internal receipts,
+// so they do not have a supplier. Older databases created stock_batches for
+// purchases only and may still require supplier_id.
+const migrateStockBatchesForInternalReceipts = async () => {
+  const [columns] = await db.sequelize.query(`
+    SELECT is_nullable
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'stock_batches'
+      AND column_name = 'supplier_id'
+  `);
+  if (columns[0]?.is_nullable === 'NO') {
+    await db.sequelize.query('ALTER TABLE "stock_batches" ALTER COLUMN "supplier_id" DROP NOT NULL');
+  }
+};
+
+const migratePaymentAllocationsForRetailSales = async () => {
+  const [types] = await db.sequelize.query("SELECT 1 FROM pg_type WHERE typname = 'enum_payment_allocations_invoice_type'");
+  if (types.length) await db.sequelize.query('ALTER TYPE "enum_payment_allocations_invoice_type" ADD VALUE IF NOT EXISTS \'retail_sale\'');
+};
 
 // Upgrade every tenant to the same BS/PL hierarchy. Legacy ledger codes are
 // renamed in place so historical journals and production balances remain linked.
@@ -162,7 +181,7 @@ const ensureDefaultBranches = async () => {
   }
 };
 
-migrateRawMaterialCategoryToText().then(migratePaymentModesToText).then(migratePurchaseItemEnums).then(migratePurchaseInvoiceStatus).then(migrateProductsForReadyMade).then(migrateRetailSaleItemsForPackagingMaterials).then(migratePaymentAllocationsForRetailSales).then(() => db.sequelize.sync({ alter: true })).then(ensureDefaultBranches).then(ensureDefaultAccountHierarchy).then(() => {
+migrateRawMaterialCategoryToText().then(migratePaymentModesToText).then(migratePurchaseItemEnums).then(migratePurchaseInvoiceStatus).then(migrateProductsForReadyMade).then(migrateRetailSaleItemsForPackagingMaterials).then(migrateStockBatchesForInternalReceipts).then(migratePaymentAllocationsForRetailSales).then(() => db.sequelize.sync({ alter: true })).then(ensureDefaultBranches).then(ensureDefaultAccountHierarchy).then(() => {
   console.log('Database synced');
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);

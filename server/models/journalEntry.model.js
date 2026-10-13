@@ -3,6 +3,7 @@ module.exports = (sequelize, DataTypes) => {
     id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
     tenant_id: { type: DataTypes.UUID },
     branch_id: { type: DataTypes.UUID, allowNull: true },
+    business_day_id: { type: DataTypes.UUID, allowNull: true },
     entry_number: { type: DataTypes.STRING },
     entry_date: { type: DataTypes.DATEONLY },
     reference_type: { type: DataTypes.STRING, allowNull: true },

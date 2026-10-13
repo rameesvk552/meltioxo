@@ -2,6 +2,7 @@ const db = require('../models');
 const { purchaseReceipt, purchaseReceiptItem, purchaseInvoice, payment, paymentAllocation, stockMovement } = db;
 const { AppError } = require('../middleware/errorHandler');
 const accounting = require('../services/accounting.service');
+const businessDays = require('../services/businessDay.service');
 const inventoryReceipt = require('../services/inventoryReceipt.service');
 const { ACCOUNT_CODES } = require('../config/constants');
 
@@ -56,6 +57,8 @@ exports.create = async (req, res, next) => {
     }
     const supplier = await db.supplier.findOne({ where: { id: supplier_id, tenant_id: req.tenantId, is_active: true }, transaction });
     if (!supplier) throw new AppError('Select an active supplier', 400);
+    const tenantSettings = await db.tenant.findByPk(req.tenantId, { transaction });
+    const composition = tenantSettings?.tax_system === 'GST' && tenantSettings?.gst_scheme === 'COMPOSITION';
     if (String(invoice_date || '').slice(0, 10) > new Date().toISOString().slice(0, 10)) throw new AppError('Future-dated purchases are not allowed', 400);
 
     // 1. Create Purchase Receipt (GRN)
@@ -91,7 +94,7 @@ exports.create = async (req, res, next) => {
       subtotal += itemSubtotal;
       taxAmount += itemTax;
 
-      const received = await inventoryReceipt.receiveMaterial({ tenantId: req.tenantId, materialType: row.material_type, materialId: row.material_id, quantity: qty, unitCost: unitPrice, batchNumber: `${receipt.receipt_number}-${index + 1}`, supplierId: supplier_id, purchaseId: null, receivedDate: invoice_date || new Date(), referenceId: receipt.id, createdBy: req.user.id, transaction });
+      const received = await inventoryReceipt.receiveMaterial({ tenantId: req.tenantId, materialType: row.material_type, materialId: row.material_id, quantity: qty, unitCost: composition ? (itemSubtotal + itemTax) / qty : unitPrice, batchNumber: `${receipt.receipt_number}-${index + 1}`, supplierId: supplier_id, purchaseId: null, receivedDate: invoice_date || new Date(), referenceId: receipt.id, createdBy: req.user.id, transaction });
       const batch = received.batch;
       if (Math.abs(received.cost_variance) > 0.0001) deficitVariances.push({ material_type: row.material_type, amount: accounting.money(received.cost_variance), description: `Negative stock cost reconciliation for ${batch.batch_number}` });
 
@@ -134,7 +137,9 @@ exports.create = async (req, res, next) => {
     const inventoryAccountFor = materialType => accounts[materialType === 'raw' ? codes.RAW_INVENTORY : materialType === 'packaging' ? codes.PKG_INVENTORY : codes.FG_INVENTORY];
     const inventoryLines = items.map(row => ({
       account_id: inventoryAccountFor(row.material_type).id,
-      debit_amount: accounting.money(Number(row.quantity) * Number(row.unit_price || 0)),
+      debit_amount: composition
+        ? accounting.money(Number(row.quantity) * Number(row.unit_price || 0)) + accounting.money(accounting.money(Number(row.quantity) * Number(row.unit_price || 0)) * Number(row.tax_rate || 0) / 100)
+        : accounting.money(Number(row.quantity) * Number(row.unit_price || 0)),
       description: `Received on ${receipt.receipt_number}`
     }));
     deficitVariances.forEach(variance => {
@@ -147,7 +152,7 @@ exports.create = async (req, res, next) => {
         inventoryLines.push({ account_id: accounts[codes.PURCHASE_VARIANCE].id, credit_amount: Math.abs(variance.amount), description: variance.description });
       }
     });
-    if (taxAmount) inventoryLines.push({ account_id: accounts[codes.INPUT_TAX].id, debit_amount: taxAmount, description: `Input tax on ${invoiceNumber}` });
+    if (taxAmount && !composition) inventoryLines.push({ account_id: accounts[codes.INPUT_TAX].id, debit_amount: taxAmount, description: `Input tax on ${invoiceNumber}` });
     inventoryLines.push({ account_id: accounts[codes.AP].id, credit_amount: totalAmount, description: `Supplier invoice ${invoiceNumber}` });
     const purchaseJournal = await accounting.createAndPost(req.tenantId, {
       entry_date: invoice_date || new Date(), reference_type: 'purchase_invoice', reference_id: invoice.id,
@@ -159,13 +164,15 @@ exports.create = async (req, res, next) => {
     // 3. Handle Immediate Payment if checked
     if (paid_immediately) {
       const paymentSplits = await accounting.resolvePaymentSplits(req.tenantId, req.body, totalAmount, transaction);
+      const includesCash = paymentSplits.some(split => split.method.method_type === 'CASH');
+      const paymentDate = includesCash ? businessDays.businessDate() : (invoice_date || new Date());
       const paymentSequence = await payment.count({ 
         where: { tenant_id: req.tenantId, payment_type: 'outgoing' }, 
         transaction 
       }) + 1;
       const paymentRecords = [];
       for (const [index, split] of paymentSplits.entries()) {
-        const paymentNumber = `PAY-OUT-${new Date().getFullYear()}-${String(paymentSequence + index).padStart(4, '0')}`;
+        const paymentNumber = `PAY-OUT-${new Date(paymentDate).getFullYear()}-${String(paymentSequence + index).padStart(4, '0')}`;
         const paymentRecord = await payment.create({
           tenant_id: req.tenantId,
           payment_number: paymentNumber,
@@ -176,7 +183,7 @@ exports.create = async (req, res, next) => {
           payment_mode: accounting.paymentModeForType(split.method.method_type),
           bank_account_id: split.method.account.id,
           amount: split.amount,
-          payment_date: invoice_date || new Date(),
+          payment_date: paymentDate,
           created_by: req.user.id
         }, { transaction });
         paymentRecords.push(paymentRecord);
@@ -193,14 +200,14 @@ exports.create = async (req, res, next) => {
         status: 'paid'
       }, { transaction });
       const paymentJournal = await accounting.createAndPost(req.tenantId, {
-        entry_date: invoice_date || new Date(), reference_type: 'purchase_payment', reference_id: invoice.id,
+        entry_date: paymentDate, reference_type: 'purchase_payment', reference_id: invoice.id,
         narration: `Supplier payment for ${invoiceNumber}`,
         lines: [
           { account_id: accounts[codes.AP].id, debit_amount: totalAmount, description: `Payment for ${invoiceNumber}` },
           ...paymentSplits.map(split => ({ account_id: split.method.account.id, credit_amount: split.amount, description: `${split.method.name} payment for ${invoiceNumber}` }))
         ]
       }, req.user.id, transaction);
-      await Promise.all(paymentRecords.map(record => record.update({ journal_entry_id: paymentJournal.id }, { transaction })));
+      await Promise.all(paymentRecords.map(record => record.update({ journal_entry_id: paymentJournal.id, business_day_id: paymentJournal.business_day_id || null }, { transaction })));
     }
 
     await transaction.commit();

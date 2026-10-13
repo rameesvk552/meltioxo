@@ -1,5 +1,5 @@
 import React, { useContext, useState } from 'react';
-import { Alert, Button, Card, Col, Descriptions, Empty, Row, Space, Spin, Table, Tag, Typography } from 'antd';
+import { Alert, Button, Card, Col, Descriptions, Empty, Modal, Row, Space, Spin, Table, Tag, Typography } from 'antd';
 import { ArrowLeftOutlined, EditOutlined, ExperimentOutlined, PrinterOutlined, RollbackOutlined, SwapOutlined } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 import useApiData from '../../hooks/useApiData';
@@ -25,6 +25,8 @@ export default function RetailSaleDetail() {
   const canReturn = ['super_admin', 'admin', 'manager', 'accountant', 'sales'].includes(user?.role);
   const [returnOpen, setReturnOpen] = useState(false);
   const [exchangeOpen, setExchangeOpen] = useState(false);
+  const [returnChoiceOpen, setReturnChoiceOpen] = useState(false);
+  const [returnMode, setReturnMode] = useState('refund');
   const saleQuery = useApiData(`/retail-sales/${id}`, { initialData: {} });
   const { data: tenantSettings } = useApiData('/tenant/settings', { initialData: {} });
   const { data: sale, loading } = saleQuery;
@@ -40,8 +42,7 @@ export default function RetailSaleDetail() {
           <Tag color={sale.return_status === 'full' ? 'default' : sale.return_status === 'partial' ? 'orange' : 'success'}>{sale.return_status === 'full' ? 'Fully returned' : sale.return_status === 'partial' ? 'Partially returned' : 'Posted'}</Tag>
         </Space>
         <Space wrap>
-          {canReturn && sale.return_status !== 'full' && <Button danger icon={<RollbackOutlined />} onClick={() => setReturnOpen(true)}>Return</Button>}
-          {canReturn && sale.return_status !== 'full' && <Button icon={<SwapOutlined />} onClick={() => setExchangeOpen(true)}>Exchange</Button>}
+          {canReturn && sale.return_status !== 'full' && <Button danger icon={<RollbackOutlined />} onClick={() => setReturnChoiceOpen(true)}>Return</Button>}
           {canReturn && sale.return_status === 'none' && <Button icon={<EditOutlined />} onClick={() => navigate(`/app/retail-sales/${sale.id}/edit`)}>Edit sale</Button>}
           <Button type="primary" icon={<PrinterOutlined />} onClick={() => navigate(`/app/retail-sales/${sale.id}/invoice`)}>Invoice &amp; Print</Button>
         </Space>
@@ -53,10 +54,14 @@ export default function RetailSaleDetail() {
           <Descriptions.Item label="Customer">{sale.customer?.name || 'Walk-in customer'}</Descriptions.Item>
           <Descriptions.Item label="Received in">{paymentLabel(sale)}</Descriptions.Item>
           <Descriptions.Item label="Total">{money(sale.total_amount)}</Descriptions.Item>
+          <Descriptions.Item label="Original discount">{money(sale.discount_amount)}</Descriptions.Item>
+          {Number(sale.store_credit_used || 0) > 0 && <Descriptions.Item label="Store credit used">{money(sale.store_credit_used)}</Descriptions.Item>}
           <Descriptions.Item label="Returned">{money(sale.returned_amount)}</Descriptions.Item>
           <Descriptions.Item label="Net sale">{money(Number(sale.total_amount || 0) - Number(sale.returned_amount || 0))}</Descriptions.Item>
           <Descriptions.Item label="Material/stock cost">{money(sale.cogs_amount)}</Descriptions.Item>
           <Descriptions.Item label="Net gross profit">{money(Number(sale.subtotal || 0) - Number(sale.discount_amount || 0) - Number(sale.returned_revenue || 0) - Number(sale.cogs_amount || 0) + Number(sale.returned_cost || 0))}</Descriptions.Item>
+          {sale.salesperson_id && <Descriptions.Item label="Salesperson">{sale.salesperson?.name || 'Former user'}</Descriptions.Item>}
+          {sale.salesperson_id && <Descriptions.Item label="Incentive earned">{money(sale.effective_incentive_amount)} at {Number(sale.incentive_rate || 0)}%</Descriptions.Item>}
         </Descriptions>
       </Card>
       <Row gutter={[16, 16]}>
@@ -107,7 +112,7 @@ export default function RetailSaleDetail() {
         })}
       </Row>
       {(sale.salesReturns || []).length > 0 && <Card title={<Space><RollbackOutlined />Return history</Space>} style={{ marginTop: 16 }}>
-        <Alert type="info" showIcon message="Posted invoices remain unchanged" description="These linked credit transactions contain the refund, tax reversal, and any inventory restored." style={{ marginBottom: 16 }} />
+        <Alert type="info" showIcon message="Posted invoices remain unchanged" description="Each return reverses the original discount and tax on its items, then records the selected settlement and any inventory restored." style={{ marginBottom: 16 }} />
         <Table
           rowKey="id"
           pagination={false}
@@ -117,14 +122,26 @@ export default function RetailSaleDetail() {
             { title: 'Return #', dataIndex: 'return_number' },
             { title: 'Date', dataIndex: 'return_date' },
             { title: 'Reason', dataIndex: 'reason', render: (value, row) => row.exchangeSale ? <Button type="link" icon={<SwapOutlined />} onClick={() => navigate(`/app/retail-sales/${row.exchangeSale.id}`)}>{value} · {row.exchangeSale.sale_number}</Button> : value },
+            { title: 'Type', render: (_, row) => row.exchangeSale ? 'Exchange' : ({ refund: 'Refund', store_credit: 'Store credit', exchange: 'Exchange' }[row.settlement_type] || 'Refund') },
             { title: 'Items', render: (_, row) => (row.salesReturnItems || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0).toLocaleString('en-IN') },
             { title: 'Restocked', render: (_, row) => (row.salesReturnItems || []).reduce((sum, item) => sum + Number(item.restock_quantity || 0), 0).toLocaleString('en-IN') },
-            { title: 'Refunded via', render: (_, row) => row.paymentMethod?.name || row.refundAccount?.name || '—' },
+            { title: 'Discount reversed', dataIndex: 'discount_amount', align: 'right', render: money },
+            { title: 'Unpaid balance reduced', dataIndex: 'receivable_offset_amount', align: 'right', render: money },
+            { title: 'Refund', render: (_, row) => { const amount = Number(row.refund_amount || (row.payment_id ? row.total_amount : 0)); return amount > 0 ? `${money(amount)} · ${row.paymentMethod?.name || row.refundAccount?.name || 'Payment'}` : '—'; } },
+            { title: 'Store credit', dataIndex: 'store_credit_amount', align: 'right', render: money },
             { title: 'Amount', dataIndex: 'total_amount', align: 'right', render: money }
           ]}
         />
       </Card>}
-      <SalesReturnModal sale={sale} open={returnOpen} onClose={() => setReturnOpen(false)} onCreated={saleQuery.reload} />
+      <Modal title="How should this return be handled?" open={returnChoiceOpen} onCancel={() => setReturnChoiceOpen(false)} footer={null} width={460}>
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <Button block size="large" icon={<SwapOutlined />} onClick={() => { setReturnChoiceOpen(false); setExchangeOpen(true); }}>Exchange · choose replacement items</Button>
+          <Button block size="large" onClick={() => { setReturnMode('refund'); setReturnChoiceOpen(false); setReturnOpen(true); }}>Refund · return money to the customer</Button>
+          <Button block size="large" disabled={!sale.customer_id} onClick={() => { setReturnMode('store_credit'); setReturnChoiceOpen(false); setReturnOpen(true); }}>Store credit · save value for a future sale</Button>
+          {!sale.customer_id && <Text type="secondary">Store credit requires a named customer on the original sale.</Text>}
+        </Space>
+      </Modal>
+      <SalesReturnModal sale={sale} open={returnOpen} settlementType={returnMode} onClose={() => setReturnOpen(false)} onCreated={saleQuery.reload} />
       <SalesExchangeModal sale={sale} open={exchangeOpen} onClose={() => setExchangeOpen(false)} onCreated={saleQuery.reload} />
     </div>
   );

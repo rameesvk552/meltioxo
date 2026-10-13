@@ -5,6 +5,8 @@ module.exports = (sequelize, DataTypes) => {
     code: { type: DataTypes.STRING, allowNull: false },
     name: { type: DataTypes.STRING, allowNull: false },
     description: { type: DataTypes.TEXT, allowNull: true },
+    hsn_code: { type: DataTypes.STRING(8), allowNull: true },
+    gst_rate: { type: DataTypes.DECIMAL(5, 2), allowNull: true },
     source_type: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'live_make' },
     formula_id: { type: DataTypes.UUID, allowNull: true },
     sell_by_measurement: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },

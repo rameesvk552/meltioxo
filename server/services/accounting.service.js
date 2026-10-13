@@ -8,18 +8,36 @@ const ACCOUNT_TYPE_BASES = { asset: 1000, liability: 2000, equity: 3000, revenue
 const today = () => new Date().toISOString().slice(0, 10);
 
 const supplierLedgerName = supplier => `Vendor - ${String(supplier.name || '').trim()}`;
-const customerLedgerName = customer => 'Customer - ' + String(customer.name || '').trim();
+const customerLedgerName = customer => `Customer - ${String(customer.name || '').trim()}`;
+
 const ensureCustomerLedger = async (tenantId, customer, transaction) => {
- const receivables=await db.account.findOne({where:{tenant_id:tenantId,code:ACCOUNT_CODES.AR},transaction});
- if(!receivables) throw new AppError('Trade Receivables ledger is not configured',500);
- if(!receivables.is_group) await receivables.update({is_group:true},{transaction});
- let ledger=await db.account.findOne({where:{tenant_id:tenantId,customer_id:customer.id},transaction,lock:transaction?.LOCK?.UPDATE});
- if(!ledger){const code=await generateNextAccountCode(tenantId,receivables,'asset',transaction);ledger=await db.account.create({tenant_id:tenantId,code,name:customerLedgerName(customer),customer_id:customer.id,type:'asset',parent_id:receivables.id,is_group:false,is_system:false,is_active:true},{transaction});}
- else if(ledger.name!==customerLedgerName(customer)||ledger.parent_id!==receivables.id||ledger.type!=='asset') await ledger.update({name:customerLedgerName(customer),parent_id:receivables.id,type:'asset',is_group:false,is_active:true},{transaction});
- return ledger;
+  const receivables = await db.account.findOne({ where: { tenant_id: tenantId, code: ACCOUNT_CODES.AR }, transaction });
+  if (!receivables) throw new AppError('Trade Receivables ledger is not configured', 500);
+  if (!receivables.is_group) await receivables.update({ is_group: true }, { transaction });
+  let ledger = await db.account.findOne({ where: { tenant_id: tenantId, customer_id: customer.id }, transaction, lock: transaction?.LOCK?.UPDATE });
+  if (!ledger) {
+    // Customer ledgers can outnumber the 99 numeric codes under this group.
+    // The UUID keeps the code stable and unique without renumbering old ledgers.
+    const code = `CUS-${customer.id}`;
+    ledger = await db.account.create({ tenant_id: tenantId, code, name: customerLedgerName(customer), customer_id: customer.id, type: 'asset', parent_id: receivables.id, is_group: false, is_system: false, is_active: true }, { transaction });
+  } else if (ledger.name !== customerLedgerName(customer) || ledger.parent_id !== receivables.id || ledger.type !== 'asset') {
+    await ledger.update({ name: customerLedgerName(customer), parent_id: receivables.id, type: 'asset', is_group: false, is_active: true }, { transaction });
+  }
+  return ledger;
 };
-const ensureCustomerLedgers=async(tenantId,transaction)=>{const customers=await db.customer.findAll({where:{tenant_id:tenantId},transaction,order:[['created_at','ASC']]});const ledgers=[];for(const customer of customers)ledgers.push(await ensureCustomerLedger(tenantId,customer,transaction));return ledgers;};
-const getCustomerLedger=async(tenantId,customerId,transaction)=>{const customer=await db.customer.findOne({where:{id:customerId,tenant_id:tenantId},transaction});if(!customer)throw new AppError('Customer not found',404);return ensureCustomerLedger(tenantId,customer,transaction);};
+
+const ensureCustomerLedgers = async (tenantId, transaction) => {
+  const customers = await db.customer.findAll({ where: { tenant_id: tenantId }, transaction, order: [['created_at', 'ASC']] });
+  const ledgers = [];
+  for (const customer of customers) ledgers.push(await ensureCustomerLedger(tenantId, customer, transaction));
+  return ledgers;
+};
+
+const getCustomerLedger = async (tenantId, customerId, transaction) => {
+  const customer = await db.customer.findOne({ where: { id: customerId, tenant_id: tenantId }, transaction });
+  if (!customer) throw new AppError('Customer not found', 404);
+  return ensureCustomerLedger(tenantId, customer, transaction);
+};
 
 const ensureSupplierLedger = async (tenantId, supplier, transaction) => {
   const creditors = await db.account.findOne({ where: { tenant_id: tenantId, code: ACCOUNT_CODES.AP }, transaction });
@@ -27,7 +45,7 @@ const ensureSupplierLedger = async (tenantId, supplier, transaction) => {
   if (!creditors.is_group) await creditors.update({ is_group: true }, { transaction });
   let ledger = await db.account.findOne({ where: { tenant_id: tenantId, supplier_id: supplier.id }, transaction, lock: transaction?.LOCK?.UPDATE });
   if (!ledger) {
-    const code = await generateNextAccountCode(tenantId, creditors, 'liability', transaction);
+    const code = `SUP-${supplier.id}`;
     ledger = await db.account.create({ tenant_id: tenantId, code, name: supplierLedgerName(supplier), supplier_id: supplier.id, type: 'liability', parent_id: creditors.id, is_group: false, is_system: false, is_active: true }, { transaction });
   } else if (ledger.name !== supplierLedgerName(supplier) || ledger.parent_id !== creditors.id || ledger.type !== 'liability') {
     await ledger.update({ name: supplierLedgerName(supplier), parent_id: creditors.id, type: 'liability', is_group: false, is_active: true }, { transaction });
@@ -126,6 +144,31 @@ const validatePostingAccounts = async (tenantId, lines, transaction) => {
   return new Map(accounts.map(account => [account.id, account]));
 };
 
+const resolveCashBusinessDayId = async (tenantId, entryDate, lines, requestedBusinessDayId, transaction) => {
+  const accountIds = [...new Set(lines.map(line => line.account_id))];
+  const cashMethods = await db.paymentMethod.findAll({
+    where: { tenant_id: tenantId, account_id: { [Op.in]: accountIds }, method_type: 'CASH' },
+    attributes: ['account_id'],
+    transaction
+  });
+  const cashAccountIds = new Set(cashMethods.map(method => method.account_id));
+  if (!lines.some(line => cashAccountIds.has(line.account_id) && (line.debit || line.credit))) return null;
+
+  const businessDays = require('./businessDay.service');
+  const day = requestedBusinessDayId
+    ? await db.businessDay.findOne({
+      where: { id: requestedBusinessDayId, tenant_id: tenantId, status: 'open' },
+      transaction,
+      lock: transaction?.LOCK?.UPDATE
+    })
+    : await businessDays.findOpen(tenantId, transaction, true);
+  if (!day) throw new AppError('Open the business day before posting a cash transaction', 409);
+  if (day.business_date !== entryDate) {
+    throw new AppError(`Cash transaction date ${entryDate} must match the open business day ${day.business_date}. Backdated cash transactions require an audited register adjustment.`, 409);
+  }
+  return day.id;
+};
+
 const generateAutoNumber = async (tenantId, prefix, transaction) => {
   if (transaction && db.sequelize.getDialect() === 'postgres') {
     await db.sequelize.query('SELECT pg_advisory_xact_lock(hashtext(:sequence_key))', { replacements: { sequence_key: `${tenantId}:journal-number` }, transaction });
@@ -140,6 +183,7 @@ const createJournalEntry = async (tenantId, data, transaction) => {
   if (entryDate > today()) throw new AppError('Future-dated journal entries are not allowed', 400);
   const validated = validateJournalLines(data.lines);
   await validatePostingAccounts(tenantId, validated.lines, transaction);
+  const businessDayId = await resolveCashBusinessDayId(tenantId, entryDate, validated.lines, data.business_day_id, transaction);
   const journalEntry = await db.journalEntry.create({
     tenant_id: tenantId,
     entry_number: await generateAutoNumber(tenantId, 'JE', transaction),
@@ -147,6 +191,7 @@ const createJournalEntry = async (tenantId, data, transaction) => {
     reference_type: data.reference_type || 'manual_journal',
     reference_id: data.reference_id || null,
     branch_id: data.branch_id || null,
+    business_day_id: businessDayId,
     narration: String(data.narration || '').trim() || 'Journal entry',
     total_debit: validated.totalDebit,
     total_credit: validated.totalCredit,
@@ -166,6 +211,8 @@ const postJournal = async (tenantId, journalId, userId, transaction) => {
   const journalLines = await db.journalEntryLine.findAll({ where: { journal_entry_id: journal.id }, transaction });
   const validated = validateJournalLines(journalLines.map(line => ({ account_id: line.account_id, debit: line.debit, credit: line.credit, description: line.description })));
   const accounts = await validatePostingAccounts(tenantId, validated.lines, transaction);
+  const businessDayId = await resolveCashBusinessDayId(tenantId, journal.entry_date, validated.lines, journal.business_day_id, transaction);
+  if (businessDayId && journal.business_day_id !== businessDayId) await journal.update({ business_day_id: businessDayId }, { transaction });
   for (const line of validated.lines) {
     const account = accounts.get(line.account_id);
     const change = ['asset', 'expense'].includes(account.type) ? line.debit - line.credit : line.credit - line.debit;
@@ -273,12 +320,14 @@ const normalizePaymentSplits = (payload = {}, totalAmount, { allowPartial = fals
   const seen = new Set();
   const splits = payload.payments.map((row, index) => {
     const paymentMethodId = String(row.payment_method_id || '').trim();
-    if (!paymentMethodId) throw new AppError(`Payment ${index + 1} requires a payment method`, 400);
-    if (seen.has(paymentMethodId)) throw new AppError('Use each payment method only once per transaction', 400);
-    seen.add(paymentMethodId);
+    const bankAccountId = String(row.bank_account_id || '').trim();
+    if (Boolean(paymentMethodId) === Boolean(bankAccountId)) throw new AppError(`Payment ${index + 1} requires one payment method or bank ledger`, 400);
+    const selectionKey = paymentMethodId ? `method:${paymentMethodId}` : `ledger:${bankAccountId}`;
+    if (seen.has(selectionKey)) throw new AppError('Use each payment method or bank ledger only once per transaction', 400);
+    seen.add(selectionKey);
     const amount = money(row.amount, `Payment ${index + 1} amount`);
     if (amount <= 0) throw new AppError(`Payment ${index + 1} amount must be greater than zero`, 400);
-    return { payment_method_id: paymentMethodId, amount };
+    return { ...(paymentMethodId ? { payment_method_id: paymentMethodId } : { bank_account_id: bankAccountId }), amount };
   });
   const paidCents = splits.reduce((sum, row) => sum + Math.round(row.amount * 100), 0);
   const totalCents = Math.round(money(totalAmount, 'Document total') * 100);
@@ -296,7 +345,18 @@ const resolvePaymentSplits = async (tenantId, payload = {}, totalAmount, transac
   }
   const resolved = [];
   for (const split of splits) {
-    resolved.push({ method: await getPaymentMethod(tenantId, split.payment_method_id, transaction), amount: split.amount });
+    if (split.payment_method_id) {
+      resolved.push({ method: await getPaymentMethod(tenantId, split.payment_method_id, transaction), amount: split.amount });
+      continue;
+    }
+    const ledger = await assertCashBankLedger(tenantId, split.bank_account_id, transaction);
+    let method = await db.paymentMethod.findOne({ where: { tenant_id: tenantId, account_id: ledger.id }, include: [db.account], transaction });
+    if (method && !method.is_active) await method.update({ is_active: true }, { transaction });
+    if (!method) {
+      method = await db.paymentMethod.create({ tenant_id: tenantId, account_id: ledger.id, name: `${ledger.code} — ${ledger.name}`, method_type: 'BANK', is_default: false, is_active: true }, { transaction });
+      method = await getPaymentMethod(tenantId, method.id, transaction);
+    }
+    resolved.push({ method, amount: split.amount });
   }
   return resolved;
 };

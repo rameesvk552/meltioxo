@@ -36,6 +36,14 @@ test('assigns remaining cents to the final partial return', () => {
   assert.equal(first.tax + final.tax, 10);
 });
 
+test('fully discounted items still carry their original discount into a return', () => {
+  const result = returns.allocateReturnAmounts({ quantity: 1, unit_price: 100, tax_amount: 0, total: 0, cost_amount: 40 }, 1);
+  assert.equal(result.subtotal, 100);
+  assert.equal(result.discount, 100);
+  assert.equal(result.tax, 0);
+  assert.equal(result.total, 0);
+});
+
 test('rejects a return above the remaining sold quantity', () => {
   assert.throws(() => returns.allocateReturnAmounts({
     quantity: 2,
@@ -49,4 +57,22 @@ test('rejects a return above the remaining sold quantity', () => {
 test('rejects quantities beyond inventory precision', () => {
   assert.throws(() => returns.quantityNumber(0.00001), /more than four decimal places/);
   assert.equal(returns.quantityNumber(1.2345), 1.2345);
+});
+
+test('a partial payment is reduced before any refund is made', () => {
+  assert.deepEqual(returns.calculateSettlement({ returnTotal: 70, saleTotal: 100, collected: 40 }), {
+    receivableOffset: 60, reinstatedCredit: 0, refundAmount: 10, storeCreditAmount: 0
+  });
+});
+
+test('store credit applies only to the paid part of a return', () => {
+  assert.deepEqual(returns.calculateSettlement({ returnTotal: 70, saleTotal: 100, collected: 40, settlementType: 'store_credit' }), {
+    receivableOffset: 60, reinstatedCredit: 0, refundAmount: 0, storeCreditAmount: 10
+  });
+});
+
+test('redeemed store credit is reinstated before cash is refunded, across partial returns', () => {
+  assert.deepEqual(returns.calculateSettlement({ returnTotal: 50, saleTotal: 100, previouslyReturned: 50, collected: 100, originalStoreCredit: 30, previouslyReinstated: 20 }), {
+    receivableOffset: 0, reinstatedCredit: 10, refundAmount: 40, storeCreditAmount: 10
+  });
 });

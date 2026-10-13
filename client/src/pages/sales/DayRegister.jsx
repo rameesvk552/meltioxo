@@ -90,17 +90,21 @@ export default function DayRegister() {
       <Row gutter={[16, 16]}>
         <Col xs={12} lg={6}><Card><Statistic title="Opening cash" value={Number(current.opening_cash)} precision={2} prefix="₹" /></Card></Col>
         <Col xs={12} lg={6}><Card><Statistic title="Net sales" value={Number(current.total_sales)} precision={2} prefix="₹" suffix={<small>{current.sales_count} bills · {current.return_count || 0} returns</small>} /></Card></Col>
-        <Col xs={12} lg={6}><Card><Statistic title="Cash collected" value={Number(current.cash_movement)} precision={2} prefix="₹" /></Card></Col>
+        <Col xs={12} lg={6}><Card><Statistic title="Net cash movement" value={Number(current.cash_movement)} precision={2} prefix="₹" /></Card></Col>
         <Col xs={12} lg={6}><Card className="expected-card"><Statistic title="Expected in drawer" value={expectedCash} precision={2} prefix="₹" /></Card></Col>
       </Row>
       <Card title="Net movement by payment method" className="day-register-payments">
-        {(current.payment_summary || []).length ? <div className="payment-summary-grid">{current.payment_summary.map(row => <div key={row.payment_method_id || row.name}><span>{row.name}<small>{row.count} payment{row.count === 1 ? '' : 's'}</small></span><strong>{money(row.amount)}</strong></div>)}</div> : <div className="day-register-empty">No sales have been recorded in this register.</div>}
+        {(current.payment_summary || []).length ? <div className="payment-summary-grid">{current.payment_summary.map(row => <div key={row.payment_method_id || row.name}><span>{row.name}<small>{row.count} movement{row.count === 1 ? '' : 's'}</small></span><strong>{money(row.amount)}</strong></div>)}</div> : <div className="day-register-empty">No payment movements have been recorded in this register.</div>}
       </Card>
     </> : <Card className="day-register-closed-state">
       <span className="closed-state-icon"><WalletOutlined /></span>
       <Title level={3}>{stateQuery.data.today_record?.status === 'closed' ? 'Today’s register is closed' : 'Register is closed'}</Title>
       <Text type="secondary">{stateQuery.data.today_record?.status === 'closed' ? 'Today has already been reconciled. A closed day cannot be reopened.' : `Enter the cash currently in the drawer to open ${dateLabel(stateQuery.data.business_date)}.`}</Text>
-      {stateQuery.data.can_open ? <Button type="primary" size="large" icon={<PlayCircleOutlined />} onClick={() => { openForm.setFieldsValue({ opening_cash: 0, opening_note: '' }); setOpenVisible(true); }}>Open business day</Button> : <Tag color="success" icon={<CheckCircleOutlined />}>DAY CLOSED</Tag>}
+      {stateQuery.data.can_open ? <Button type="primary" size="large" icon={<PlayCircleOutlined />} onClick={() => {
+        const previousClose = stateQuery.data.previous_close;
+        openForm.setFieldsValue({ opening_cash: previousClose ? Number(previousClose.counted_cash) : 0, opening_note: '' });
+        setOpenVisible(true);
+      }}>Open business day</Button> : <Tag color="success" icon={<CheckCircleOutlined />}>DAY CLOSED</Tag>}
     </Card>}
 
     <Card title={<Space><CalendarOutlined /> Recent day closures</Space>} className="day-register-history">
@@ -108,10 +112,10 @@ export default function DayRegister() {
     </Card>
 
     <Modal title="Open business day" open={openVisible} onCancel={() => !saving && setOpenVisible(false)} onOk={() => openForm.submit()} okText="Open day" confirmLoading={saving} destroyOnHidden>
-      <Alert type="info" showIcon message={dateLabel(stateQuery.data.business_date)} description="Opening cash is the float physically present before the first sale." />
+      <Alert type="info" showIcon message={dateLabel(stateQuery.data.business_date)} description="Count the cash physically present before the first sale. The previous close is prefilled; if the handover count differs, explain the difference in the opening note." />
       <Form form={openForm} layout="vertical" onFinish={openDay} className="day-register-form">
         <Form.Item name="opening_cash" label="Opening cash in drawer" rules={[{ required: true, message: 'Enter the opening cash' }]}><InputNumber min={0} precision={2} prefix="₹" style={{ width: '100%' }} /></Form.Item>
-        <Form.Item name="opening_note" label="Opening note (optional)"><Input.TextArea rows={3} maxLength={500} /></Form.Item>
+        <Form.Item name="opening_note" label="Opening note (required if different from previous close)"><Input.TextArea rows={3} maxLength={500} /></Form.Item>
       </Form>
     </Modal>
 
@@ -121,7 +125,7 @@ export default function DayRegister() {
       <Form form={closeForm} layout="vertical" onFinish={confirmCloseDay} className="day-register-form">
         <Form.Item name="counted_cash" label="Cash counted in drawer" rules={[{ required: true, message: 'Enter counted cash' }]}><InputNumber min={0} precision={2} prefix="₹" style={{ width: '100%' }} /></Form.Item>
         <div className={`variance-preview ${variance === 0 ? 'balanced' : 'different'}`}><span>Variance</span><strong>{money(variance)}</strong></div>
-        <Form.Item name="closing_note" label="Closing note (optional)"><Input.TextArea rows={3} maxLength={500} placeholder={variance ? 'Explain the cash difference' : ''} /></Form.Item>
+        <Form.Item name="closing_note" label="Closing note (required if there is a variance)" rules={[{ validator: (_, value) => Math.abs(variance) < 0.009 || String(value || '').trim() ? Promise.resolve() : Promise.reject(new Error('Explain the cash variance before closing')) }]}><Input.TextArea rows={3} maxLength={500} placeholder={variance ? 'Explain the cash difference' : ''} /></Form.Item>
       </Form>
     </Modal>
   </main>;

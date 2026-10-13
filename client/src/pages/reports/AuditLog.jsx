@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, Card, Input, Modal, Select, Space, Table, Tag, Typography, DatePicker, Empty } from 'antd';
-import { ReloadOutlined, SearchOutlined, EyeOutlined } from '@ant-design/icons';
+import { Button, Card, Input, Modal, Select, Space, Table, Tag, Typography, DatePicker, Empty, message } from 'antd';
+import { ReloadOutlined, SearchOutlined, EyeOutlined, DownloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import client from '../../api/client';
+import { downloadReport, reportData } from './reportDownloads';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -17,6 +18,7 @@ export default function AuditLog() {
   const [filters, setFilters] = useState({ search: '', action: undefined, entity_type: undefined, dates: null });
   const [filterOptions, setFilterOptions] = useState({ actions: [], entity_types: [] });
   const [selected, setSelected] = useState(null);
+  const [exporting, setExporting] = useState(false);
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams({ page: String(pagination.current), page_size: String(pagination.pageSize) });
@@ -26,7 +28,7 @@ export default function AuditLog() {
     if (filters.dates?.[0]) params.set('from', filters.dates[0].format('YYYY-MM-DD'));
     if (filters.dates?.[1]) params.set('to', filters.dates[1].format('YYYY-MM-DD'));
     return params.toString();
-  }, [filters, pagination.current, pagination.pageSize]);
+  }, [filters, pagination]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -50,6 +52,35 @@ export default function AuditLog() {
     setFilters(current => ({ ...current, [name]: value }));
   };
 
+  const exportAudit = async format => {
+    setExporting(true);
+    try {
+      const params = new URLSearchParams(queryString);
+      params.set('page', '1');
+      params.set('page_size', '100');
+      const first = (await client.get(`/audit-logs?${params}`)).data;
+      const events = [...(first.data || [])];
+      for (let page = 2; page <= Number(first.pagination?.total_pages || 1); page++) {
+        params.set('page', String(page));
+        events.push(...((await client.get(`/audit-logs?${params}`)).data.data || []));
+      }
+      if (events.length !== Number(first.pagination?.total ?? events.length)) {
+        throw new Error('Audit events changed while exporting. Please retry.');
+      }
+      const spec = reportData(`audit-log-${dayjs().format('YYYY-MM-DD')}`, [
+        ['Audit log', filters.dates?.[0]?.format('YYYY-MM-DD') || 'All dates', filters.dates?.[1]?.format('YYYY-MM-DD') || 'Today'],
+        ['When', 'Actor', 'Email', 'Action', 'Record type', 'Record ID', 'Route', 'Changed fields', 'Changes', 'Before', 'After'],
+        ...events.map(row => [dayjs(row.created_at).format('YYYY-MM-DD HH:mm:ss'), row.actor_name || 'System', row.actor_email || '', row.action, row.entity_type, row.entity_id, row.route,
+          Object.keys(row.changes || {}).join(', '), JSON.stringify(row.changes || {}), JSON.stringify(row.before_data ?? null), JSON.stringify(row.after_data ?? null)])
+      ]);
+      downloadReport(spec, format);
+    } catch (error) {
+      message.error(error.response?.data?.message || 'Could not export the audit log');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const columns = [
     { title: 'When', dataIndex: 'created_at', key: 'created_at', width: 180, render: value => dayjs(value).format('DD/MM/YYYY HH:mm:ss') },
     { title: 'Who', key: 'actor', width: 180, render: (_, row) => <Space direction="vertical" size={0}><Text strong>{row.actor_name || 'System'}</Text><Text type="secondary" style={{ fontSize: 12 }}>{row.actor_email || row.actor_role || 'Automated process'}</Text></Space> },
@@ -63,7 +94,7 @@ export default function AuditLog() {
     <div className="standard-page">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginBottom: 24 }}>
         <div><Title level={2} style={{ margin: 0 }}>Audit Log</Title><Text type="secondary">Who did what, when, and exactly what changed.</Text></div>
-        <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
+        <Space wrap><Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button><Button icon={<DownloadOutlined />} loading={exporting} disabled={loading} onClick={() => exportAudit('xlsx')}>Excel</Button><Button icon={<DownloadOutlined />} loading={exporting} disabled={loading} onClick={() => exportAudit('pdf')}>PDF</Button></Space>
       </div>
       <Card style={{ marginBottom: 16 }}>
         <Space wrap>

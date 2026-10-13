@@ -20,6 +20,8 @@ const packagingDatabaseType = (category) => ({ Bottles: 'bottle', Caps: 'cap', S
 
 export default function PackagingMaterials() {
   const { data, loading, reload } = useApiData('/packaging-materials');
+  const { data: tenantSettings } = useApiData('/tenant/settings', { initialData: {} });
+  const regularGst = tenantSettings.tax_system === 'GST' && tenantSettings.gst_scheme === 'REGULAR';
   const [materials, setMaterials] = useState([]);
 
   useEffect(() => {
@@ -81,7 +83,8 @@ export default function PackagingMaterials() {
       reorder: material.reorder,
       avgCost: material.avgCost,
       sellingPrice: material.sellingPrice,
-      taxRate: material.taxRate
+      taxRate: material.taxRate,
+      hsnCode: material.hsn_code || ''
     });
     setIsModalOpen(true);
   };
@@ -107,7 +110,8 @@ export default function PackagingMaterials() {
       reorder_level: Number(values.reorder || 0),
       avg_cost: Number(values.avgCost || 0),
       selling_price: Number(values.sellingPrice || 0),
-      tax_rate: Number(values.taxRate || 0)
+      tax_rate: Number(values.taxRate || 0),
+      ...(regularGst ? { hsn_code: values.hsnCode || null } : {})
     };
     setSaving(true);
     try {
@@ -291,11 +295,12 @@ export default function PackagingMaterials() {
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="taxRate" label="Sale Tax Rate (%)" rules={[{ required: true, message: 'Please enter the tax rate' }]}>
-                <Input type="number" step="any" min={0} max={100} suffix="%" placeholder="0" />
+              <Form.Item name="taxRate" label={regularGst ? 'GST rate when sold' : 'Sale Tax Rate (%)'} rules={[{ required: true, message: 'Please enter the tax rate' }]}>
+                {regularGst ? <Select options={[0, 0.25, 3, 5, 12, 18, 28, 40].map(value => ({ value, label: `${value}%` }))} /> : <Input type="number" step="any" min={0} max={100} suffix="%" placeholder="0" />}
               </Form.Item>
             </Col>
           </Row>
+          {regularGst && <Form.Item name="hsnCode" label="HSN code if sold separately" rules={[{ pattern: /^(?:\d{4}|\d{6}|\d{8})$/, message: 'Enter 4, 6, or 8 digits' }]} extra="Required only if this packaging material is sold as a line on a tax invoice."><Input inputMode="numeric" maxLength={8} /></Form.Item>}
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item name="category" label="Package Type" rules={[{ required: true, message: 'Select or create a package type' }]}>

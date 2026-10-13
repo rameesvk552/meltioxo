@@ -18,6 +18,7 @@ const { Title } = Typography;
 const { Option } = Select;
 const { TextArea } = Input;
 const paymentTypes = ['CASH', 'BANK', 'UPI', 'CARD', 'WALLET', 'GATEWAY', 'OTHER'];
+const userRoles = ['admin', 'manager', 'accountant', 'production_mgr', 'warehouse', 'sales', 'viewer'];
 const acceptedLogoTypes = ['image/png', 'image/jpeg', 'image/webp'];
 const maxLogoSize = 5 * 1024 * 1024;
 const isPdfCompatibleLogo = source => {
@@ -51,6 +52,7 @@ const CompanySettings = () => {
   const canManageUsers = PRIVILEGED_ROLES.includes(currentUser?.role);
   const [formCompany] = Form.useForm();
   const [formPrefs] = Form.useForm();
+  const selectedGstScheme = Form.useWatch('gstScheme', formPrefs);
   const [paymentForm] = Form.useForm();
   const [paymentModalOpen, setPaymentModalOpen] = React.useState(false);
   const [editingPayment, setEditingPayment] = React.useState(null);
@@ -60,6 +62,8 @@ const CompanySettings = () => {
   const [savingPrefs, setSavingPrefs] = React.useState(false);
   const [logoUrl, setLogoUrl] = React.useState(null);
   const [permissionModalOpen, setPermissionModalOpen] = React.useState(false);
+  const [userForm] = Form.useForm();
+  const creatingRole = Form.useWatch('role', userForm);
   const [editingUser, setEditingUser] = React.useState(null);
   const [selectedViews, setSelectedViews] = React.useState([]);
   const [selectedWidgets, setSelectedWidgets] = React.useState([]);
@@ -67,10 +71,12 @@ const CompanySettings = () => {
   const [branchForm] = Form.useForm();
   const [savingBranch, setSavingBranch] = React.useState(false);
   const { data: tenant, reload: reloadTenant } = useApiData('/tenant/settings', { initialData: {} });
+  const { data: compositionSummary, loading: loadingComposition, reload: reloadComposition } = useApiData('/retail-sales/composition-levy', { enabled: canManageUsers && tenant.gst_scheme === 'COMPOSITION', initialData: {} });
   const { data: userData, loading, reload: reloadUsers } = useApiData('/users', { enabled: canManageUsers });
   const { data: paymentMethods, loading: loadingPaymentMethods, reload: reloadPaymentMethods } = useApiData('/accounts/payment-methods?active_only=false');
   const { data: paymentLedgers } = useApiData('/accounts/payment-method-ledgers');
   const { data: branches, loading: loadingBranches, reload: reloadBranches } = useApiData('/branches', { enabled: canManageUsers });
+  const { data: incentiveReport, loading: loadingIncentives, reload: reloadIncentives } = useApiData('/retail-sales/incentives', { enabled: canManageUsers, initialData: { summary: [], sales: [] } });
   const users = userData.map(item => ({
     ...item,
     role: item.role || '—',
@@ -107,6 +113,8 @@ const CompanySettings = () => {
     formPrefs.setFieldsValue({
       currency: tenant.currency,
       taxSystem: tenant.tax_system,
+      gstScheme: tenant.gst_scheme || 'REGULAR',
+      gstCompositionRate: Number(tenant.gst_composition_rate || 1),
       fyStart: tenant.fy_start_month,
       dateFormat: tenant.date_format,
       measuredPackagingEnabled: Boolean(tenant.measured_packaging_enabled),
@@ -114,7 +122,13 @@ const CompanySettings = () => {
       measuredPackagingAutoSelect: tenant.measured_packaging_auto_select !== false,
       showFormulaInSales: Boolean(tenant.show_formula_in_sales),
       packagingMaterialSalesEnabled: Boolean(tenant.packaging_material_sales_enabled),
-      creditSalesEnabled: Boolean(tenant.credit_sales_enabled)
+      rawMaterialMixingEnabled: Boolean(tenant.raw_material_mixing_enabled),
+      creditSalesEnabled: Boolean(tenant.credit_sales_enabled),
+      incentiveEnabled: Boolean(tenant.incentive_enabled),
+      incentiveSalespersonMode: tenant.incentive_salesperson_mode || 'LOGGED_IN',
+      incentiveRate: Number(tenant.incentive_rate || 0),
+      incentiveBasis: tenant.incentive_basis || 'NET_EX_TAX',
+      incentiveMinSaleAmount: Number(tenant.incentive_min_sale_amount || 0)
     });
   }, [tenant, formCompany, formPrefs]);
 
@@ -166,6 +180,8 @@ const CompanySettings = () => {
       await client.put('/tenant/settings', {
         currency: values.currency,
         tax_system: values.taxSystem,
+        ...(canManageUsers ? { gst_scheme: values.gstScheme } : {}),
+        ...(canManageUsers ? { gst_composition_rate: values.gstCompositionRate || 1 } : {}),
         fy_start_month: Number(values.fyStart),
         date_format: values.dateFormat,
         measured_packaging_enabled: Boolean(values.measuredPackagingEnabled),
@@ -173,9 +189,18 @@ const CompanySettings = () => {
         measured_packaging_auto_select: Boolean(values.measuredPackagingAutoSelect),
         show_formula_in_sales: Boolean(values.showFormulaInSales),
         packaging_material_sales_enabled: Boolean(values.packagingMaterialSalesEnabled),
-        credit_sales_enabled: Boolean(values.creditSalesEnabled)
+        ...(canManageUsers ? { raw_material_mixing_enabled: Boolean(values.rawMaterialMixingEnabled) } : {}),
+        credit_sales_enabled: Boolean(values.creditSalesEnabled),
+        ...(canManageUsers ? {
+          incentive_enabled: Boolean(values.incentiveEnabled),
+          incentive_salesperson_mode: values.incentiveSalespersonMode,
+          incentive_rate: values.incentiveRate,
+          incentive_basis: values.incentiveBasis,
+          incentive_min_sale_amount: values.incentiveMinSaleAmount,
+        } : {})
       });
       await reloadTenant();
+      if (values.gstScheme === 'COMPOSITION') await reloadComposition();
       message.success('Preferences saved successfully.');
     } catch (error) {
       message.error(error.response?.data?.message || 'Could not save preferences.');
@@ -194,22 +219,43 @@ const CompanySettings = () => {
     setPermissionModalOpen(true);
   };
 
+  const openCreateUser = () => {
+    setEditingUser(null);
+    userForm.resetFields();
+    userForm.setFieldsValue({ role: 'viewer', branch_id: branches.find(item => item.is_default && item.is_active !== false)?.id || branches.find(item => item.is_active !== false)?.id });
+    setSelectedViews([]);
+    setSelectedWidgets([]);
+    setPermissionModalOpen(true);
+  };
+
   const saveUserPermissions = async () => {
-    if (!editingUser) return;
     try {
+      const values = editingUser ? null : await userForm.validateFields();
+      if (!editingUser && !PRIVILEGED_ROLES.includes(values.role) && selectedViews.length === 0) {
+        message.error('Select at least one visible module for this user.');
+        return;
+      }
       setSavingPermissions(true);
-      await client.put(`/users/${editingUser.id}`, {
-        permissions: {
-          views: selectedViews,
-          dashboard_widgets: selectedWidgets,
-        },
-      });
+      const permissions = { views: selectedViews, dashboard_widgets: selectedWidgets };
+      if (editingUser) {
+        await client.put(`/users/${editingUser.id}`, { permissions });
+      } else {
+        await client.post('/users', {
+          name: values.name.trim(),
+          email: values.email.trim().toLowerCase(),
+          password: values.password,
+          role: values.role,
+          branch_id: values.branch_id,
+          permissions,
+        });
+      }
       await reloadUsers();
-      message.success(`Permissions updated for ${editingUser.name}.`);
+      message.success(editingUser ? `Module visibility updated for ${editingUser.name}.` : 'User created.');
       setPermissionModalOpen(false);
       setEditingUser(null);
     } catch (error) {
-      message.error(error.response?.data?.message || 'Could not update user permissions.');
+      if (error?.errorFields) return;
+      message.error(error.response?.data?.message || (editingUser ? 'Could not update module visibility.' : 'Could not create user.'));
     } finally {
       setSavingPermissions(false);
     }
@@ -260,12 +306,15 @@ const CompanySettings = () => {
     { title: 'Email', dataIndex: 'email', key: 'email' },
     { title: 'Role', dataIndex: 'role', key: 'role', render: val => <Tag color="blue">{val}</Tag> },
     { title: 'Status', dataIndex: 'status', key: 'status', render: val => <Tag color={val === 'Active' ? 'green' : 'red'}>{val}</Tag> },
+    { title: 'Visible modules', key: 'modules', render: (_, targetUser) => PRIVILEGED_ROLES.includes(targetUser.role)
+      ? 'All modules'
+      : targetUser.permissions?.views ? `${targetUser.permissions.views.length} selected` : 'All modules' },
     {
       title: 'Access',
       key: 'access',
       render: (_, targetUser) => PRIVILEGED_ROLES.includes(targetUser.role)
         ? <Tag color="gold">Full access</Tag>
-        : <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openPermissions(targetUser)}>Permissions</Button>
+        : <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openPermissions(targetUser)}>Edit visibility</Button>
     }
   ];
 
@@ -371,6 +420,16 @@ const CompanySettings = () => {
                 </Select>
               </Form.Item>
             </Col>
+            {canManageUsers && <Col xs={24} sm={12} lg={8}>
+              <Form.Item name="gstScheme" label="GST registration scheme" extra="Set this to match the GST portal. Composition bills do not collect GST, and purchase GST becomes cost. CMP-08 and GSTR-4 filing remain outside this app.">
+                <Select options={[{ value: 'REGULAR', label: 'Regular GST' }, { value: 'COMPOSITION', label: 'Composition GST' }]} />
+              </Form.Item>
+            </Col>}
+            {canManageUsers && selectedGstScheme === 'COMPOSITION' && <Col xs={24} sm={12} lg={8}>
+              <Form.Item name="gstCompositionRate" label="Composition levy rate" extra="Paid by the business on turnover; never added to the bill of supply.">
+                <Select options={[{ value: 1, label: '1% · eligible goods trader or manufacturer' }, { value: 5, label: '5% · restaurant service' }, { value: 6, label: '6% · eligible service supplier' }]} />
+              </Form.Item>
+            </Col>}
             <Col xs={24} sm={12} lg={8}>
               <Form.Item name="fyStart" label={<span >Financial Year Start</span>}>
                 <Select>
@@ -390,6 +449,10 @@ const CompanySettings = () => {
               </Form.Item>
             </Col>
           </Row>
+          {canManageUsers && tenant.gst_scheme === 'COMPOSITION' && <Card size="small" title="Estimated composition levy · current quarter" style={{ marginTop: 8 }} extra={<Button size="small" onClick={reloadComposition}>Refresh</Button>} loading={loadingComposition}>
+            <Space wrap size="large"><Typography.Text>POS turnover: <strong>₹{Number(compositionSummary.net_turnover || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></Typography.Text><Typography.Text>Estimated levy at {Number(compositionSummary.rate || tenant.gst_composition_rate || 1)}%: <strong>₹{Number(compositionSummary.estimated_levy || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></Typography.Text></Space>
+            <div style={{ marginTop: 8 }}><Typography.Text type="secondary">{compositionSummary.from || '—'} to {compositionSummary.to || '—'} · CGST ₹{Number(compositionSummary.estimated_cgst || 0).toFixed(2)} + SGST ₹{Number(compositionSummary.estimated_sgst || 0).toFixed(2)}. POS estimate only; check other turnover and exempt sales, especially the taxable-turnover base for traders, before CMP-08.</Typography.Text></div>
+          </Card>}
           <Card size="small" title="Measured perfume packing" style={{ marginTop: 8 }}>
             <Typography.Text type="secondary">When enabled, POS matches packing kits by the fill quantity entered for measured products.</Typography.Text>
             <Row gutter={16} style={{ marginTop: 16 }}>
@@ -410,12 +473,28 @@ const CompanySettings = () => {
               <Switch />
             </Form.Item>
           </Card>
+          {canManageUsers && <Card size="small" title="Raw material mixing" style={{ marginTop: 16 }}>
+            <Typography.Text type="secondary">Allow a batch of raw materials to be mixed into another raw material. Completing a mix deducts every input and adds the output at its combined input cost.</Typography.Text>
+            <Form.Item name="rawMaterialMixingEnabled" label="Enable raw material mixing" valuePropName="checked" style={{ marginTop: 16, marginBottom: 0 }}>
+              <Switch />
+            </Form.Item>
+          </Card>}
           <Card size="small" title="Customer credit sales" style={{ marginTop: 16 }}>
             <Typography.Text type="secondary">Allow checkout to record a partial payment and post the remaining invoice balance to the customer’s receivable ledger.</Typography.Text>
             <Form.Item name="creditSalesEnabled" label="Allow credit sales in POS" valuePropName="checked" style={{ marginTop: 16, marginBottom: 0 }}>
               <Switch />
             </Form.Item>
           </Card>
+          {canManageUsers && <Card size="small" title="Sales incentives" style={{ marginTop: 16 }}>
+            <Typography.Text type="secondary">Calculate a salesperson's incentive when a sale is posted. Returns reduce the earned amount. No payroll payment or accounting entry is created automatically.</Typography.Text>
+            <Row gutter={16} style={{ marginTop: 16 }}>
+              <Col xs={24} sm={8}><Form.Item name="incentiveEnabled" label="Enable sales incentives" valuePropName="checked"><Switch /></Form.Item></Col>
+              <Col xs={24} sm={8}><Form.Item name="incentiveSalespersonMode" label="Salesperson assignment"><Select options={[{ value: 'LOGGED_IN', label: 'Logged-in user' }, { value: 'SELECT', label: 'Select at checkout' }]} /></Form.Item></Col>
+              <Col xs={24} sm={8}><Form.Item name="incentiveBasis" label="Calculate on"><Select options={[{ value: 'NET_EX_TAX', label: 'After discount, before tax' }, { value: 'TOTAL_INCL_TAX', label: 'Total including tax' }]} /></Form.Item></Col>
+              <Col xs={24} sm={8}><Form.Item name="incentiveRate" label="Incentive rate (%)" rules={[{ required: true, message: 'Enter a rate' }]}><InputNumber min={0} max={100} precision={2} style={{ width: '100%' }} /></Form.Item></Col>
+              <Col xs={24} sm={8}><Form.Item name="incentiveMinSaleAmount" label="Minimum sale total" extra="Sales below this total earn no incentive."><InputNumber min={0} precision={2} style={{ width: '100%' }} /></Form.Item></Col>
+            </Row>
+          </Card>}
           <div style={{ marginTop: 24 }}>
             <Button type="primary" htmlType="submit" icon={<SaveOutlined />} loading={savingPrefs}>
               Save Preferences
@@ -425,6 +504,15 @@ const CompanySettings = () => {
       )
     },
     ...(canManageUsers ? [{
+      key: 'incentives',
+      label: 'Incentives',
+      children: <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 16 }}><Typography.Text type="secondary">Earned incentives by salesperson. Returns are deducted from the original sale's incentive.</Typography.Text><Button onClick={reloadIncentives}>Refresh</Button></div>
+        <Table rowKey="salesperson_id" loading={loadingIncentives} dataSource={incentiveReport.summary || []} pagination={false} columns={[{ title: 'Salesperson', dataIndex: 'salesperson_name' }, { title: 'Sales', dataIndex: 'sales' }, { title: 'Earned incentive', dataIndex: 'incentive_amount', render: value => `${tenant.currency || 'INR'} ${Number(value || 0).toFixed(2)}` }]} />
+        <Typography.Title level={5} style={{ marginTop: 24 }}>Sale breakdown</Typography.Title>
+        <Table rowKey="id" loading={loadingIncentives} dataSource={incentiveReport.sales || []} pagination={{ pageSize: 20 }} scroll={{ x: 700 }} columns={[{ title: 'Date', dataIndex: 'sale_date' }, { title: 'Sale', dataIndex: 'sale_number' }, { title: 'Salesperson', dataIndex: 'salesperson_name' }, { title: 'Sale total', dataIndex: 'sale_amount', render: value => Number(value || 0).toFixed(2) }, { title: 'Rate', dataIndex: 'incentive_rate', render: value => `${Number(value || 0)}%` }, { title: 'Earned after returns', dataIndex: 'effective_incentive_amount', render: value => Number(value || 0).toFixed(2) }]} />
+      </div>
+    }, {
       key: '3',
       label: 'Branches',
       children: (
@@ -447,10 +535,11 @@ const CompanySettings = () => {
       label: 'Users & Roles',
       children: (
         <div>
-          <div style={{ marginBottom: 16 }}>
+          <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
             <Typography.Text type="secondary">
-              Assign the pages and dashboard information each user can see. Administrators always retain full access.
+              Create users and choose which modules and dashboard information they can see. Administrators always retain full access.
             </Typography.Text>
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreateUser}>Add user</Button>
           </div>
           <Table 
             columns={userColumns} 
@@ -492,23 +581,34 @@ const CompanySettings = () => {
       </Card>
 
       <Modal
-        title={editingUser ? `Permissions — ${editingUser.name}` : 'User permissions'}
+        title={editingUser ? `Module visibility — ${editingUser.name}` : 'Add user'}
         open={permissionModalOpen}
         onCancel={() => setPermissionModalOpen(false)}
         onOk={saveUserPermissions}
-        okText="Save permissions"
+        okText={editingUser ? 'Save visibility' : 'Create user'}
         confirmLoading={savingPermissions}
         width={820}
+        forceRender
       >
+        <Form form={userForm} layout="vertical" initialValues={{ role: 'viewer' }} style={{ display: editingUser ? 'none' : undefined }}>
+          <Row gutter={16}>
+            <Col xs={24} sm={12}><Form.Item name="name" label="Name" rules={[{ required: true, whitespace: true, message: 'Enter a name' }]}><Input autoComplete="name" /></Form.Item></Col>
+            <Col xs={24} sm={12}><Form.Item name="email" label="Email" rules={[{ required: true, type: 'email', message: 'Enter a valid email' }]}><Input autoComplete="email" /></Form.Item></Col>
+            <Col xs={24} sm={12}><Form.Item name="password" label="Initial password" rules={[{ required: true, min: 8, message: 'Use at least 8 characters' }]}><Input.Password autoComplete="new-password" /></Form.Item></Col>
+            <Col xs={24} sm={6}><Form.Item name="role" label="Role" rules={[{ required: true }]}><Select options={(currentUser?.role === 'super_admin' ? ['super_admin', ...userRoles] : userRoles).map(role => ({ value: role, label: role.replaceAll('_', ' ') }))} /></Form.Item></Col>
+            <Col xs={24} sm={6}><Form.Item name="branch_id" label="Branch" rules={[{ required: true, message: 'Select a branch' }]}><Select options={branches.filter(item => item.is_active !== false).map(item => ({ value: item.id, label: item.name }))} /></Form.Item></Col>
+          </Row>
+        </Form>
         <Alert
           type="info"
           showIcon
-          message="Changes apply the next time this user loads a page. Existing users without a saved permission profile keep full access."
+          message={editingUser ? 'Changes apply the next time this user loads a page. Existing users without a saved permission profile keep full access.' : 'Select the modules this user can open. Administrators always have full access.'}
           style={{ marginBottom: 20 }}
         />
 
+        {(editingUser || !PRIVILEGED_ROLES.includes(creatingRole)) && <>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
-          <Typography.Title level={5} style={{ margin: 0 }}>View permissions</Typography.Title>
+          <Typography.Title level={5} style={{ margin: 0 }}>Visible modules</Typography.Title>
           <Space>
             <Button type="link" size="small" onClick={() => setSelectedViews(ALL_VIEW_PERMISSION_KEYS)}>Select all</Button>
             <Button type="link" size="small" onClick={() => setSelectedViews([])}>Clear</Button>
@@ -544,6 +644,7 @@ const CompanySettings = () => {
           options={DASHBOARD_WIDGETS.map(widget => ({ value: widget.key, label: widget.label }))}
           style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, width: '100%' }}
         />
+        </>}
       </Modal>
 
       <Modal

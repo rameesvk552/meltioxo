@@ -2,6 +2,7 @@ const db = require('../models');
 const { purchaseReceipt, purchaseReceiptItem, purchaseInvoice, payment, paymentAllocation } = db;
 const { AppError } = require('../middleware/errorHandler');
 const accounting = require('../services/accounting.service');
+const businessDays = require('../services/businessDay.service');
 const inventoryReceipt = require('../services/inventoryReceipt.service');
 const { ACCOUNT_CODES } = require('../config/constants');
 const { Op } = require('sequelize');
@@ -187,16 +188,19 @@ exports.post = async (req, res, next) => {
 
     const totals = calculatePurchaseTotals(items, Number(invoice.discount_amount || 0));
     if (totals.total_amount !== accounting.money(invoice.total_amount)) throw new AppError('Purchase totals changed; update the draft before posting', 409);
+    const tenantSettings = await db.tenant.findByPk(req.tenantId, { transaction });
+    const composition = tenantSettings?.tax_system === 'GST' && tenantSettings?.gst_scheme === 'COMPOSITION';
     const deficitVariances = [];
     for (const [index, row] of items.entries()) {
       const quantity = Number(row.quantity);
       const unitPrice = accounting.money(row.unit_price, `Item ${index + 1} unit price`);
+      const costPerUnit = composition ? (totals.line_net_amounts[index] + totals.line_tax_amounts[index]) / quantity : unitPrice;
       const received = await inventoryReceipt.receiveMaterial({
         tenantId: req.tenantId,
         materialType: row.material_type,
         materialId: row.material_id,
         quantity,
-        unitCost: unitPrice,
+        unitCost: costPerUnit,
         batchNumber: `${receipt.receipt_number}-${index + 1}`,
         supplierId: invoice.supplier_id,
         purchaseId: invoice.id,
@@ -219,9 +223,9 @@ exports.post = async (req, res, next) => {
     const accounts = await accounting.getAccountsByCode(req.tenantId, [codes.RAW_INVENTORY, codes.PKG_INVENTORY, codes.FG_INVENTORY, codes.INPUT_TAX, codes.AP, codes.PURCHASE_VARIANCE, ...(discountAmount ? [codes.DISCOUNT_RECEIVED] : [])], transaction);
     const supplierLedger = await accounting.getSupplierLedger(req.tenantId, supplier.id, transaction);
     const inventoryAccountFor = materialType => accounts[materialType === 'raw' ? codes.RAW_INVENTORY : materialType === 'packaging' ? codes.PKG_INVENTORY : codes.FG_INVENTORY];
-    const inventoryLines = items.map(row => ({
+    const inventoryLines = items.map((row, index) => ({
       account_id: inventoryAccountFor(row.material_type).id,
-      debit_amount: accounting.money(Number(row.quantity) * Number(row.unit_price || 0)),
+      debit_amount: composition ? accounting.money(totals.line_net_amounts[index] + totals.line_tax_amounts[index]) : accounting.money(Number(row.quantity) * Number(row.unit_price || 0)),
       description: `Received on ${receipt.receipt_number}`
     })).filter(line => line.debit_amount > 0);
     deficitVariances.forEach(variance => {
@@ -234,8 +238,8 @@ exports.post = async (req, res, next) => {
         inventoryLines.push({ account_id: accounts[codes.PURCHASE_VARIANCE].id, credit_amount: Math.abs(variance.amount), description: variance.description });
       }
     });
-    if (taxAmount) inventoryLines.push({ account_id: accounts[codes.INPUT_TAX].id, debit_amount: taxAmount, description: `Input tax on ${invoice.invoice_number}` });
-    if (discountAmount) inventoryLines.push({ account_id: accounts[codes.DISCOUNT_RECEIVED].id, credit_amount: discountAmount, description: `Purchase discount on ${invoice.invoice_number}` });
+    if (taxAmount && !composition) inventoryLines.push({ account_id: accounts[codes.INPUT_TAX].id, debit_amount: taxAmount, description: `Input tax on ${invoice.invoice_number}` });
+    if (discountAmount && !composition) inventoryLines.push({ account_id: accounts[codes.DISCOUNT_RECEIVED].id, credit_amount: discountAmount, description: `Purchase discount on ${invoice.invoice_number}` });
     if (totalAmount > 0) inventoryLines.push({ account_id: supplierLedger.id, credit_amount: totalAmount, description: `Supplier invoice ${invoice.invoice_number}` });
 
     let purchaseJournal = null;
@@ -254,12 +258,14 @@ exports.post = async (req, res, next) => {
     let paidAmount = 0;
     if (invoice.paid_immediately && totalAmount > 0) {
       const paymentSplits = await accounting.resolvePaymentSplits(req.tenantId, { payments: invoice.payment_splits || [] }, totalAmount, transaction);
+      const includesCash = paymentSplits.some(split => split.method.method_type === 'CASH');
+      const paymentDate = includesCash ? businessDays.businessDate() : invoice.invoice_date;
       const paymentSequence = await payment.count({ where: { tenant_id: req.tenantId, payment_type: 'outgoing' }, transaction }) + 1;
       const paymentRecords = [];
       for (const [index, split] of paymentSplits.entries()) {
         const paymentRecord = await payment.create({
           tenant_id: req.tenantId,
-          payment_number: `PAY-OUT-${new Date().getFullYear()}-${String(paymentSequence + index).padStart(4, '0')}`,
+          payment_number: `PAY-OUT-${new Date(paymentDate).getFullYear()}-${String(paymentSequence + index).padStart(4, '0')}`,
           payment_type: 'outgoing',
           party_type: 'supplier',
           party_id: invoice.supplier_id,
@@ -267,14 +273,14 @@ exports.post = async (req, res, next) => {
           payment_mode: accounting.paymentModeForType(split.method.method_type),
           bank_account_id: split.method.account.id,
           amount: split.amount,
-          payment_date: invoice.invoice_date,
+          payment_date: paymentDate,
           created_by: req.user.id
         }, { transaction });
         paymentRecords.push(paymentRecord);
         await paymentAllocation.create({ payment_id: paymentRecord.id, invoice_type: 'purchase', invoice_id: invoice.id, allocated_amount: split.amount }, { transaction });
       }
       const paymentJournal = await accounting.createAndPost(req.tenantId, {
-        entry_date: invoice.invoice_date,
+        entry_date: paymentDate,
         reference_type: 'purchase_payment',
         reference_id: invoice.id,
         narration: `Supplier payment for ${invoice.invoice_number}`,
@@ -283,7 +289,7 @@ exports.post = async (req, res, next) => {
           ...paymentSplits.map(split => ({ account_id: split.method.account.id, credit_amount: split.amount, description: `${split.method.name} payment for ${invoice.invoice_number}` }))
         ]
       }, req.user.id, transaction);
-      await Promise.all(paymentRecords.map(record => record.update({ journal_entry_id: paymentJournal.id }, { transaction })));
+      await Promise.all(paymentRecords.map(record => record.update({ journal_entry_id: paymentJournal.id, business_day_id: paymentJournal.business_day_id || null }, { transaction })));
       finalStatus = 'paid';
       paidAmount = totalAmount;
     }

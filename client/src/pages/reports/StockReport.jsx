@@ -1,7 +1,9 @@
 ﻿import React, { useState } from 'react';
-import { Card, Table, Row, Col, Statistic, Tag, Select, Typography } from 'antd';
-import { AppstoreOutlined, AlertOutlined, DollarOutlined } from '@ant-design/icons';
+import { Button, Card, Table, Row, Col, Statistic, Tag, Select, Typography, Space } from 'antd';
+import { AppstoreOutlined, AlertOutlined, DollarOutlined, DownloadOutlined } from '@ant-design/icons';
+import dayjs from 'dayjs';
 import useApiData from '../../hooks/useApiData';
+import { downloadReport, reportData } from './reportDownloads';
 import './StockReport.css';
 
 const { Title } = Typography;
@@ -9,9 +11,9 @@ const { Option } = Select;
 
 const StockReport = () => {
   const [filterType, setFilterType] = useState('All');
-  const { data: rawMaterials, loading: loadingRaw } = useApiData('/raw-materials');
-  const { data: packaging, loading: loadingPackaging } = useApiData('/packaging-materials');
-  const { data: finished, loading: loadingFinished } = useApiData('/finished-goods');
+  const { data: rawMaterials, loading: loadingRaw, error: rawError } = useApiData('/raw-materials');
+  const { data: packaging, loading: loadingPackaging, error: packagingError } = useApiData('/packaging-materials');
+  const { data: finished, loading: loadingFinished, error: finishedError } = useApiData('/finished-goods');
   const stockRows = [
     ...rawMaterials.map(item => ({ ...item, type: 'Raw Material', current: Number(item.current_stock || 0), reserved: Number(item.reserved_stock || 0), avgCost: Number(item.avg_cost || 0) })),
     ...packaging.map(item => ({ ...item, type: 'Packaging', current: Number(item.current_stock || 0), reserved: Number(item.reserved_stock || 0), avgCost: Number(item.avg_cost || 0) })),
@@ -30,6 +32,13 @@ const StockReport = () => {
   const totalItems = filteredData.length;
   const totalValue = filteredData.reduce((sum, item) => sum + item.totalValue, 0);
   const lowStockCount = filteredData.filter(item => item.isLow).length;
+  const exportStock = () => reportData(`stock-valuation-${dayjs().format('YYYY-MM-DD')}`, [
+    ['Stock valuation', dayjs().format('YYYY-MM-DD'), filterType],
+    ['SKU', 'Item', 'Type', 'Unit', 'Current stock', 'Reserved', 'Available', 'Average cost', 'Total value'],
+    ...filteredData.map(item => [item.sku, item.name, item.type, item.unit, item.current, item.reserved, item.available, item.avgCost, item.totalValue]),
+    ['Total', '', '', '', '', '', '', '', totalValue]
+  ]);
+  const exportDisabled = loadingRaw || loadingPackaging || loadingFinished || !!rawError || !!packagingError || !!finishedError;
 
   const columns = [
     { title: 'SKU', dataIndex: 'sku', key: 'sku' },
@@ -90,12 +99,12 @@ const StockReport = () => {
           <span className="stock-report-eyebrow">INVENTORY</span>
           <Title level={2} className="stock-report-title">Stock Valuation Report</Title>
         </div>
-        <Select className="stock-report-filter" value={filterType} onChange={setFilterType}>
+        <Space wrap><Select className="stock-report-filter" value={filterType} onChange={setFilterType}>
           <Option value="All">All Material Types</Option>
           <Option value="Raw Material">Raw Materials</Option>
           <Option value="Packaging">Packaging</Option>
           <Option value="Finished Goods">Finished Goods</Option>
-        </Select>
+        </Select><Button icon={<DownloadOutlined />} disabled={exportDisabled} onClick={() => downloadReport(exportStock(), 'xlsx')}>Excel</Button><Button icon={<DownloadOutlined />} disabled={exportDisabled} onClick={() => downloadReport(exportStock(), 'pdf')}>PDF</Button></Space>
       </div>
 
       <Row gutter={[16, 16]} className="stock-report-metrics">

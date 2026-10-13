@@ -33,6 +33,7 @@ const DEFAULT_ACCOUNTS = [
   { code: '2001', name: 'Trade Creditors', type: 'liability', parent_code: 'G2200', is_group: true },
   { code: '2002', name: 'Customer Advances', type: 'liability', parent_code: 'G2200' },
   { code: '2003', name: 'Expense Payable', type: 'liability', parent_code: 'G2200' },
+  { code: '2004', name: 'Customer Store Credit', type: 'liability', parent_code: 'G2200' },
   { code: 'G2300', name: 'Tax Payables', type: 'liability', parent_code: 'BS-LIAB', is_group: true },
   { code: '2302', name: 'Output Tax Payable', type: 'liability', parent_code: 'G2300' },
   { code: '2303', name: 'Output CGST Payable', type: 'liability', parent_code: 'G2300' },
@@ -84,7 +85,24 @@ const ensureChartOfAccounts = async (tenantId, transaction) => {
       is_system: true,
       is_active: true
     };
-    let item = await db.account.findOne({ where: { tenant_id: tenantId, code: definition.code }, transaction });
+    // Keep using a fallback ledger once created, even if 2004 becomes free
+    // later, so store-credit postings stay on the same account.
+    const fallbackCode = definition.code === '2004' ? `SC-${tenantId}` : null;
+    let item = fallbackCode
+      ? await db.account.findOne({ where: { tenant_id: tenantId, code: fallbackCode }, transaction })
+      : null;
+    if (item) {
+      await item.update(values, { transaction });
+      byCode.set(definition.code, item);
+      continue;
+    }
+    item = await db.account.findOne({ where: { tenant_id: tenantId, code: definition.code }, transaction });
+    if (fallbackCode && item && (item.name !== definition.name || item.type !== definition.type || item.is_group)) {
+      // Existing custom or supplier ledgers keep their code, UUID, and history.
+      item = await db.account.create({ tenant_id: tenantId, code: fallbackCode, ...values }, { transaction });
+      byCode.set(definition.code, item);
+      continue;
+    }
     if (item) await item.update(values, { transaction });
     else item = await db.account.create({ tenant_id: tenantId, code: definition.code, ...values }, { transaction });
     byCode.set(definition.code, item);

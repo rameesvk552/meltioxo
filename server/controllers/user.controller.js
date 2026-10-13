@@ -32,10 +32,20 @@ exports.getAll = async (req, res, next) => {
 
 exports.create = async (req, res, next) => {
   try {
+    if (!req.body.name || !String(req.body.name).trim()) throw new AppError('Name is required', 400);
+    if (!req.body.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(req.body.email).trim())) {
+      throw new AppError('A valid email is required', 400);
+    }
     if (!req.body.password || String(req.body.password).length < 8) {
       throw new AppError('A password of at least 8 characters is required', 400);
     }
     const values = buildUpdate(req.body);
+    if (values.role === 'super_admin' && req.user.role !== 'super_admin') {
+      throw new AppError('Only a super administrator can assign this role', 403);
+    }
+    if (await user.findOne({ where: { email: values.email } })) {
+      throw new AppError('A user with this email already exists', 409);
+    }
     if (req.body.branch_id) {
       const assignedBranch = await branch.findOne({ where: { id: req.body.branch_id, tenant_id: req.tenantId, is_active: true } });
       if (!assignedBranch) throw new AppError('Invalid branch', 400);
@@ -54,6 +64,9 @@ exports.create = async (req, res, next) => {
 exports.update = async (req, res, next) => {
   try {
     const values = buildUpdate(req.body);
+    if (values.role === 'super_admin' && req.user.role !== 'super_admin') {
+      throw new AppError('Only a super administrator can assign this role', 403);
+    }
     if (req.params.id === req.user.id && (values.is_active === false || (values.role && !['super_admin', 'admin'].includes(values.role)))) {
       throw new AppError('You cannot remove your own administrator access', 400);
     }

@@ -5,6 +5,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import client from '../../api/client';
 import useApiData from '../../hooks/useApiData';
 import PaymentSplitEditor from '../../components/common/PaymentSplitEditor';
+import { GST_STATE_NAMES } from '../../utils/gstStateNames';
+import { AuthContext } from '../../context/AuthContext';
 import './SalesOrderPOS.css';
 
 const { Text } = Typography;
@@ -29,6 +31,7 @@ const quantityLabel = value => Number(value || 0).toLocaleString('en-IN', { maxi
 const newSaleItem = (itemType = 'finished_good') => ({ key: `${itemType}-${Date.now()}-${Math.random()}`, itemType, product: null, qty: null, packCount: 1, packingKit: null, packingKitQuantities: null, price: 0, discount: 0, tax: itemType === 'finished_good' ? 18 : 0 });
 
 export default function SalesOrderPOS() {
+  const { user: currentUser } = React.useContext(AuthContext);
   const [form] = Form.useForm();
   const [customerForm] = Form.useForm();
   const navigate = useNavigate();
@@ -39,11 +42,16 @@ export default function SalesOrderPOS() {
   const { data: customers } = useApiData('/customers');
   const { data: paymentMethods } = useApiData('/accounts/payment-methods');
   const { data: tenantSettings } = useApiData('/tenant/settings', { initialData: {} });
+  const composition = tenantSettings.tax_system === 'GST' && tenantSettings.gst_scheme === 'COMPOSITION';
+  const regularGst = tenantSettings.tax_system === 'GST' && tenantSettings.gst_scheme === 'REGULAR';
+  const { data: salespeople } = useApiData(tenantSettings.incentive_enabled && tenantSettings.incentive_salesperson_mode === 'SELECT' ? '/retail-sales/salespeople' : null);
   const { data: packingKits } = useApiData('/packing-kits');
   const { data: dayState, loading: dayLoading, reload: reloadDay } = useApiData('/business-days/current', { initialData: {} });
   const { data: existingSale, loading: saleLoading } = useApiData(isEditing ? `/retail-sales/${editId}` : null, { initialData: {} });
   const [phone, setPhone] = useState('');
+  const [salespersonId, setSalespersonId] = useState(null);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [placeOfSupply, setPlaceOfSupply] = useState('');
   const { data: storeCreditData, loading: storeCreditLoading } = useApiData(!isEditing && selectedCustomer?.id ? `/customers/${selectedCustomer.id}/store-credit` : null, { initialData: { balance: 0 } });
   const [storeCreditRequested, setStoreCreditRequested] = useState(0);
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
@@ -86,6 +94,8 @@ export default function SalesOrderPOS() {
     });
     setItems(mappedItems.length ? mappedItems : [{ ...newSaleItem(), key: '1' }]);
     setSelectedCustomer(existingSale.customer || null);
+    setPlaceOfSupply(existingSale.place_of_supply_state_code || '');
+    setSalespersonId(existingSale.salesperson_id || null);
     setPhone(existingSale.customer?.phone || '');
     setDiscountMode('amount');
     setDiscount(Number(existingSale.discount_amount || 0));
@@ -100,11 +110,15 @@ export default function SalesOrderPOS() {
 
   const products = finishedGoods
     .filter(item => item.is_active !== false && item.product?.is_active !== false)
-    .map(item => ({ ...item, price: Number(item.selling_price || 0), tax: Number(item.tax_rate || 0) }));
+    .map(item => ({ ...item, price: Number(item.selling_price || 0), tax: Number(regularGst ? item.product?.gst_rate ?? 0 : item.tax_rate || 0) }));
   const packingMaterialsForSale = packagingMaterials.map(item => ({ ...item, price: Number(item.selling_price || 0), tax: Number(item.tax_rate || 0) }));
   const selectedItemFor = item => item.itemType === 'packaging_material'
     ? packingMaterialsForSale.find(material => material.id === item.product)
     : products.find(product => product.id === item.product);
+  const sellerState = /^\d{2}/.exec(String(tenantSettings.tax_id || ''))?.[0] || '';
+  const customerState = /^\d{2}/.exec(String(selectedCustomer?.tax_id || ''))?.[0] || '';
+  const effectivePlaceOfSupply = customerState || placeOfSupply || sellerState;
+  const interState = regularGst && Boolean(sellerState && effectivePlaceOfSupply && sellerState !== effectivePlaceOfSupply);
   const normalizedPhone = phone.replace(/\D/g, '');
   const matchingCustomers = customers.filter(customer => normalizedPhone.length >= 3 && (customer.phone || '').replace(/\D/g, '').includes(normalizedPhone));
   const selectedCount = items.filter(item => item.product).length;
@@ -138,16 +152,18 @@ export default function SalesOrderPOS() {
     const base = roundMoney(Number(item.price || 0) * saleQuantity(item));
     const lineDiscount = fixedDiscounts ? fixedDiscounts[index] : roundMoney(base * discountPct / 100);
     const taxable = roundMoney(base - lineDiscount);
-    const lineTax = roundMoney(taxable * Number(item.tax || 0) / 100);
+    const lineTax = composition ? 0 : roundMoney(taxable * Number(item.tax || 0) / 100);
     return { item, total: roundMoney(taxable + lineTax), lineDiscount, lineTax };
   });
   const discountAmount = roundMoney(saleLineTotals.reduce((sum, line) => sum + line.lineDiscount, 0));
   const tax = roundMoney(saleLineTotals.reduce((sum, line) => sum + line.lineTax, 0));
+  const cgstPreview = roundMoney(saleLineTotals.reduce((sum, line) => sum + roundMoney(line.lineTax / 2), 0));
+  const sgstPreview = roundMoney(tax - cgstPreview);
   const total = roundMoney(subtotal - discountAmount + tax);
   const availableStoreCredit = selectedCustomer && !storeCreditLoading && storeCreditData.customer_id === selectedCustomer.id ? Math.max(0, Number(storeCreditData.balance || 0)) : 0;
   const storeCreditUsed = Math.min(Math.max(0, roundMoney(storeCreditRequested)), availableStoreCredit, total);
   const cashDue = roundMoney(total - storeCreditUsed);
-  const validPayments = paymentSplits.filter(row => row.payment_method_id && Number(row.amount) > 0);
+  const validPayments = cashDue > 0 ? paymentSplits.filter(row => row.payment_method_id && Number(row.amount) > 0) : [];
   const paidCents = validPayments.reduce((sum, row) => sum + Math.round(Number(row.amount) * 100), 0);
   const cashMethodIds = new Set(paymentMethods.filter(method => String(method.method_type || '').toUpperCase() === 'CASH' || String(method.name || '').toLowerCase().includes('cash')).map(method => method.id));
   const cashPaymentAmount = validPayments.filter(row => cashMethodIds.has(row.payment_method_id)).reduce((sum, row) => sum + Number(row.amount || 0), 0);
@@ -163,7 +179,7 @@ export default function SalesOrderPOS() {
       : products.find(item => item.id === productId);
     if (!product) return;
     const initialQuantity = product.product?.sell_by_measurement ? 0 : 1;
-    setItems(current => current.map(item => item.key === key ? { ...item, product: productId, qty: initialQuantity, packCount: 1, packingKit: null, packingKitQuantities: null, price: product.price, tax: product.tax } : item));
+    setItems(current => current.map(item => item.key === key ? { ...item, product: productId, qty: initialQuantity, packCount: 1, packingKit: null, packingKitQuantities: null, price: product.price, tax: composition ? 0 : product.tax } : item));
   };
 
   const updateItem = (value, field, key) => setItems(current => current.map(item => item.key === key ? { ...item, [field]: value } : item));
@@ -227,6 +243,10 @@ export default function SalesOrderPOS() {
       message.error('Select a customer for a credit sale.');
       return false;
     }
+    if (tenantSettings.incentive_enabled && tenantSettings.incentive_salesperson_mode === 'SELECT' && !salespersonId) {
+      message.error('Select a salesperson for this sale.');
+      return false;
+    }
     if (!validPayments.length && cashDue > 0 && (!creditSale || collectPartial)) {
       message.error('Select a payment method.');
       return false;
@@ -246,6 +266,8 @@ export default function SalesOrderPOS() {
     if (!validateSale()) return null;
     const response = await (isEditing ? client.put(`/retail-sales/${editId}`, {
       customer_id: selectedCustomer?.id,
+      ...(regularGst ? { place_of_supply_state_code: effectivePlaceOfSupply || null } : {}),
+      salesperson_id: salespersonId,
       credit_sale: creditSale,
       store_credit_used: storeCreditUsed,
       payments: validPayments.map(row => ({ payment_method_id: row.payment_method_id, amount: row.amount })),
@@ -261,10 +283,12 @@ export default function SalesOrderPOS() {
         packing_kit_quantities: item.itemType === 'finished_good' && selectedItemFor(item)?.product?.sell_by_measurement ? item.packingKitQuantities : undefined,
         unit_price: item.price,
         discount_pct: discountPct,
-        tax_rate: item.tax,
+        tax_rate: composition ? 0 : item.tax,
       })),
     }) : client.post('/retail-sales', {
       customer_id: selectedCustomer?.id,
+      ...(regularGst ? { place_of_supply_state_code: effectivePlaceOfSupply || null } : {}),
+      salesperson_id: salespersonId,
       credit_sale: creditSale,
       store_credit_used: storeCreditUsed,
       payments: validPayments.map(row => ({ payment_method_id: row.payment_method_id, amount: row.amount })),
@@ -280,7 +304,7 @@ export default function SalesOrderPOS() {
         packing_kit_quantities: item.itemType === 'finished_good' && selectedItemFor(item)?.product?.sell_by_measurement ? item.packingKitQuantities : undefined,
         unit_price: item.price,
         discount_pct: discountPct,
-        tax_rate: item.tax,
+        tax_rate: composition ? 0 : item.tax,
       })),
     }));
     message.success(isEditing ? `Sale ${response.data.sale_number || ''} updated. Invoice is ready.` : `Sale ${response.data.sale_number || ''} completed. Invoice is ready.`);
@@ -426,11 +450,17 @@ export default function SalesOrderPOS() {
         <aside className="pos-checkout">
           <Card>
             <div className="pos-checkout-heading"><div><span className="pos-checkout-kicker">ORDER SUMMARY</span><strong>Checkout</strong></div><Tag>{selectedCount} {selectedCount === 1 ? 'item' : 'items'}</Tag></div>
-            <div className="pos-summary"><div><span>Subtotal</span><strong>{money(subtotal)}</strong></div><div><span>Discount</span><strong className={discountAmount ? 'negative' : ''}>− {money(discountAmount)}</strong></div>{tax > 0 && <div><span>Tax</span><strong>+ {money(tax)}</strong></div>}</div>
+            {tenantSettings.incentive_enabled && <div style={{ margin: '16px 0' }}>
+              {tenantSettings.incentive_salesperson_mode === 'SELECT'
+                ? <label className="pos-field"><span>Salesperson</span><Select value={salespersonId || undefined} onChange={setSalespersonId} showSearch optionFilterProp="label" placeholder="Select salesperson" options={salespeople.map(person => ({ value: person.id, label: person.name }))} style={{ width: '100%' }} /></label>
+                : <Typography.Text type="secondary">Salesperson: {currentUser?.name || 'Logged-in user'}</Typography.Text>}
+            </div>}
+            {regularGst && <label className="pos-field" style={{ marginBottom: 12 }}><span>Place of supply</span><Select showSearch optionFilterProp="label" value={effectivePlaceOfSupply || undefined} disabled={Boolean(customerState)} placeholder="Select state" onChange={setPlaceOfSupply} options={Object.entries(GST_STATE_NAMES).map(([value, name]) => ({ value, label: `${name} (${value})` }))} /><small>{customerState ? 'From customer GSTIN' : 'Defaults to your GSTIN state; change for interstate supplies.'}</small></label>}
+            <div className="pos-summary"><div><span>Subtotal</span><strong>{money(subtotal)}</strong></div><div><span>Discount</span><strong className={discountAmount ? 'negative' : ''}>− {money(discountAmount)}</strong></div>{tax > 0 && (regularGst ? interState ? <div><span>IGST</span><strong>+ {money(tax)}</strong></div> : <><div><span>CGST</span><strong>+ {money(cgstPreview)}</strong></div><div><span>SGST</span><strong>+ {money(sgstPreview)}</strong></div></> : <div><span>Tax</span><strong>+ {money(tax)}</strong></div>)}</div>
             <Divider />
             <label className="pos-discount-label">Order discount <span>Optional</span></label>
             <div className="pos-discount"><Radio.Group value={discountMode} onChange={event => { setDiscountMode(event.target.value); setDiscount(0); }} optionType="button" buttonStyle="solid" size="small"><Radio.Button value="percentage">%</Radio.Button><Radio.Button value="amount">₹</Radio.Button></Radio.Group><InputNumber min={0} max={discountMode === 'percentage' ? 100 : subtotal} value={discount} onChange={value => setDiscount(value || 0)} suffix={discountMode === 'percentage' ? '%' : undefined} prefix={discountMode === 'amount' ? '₹' : undefined} /></div>
-            <div className="pos-total"><div><span>Total due</span><small>Taxes included where applicable</small></div><strong>{money(total)}</strong></div>
+            <div className="pos-total"><div><span>Total due</span><small>{composition ? 'Bill of supply · GST not collected' : 'Taxes included where applicable'}</small></div><strong>{money(total)}</strong></div>
             {!isEditing && selectedCustomer && availableStoreCredit > 0 && <div className="pos-credit-toggle" style={{ display: 'block' }}>
               <strong>Use store credit</strong><small style={{ display: 'block' }}>Available {money(availableStoreCredit)} · applied after the order discount</small>
               <InputNumber aria-label="Store credit to use" min={0} max={Math.min(total, availableStoreCredit)} precision={2} prefix="₹" value={storeCreditRequested} onChange={value => setStoreCreditRequested(value || 0)} style={{ width: '100%', marginTop: 8 }} />
@@ -521,6 +551,7 @@ export default function SalesOrderPOS() {
         <div><small>CUSTOMER</small><strong>{selectedCustomer?.name || 'Walk-in customer'}</strong><span>{selectedCustomer?.phone || 'No phone number'}</span></div>
         <Tag color={creditSale ? 'gold' : 'success'}>{creditSale ? 'Credit sale' : 'Ready'}</Tag>
       </div>
+      {tenantSettings.incentive_enabled && <p>Salesperson: {tenantSettings.incentive_salesperson_mode === 'SELECT' ? (salespeople.find(person => person.id === salespersonId)?.name || existingSale.salesperson?.name || 'Select salesperson') : (currentUser?.name || 'Logged-in user')}</p>}
 
       <section className="pos-confirm-section">
         <div className="pos-confirm-heading"><strong>Items</strong><span>{saleItems.length} item{saleItems.length === 1 ? '' : 's'}</span></div>

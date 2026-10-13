@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Button, Card, Col, DatePicker, Form, Input, InputNumber, Modal, Popconfirm, Row, Segmented, Select, Space, Statistic, Table, Tag, message } from 'antd';
-import { AppstoreAddOutlined, CloseOutlined, DeleteOutlined, EditOutlined, EyeOutlined, FileTextOutlined, InfoCircleOutlined, PlusOutlined, SaveOutlined, SendOutlined, ShoppingCartOutlined } from '@ant-design/icons';
+import { AppstoreAddOutlined, CloseOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, FileTextOutlined, InfoCircleOutlined, PlusOutlined, SaveOutlined, SendOutlined, ShoppingCartOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import client from '../../api/client';
 import useApiData from '../../hooks/useApiData';
@@ -8,6 +8,7 @@ import PageDrawerControls from '../../components/common/PageDrawerControls';
 import ResponsiveDataTable from '../../components/common/ResponsiveDataTable';
 import PaymentSplitEditor from '../../components/common/PaymentSplitEditor';
 import SingleTagSelect from '../../components/common/SingleTagSelect';
+import { downloadReport, reportData } from '../reports/reportDownloads';
 import './Purchases.css';
 const { TextArea } = Input;
 const blankItem = () => ({ key: Date.now(), materialType: 'raw', materialId: null, quantity: 0, unitPrice: 0, taxRate: 0 });
@@ -22,17 +23,19 @@ const purchaseTypeOptions = [
 
 export default function Purchases() {
   const [form] = Form.useForm();
-  const { data: purchases, loading, reload } = useApiData('/purchases');
+  const { data: purchases, loading, error: purchasesError, reload } = useApiData('/purchases');
   const { data: suppliers, reload: reloadSuppliers } = useApiData('/suppliers');
-  const { data: rawMaterials, reload: reloadRawMaterials } = useApiData('/raw-materials');
-  const { data: packagingMaterials, reload: reloadPackagingMaterials } = useApiData('/packaging-materials');
+  const { data: rawMaterials, loading: loadingRawMaterials, error: rawMaterialsError, reload: reloadRawMaterials } = useApiData('/raw-materials');
+  const { data: packagingMaterials, loading: loadingPackagingMaterials, error: packagingMaterialsError, reload: reloadPackagingMaterials } = useApiData('/packaging-materials');
   const { data: products, reload: reloadProducts } = useApiData('/products');
-  const { data: finishedGoods, reload: reloadFinishedGoods } = useApiData('/finished-goods');
+  const { data: finishedGoods, loading: loadingFinishedGoods, error: finishedGoodsError, reload: reloadFinishedGoods } = useApiData('/finished-goods');
   const { data: paymentMethods } = useApiData('/accounts/payment-methods');
+  const { data: cashBankLedgers } = useApiData('/accounts/cash-bank-ledgers');
   const [creating, setCreating] = useState(false), [saving, setSaving] = useState(false), [items, setItems] = useState([blankItem()]);
   const [editingId, setEditingId] = useState(null);
   const [viewingPurchase, setViewingPurchase] = useState(null);
   const [postingId, setPostingId] = useState(null);
+  const [listRange, setListRange] = useState(null);
   const [paymentSplits, setPaymentSplits] = useState([]);
   const [discountMode, setDiscountMode] = useState('amount');
   const [discountInput, setDiscountInput] = useState(0);
@@ -209,13 +212,13 @@ export default function Purchases() {
     notes: values.notes,
     discount_amount: discount,
     paid_immediately: values.paidImmediately === 'yes',
-    payments: values.paidImmediately === 'yes' ? validPayments.map(row => ({ payment_method_id: row.payment_method_id, amount: row.amount })) : undefined,
+    payments: values.paidImmediately === 'yes' ? validPayments.map(row => ({ payment_method_id: row.payment_method_id, bank_account_id: row.bank_account_id, amount: row.amount })) : undefined,
     items: items.map(item => ({ material_type: item.materialType, material_id: item.materialId, quantity: item.quantity, unit_price: item.unitPrice, tax_rate: item.taxRate }))
   });
   const submit = async values => {
     const valid = items.filter(x => x.materialId && x.quantity > 0);
     if (valid.length !== items.length) return message.error('Select an item and quantity for every purchase line.');
-    const validPayments = paymentSplits.filter(row => row.payment_method_id && Number(row.amount) > 0);
+    const validPayments = paymentSplits.filter(row => (row.payment_method_id || row.bank_account_id) && Number(row.amount) > 0);
     if (values.paidImmediately === 'yes' && grandTotal > 0) {
       const paidCents = validPayments.reduce((sum, row) => sum + Math.round(Number(row.amount) * 100), 0);
       if (!validPayments.length) return message.error('Select at least one payment method.');
@@ -294,6 +297,28 @@ export default function Purchases() {
       ? material.purchaseLabel || `${material.product?.name || material.name}${material.size_label ? ` · ${material.size_label}` : ''}`
       : material.name;
   };
+  const visiblePurchases = purchases.filter(purchase => !listRange ||
+    (String(purchase.invoice_date || '').slice(0, 10) >= listRange[0].format('YYYY-MM-DD')
+      && String(purchase.invoice_date || '').slice(0, 10) <= listRange[1].format('YYYY-MM-DD')));
+  const exportDisabled = loading || loadingRawMaterials || loadingPackagingMaterials || loadingFinishedGoods
+    || !!purchasesError || !!rawMaterialsError || !!packagingMaterialsError || !!finishedGoodsError || !visiblePurchases.length;
+  const exportPurchaseList = () => reportData(`purchase-list-${listRange ? `${listRange[0].format('YYYY-MM-DD')}-${listRange[1].format('YYYY-MM-DD')}` : 'all'}`, [
+    ['Purchase listing', listRange ? `${listRange[0].format('YYYY-MM-DD')} to ${listRange[1].format('YYYY-MM-DD')}` : 'All dates', `${visiblePurchases.length} invoices`],
+    ['Date', 'Invoice', 'Supplier', 'Receipt', 'Due date', 'Item', 'Type', 'Quantity', 'Unit price', 'Tax %', 'Line total', 'Discount', 'Invoice total', 'Paid', 'Balance due', 'Status'],
+    ...visiblePurchases.flatMap(purchase => {
+      const purchaseItems = purchase.purchaseReceipt?.purchaseReceiptItems || [];
+      return (purchaseItems.length ? purchaseItems : [null]).map((item, index) => {
+        const quantity = item ? Number(item.quantity || 0) : '';
+        const unitPrice = item?.unit_price == null ? '' : Number(item.unit_price);
+        const taxRate = item?.tax_rate == null ? '' : Number(item.tax_rate);
+        const lineTotal = item && unitPrice !== '' && taxRate !== '' ? quantity * unitPrice * (1 + taxRate / 100) : '';
+        return [purchase.invoice_date, purchase.invoice_number, purchase.supplier?.name || '', purchase.purchaseReceipt?.receipt_number || '', purchase.due_date || '',
+          item ? materialName(item) : '', item?.material_type || '', quantity, unitPrice, taxRate, lineTotal,
+          index === 0 ? Number(purchase.discount_amount || 0) : '', index === 0 ? Number(purchase.total_amount || 0) : '',
+          index === 0 ? Number(purchase.paid_amount || 0) : '', index === 0 ? Number(purchase.total_amount || 0) - Number(purchase.paid_amount || 0) : '', purchase.status];
+      });
+    })
+  ]);
   const viewPurchase = async purchase => {
     try {
       const { data } = await client.get(`/purchases/${purchase.id}`);
@@ -344,7 +369,7 @@ export default function Purchases() {
   return <div className="purchases-page">
     <div className="purchases-page__header">
       <div><span className="purchases-page__eyebrow">Procurement</span><h1>Purchases</h1><p>Record supplier invoices and keep inventory costs up to date.</p></div>
-      <Space className="purchases-page__actions"><PageDrawerControls title="Purchases" summary={<Statistic title="Total value" value={purchases.reduce((sum, purchase) => sum + Number(purchase.total_amount || 0), 0)} prefix="₹" />} /><Button className="purchase-form-toggle" type={creating ? 'default' : 'primary'} icon={creating ? <CloseOutlined /> : <PlusOutlined />} onClick={creating ? reset : openNewPurchase}>{creating ? 'Close form' : 'Record purchase'}</Button></Space>
+      <Space className="purchases-page__actions"><PageDrawerControls title="Purchases" summary={<Statistic title="Total value" value={visiblePurchases.reduce((sum, purchase) => sum + Number(purchase.total_amount || 0), 0)} prefix="₹" />} /><Button className="purchase-form-toggle" type={creating ? 'default' : 'primary'} icon={creating ? <CloseOutlined /> : <PlusOutlined />} onClick={creating ? reset : openNewPurchase}>{creating ? 'Close form' : 'Record purchase'}</Button></Space>
     </div>
 
     {creating && <Form className="purchase-form" form={form} layout="vertical" onFinish={submit} initialValues={{ invoiceDate: dayjs(), paidImmediately: 'no' }}>
@@ -376,7 +401,7 @@ export default function Purchases() {
             <Col xs={24} sm={12} md={6} xl={5}><Form.Item name="invoiceDate" label="Invoice date" rules={[{ required: true, message: 'Select an invoice date' }]}><DatePicker format="DD MMM YYYY" /></Form.Item></Col>
             <Col xs={24} sm={12} md={6} xl={5}><Form.Item name="paidImmediately" label="Payment status"><Segmented block onChange={value => { if (value === 'yes') form.setFieldValue('dueDate', undefined); }} options={[{ value: 'no', label: 'Pay later' }, { value: 'yes', label: 'Paid now' }]} /></Form.Item></Col>
             <Form.Item noStyle shouldUpdate={(previous, current) => previous.paidImmediately !== current.paidImmediately}>{({ getFieldValue }) => getFieldValue('paidImmediately') === 'yes'
-              ? grandTotal > 0 && <Col xs={24} md={18} xl={12}><Form.Item label="Payment allocation" required><PaymentSplitEditor paymentMethods={paymentMethods} total={grandTotal} value={paymentSplits} onChange={setPaymentSplits} /></Form.Item></Col>
+              ? grandTotal > 0 && <Col xs={24} md={18} xl={12}><Form.Item label="Payment allocation" required><PaymentSplitEditor paymentMethods={paymentMethods} cashBankLedgers={cashBankLedgers} total={grandTotal} value={paymentSplits} onChange={setPaymentSplits} /></Form.Item></Col>
               : <Col xs={24} sm={12} md={6} xl={6}><Form.Item name="dueDate" label="Due date" extra="Optional"><DatePicker format="DD MMM YYYY" /></Form.Item></Col>}
             </Form.Item>
           </Row>
@@ -406,7 +431,8 @@ export default function Purchases() {
     </Form>}
 
     <Card className="purchase-history-card" title={<div className="purchase-history-card__title"><ShoppingCartOutlined /><span>Purchase history</span></div>} extra={<Button icon={<PlusOutlined />} onClick={() => openQuickSupplier(false)}>Add supplier</Button>}>
-      <ResponsiveDataTable rowKey="id" columns={columns} dataSource={purchases} loading={loading} emptyText="No purchases found" mobileRenderItem={purchase => <>
+      <Space wrap className="purchase-export-controls"><DatePicker.RangePicker aria-label="Purchase list date range" value={listRange} onChange={setListRange} placeholder={['From date', 'To date']} /><Button icon={<DownloadOutlined />} disabled={exportDisabled} onClick={() => downloadReport(exportPurchaseList(), 'xlsx')}>Excel</Button><Button icon={<DownloadOutlined />} disabled={exportDisabled} onClick={() => downloadReport(exportPurchaseList(), 'pdf')}>PDF</Button><span>{visiblePurchases.length} invoices</span></Space>
+      <ResponsiveDataTable rowKey="id" columns={columns} dataSource={visiblePurchases} loading={loading} emptyText="No purchases found" mobileRenderItem={purchase => <>
         <div className="mobile-data-list__title-row"><strong>{purchase.invoice_number || 'Purchase'}</strong>{statusTag(purchase.status)}</div>
         <span className="mobile-data-list__code">{purchase.supplier?.name || '—'} · {purchase.invoice_date ? dayjs(purchase.invoice_date).format('DD MMM YYYY') : '—'}</span>
         <div className="mobile-data-list__metrics"><span>Amount <strong>{formatMoney(purchase.total_amount)}</strong></span></div>

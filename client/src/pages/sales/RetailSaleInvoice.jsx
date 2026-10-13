@@ -4,6 +4,7 @@ import { ArrowLeftOutlined, PrinterOutlined, ShopOutlined, WhatsAppOutlined } fr
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import dayjs from 'dayjs';
 import useApiData from '../../hooks/useApiData';
+import { GST_STATE_NAMES } from '../../utils/gstStateNames';
 import './RetailSaleInvoice.css';
 
 const { Text, Title } = Typography;
@@ -35,6 +36,22 @@ export default function RetailSaleInvoice() {
   const customer = sale.customer || {};
   const isArabelegance = /arabelegance|arabglance|arabglaance/i.test(String(company.name || ''));
   const hasTax = Number(sale.tax_amount || 0) > 0 || items.some(item => Number(item.tax_rate || 0) > 0 || Number(item.tax_amount || 0) > 0);
+  const composition = sale.gst_scheme === 'COMPOSITION';
+  const regularGst = sale.gst_enabled === true;
+  const interState = sale.supply_type === 'INTER';
+  const itemTax = item => {
+    const tax = Number(item.tax_amount || 0);
+    if (!regularGst) return { cgst: 0, sgst: 0, igst: 0 };
+    const saved = Number(item.cgst_amount || 0) + Number(item.sgst_amount || 0) + Number(item.igst_amount || 0);
+    if (saved || !tax) return { cgst: Number(item.cgst_amount || 0), sgst: Number(item.sgst_amount || 0), igst: Number(item.igst_amount || 0) };
+    if (interState) return { cgst: 0, sgst: 0, igst: tax };
+    const cgst = Math.round(tax * 50) / 100;
+    return { cgst, sgst: Math.round((tax - cgst) * 100) / 100, igst: 0 };
+  };
+  const gstTotals = items.reduce((total, item) => {
+    const split = itemTax(item);
+    return { cgst: total.cgst + split.cgst, sgst: total.sgst + split.sgst, igst: total.igst + split.igst };
+  }, { cgst: 0, sgst: 0, igst: 0 });
   const hasDiscount = Number(sale.discount_amount || 0) > 0 || items.some(item => Number(item.discount_pct || 0) > 0);
 
   const handlePrint = () => printInvoice(sale.sale_number || id);
@@ -60,7 +77,7 @@ export default function RetailSaleInvoice() {
       return;
     }
     const body = [
-      `*${company.name || 'Wayon'} - Sales Invoice*`,
+      `*${company.name || 'Wayon'} - ${composition ? 'Bill of Supply' : regularGst ? 'Tax Invoice' : 'Sales Invoice'}*`,
       '',
       `Dear *${customer.name || 'Customer'}*,`,
       `Invoice: *${sale.sale_number || id}*`,
@@ -99,13 +116,15 @@ export default function RetailSaleInvoice() {
           </section>
 
           <section className="invoice-identity">
-            <Title level={2}>{hasTax ? 'Tax Invoice' : 'Invoice'}</Title>
+            <Title level={2}>{composition ? 'Bill of Supply' : regularGst || hasTax ? 'Tax Invoice' : 'Invoice'}</Title>
+            {composition && <span className="invoice-composition-note">Composition taxable person, not eligible to collect tax on supplies.</span>}
           </section>
         </header>
 
         <section className="invoice-number-row">
           <div><strong>Invoice No:</strong> <span>{sale.sale_number}</span></div>
           <div><strong>Date:</strong> <span>{date(sale.sale_date)}</span></div>
+          {regularGst && <div><strong>Place of supply:</strong> <span>{GST_STATE_NAMES[sale.place_of_supply_state_code] || '—'} ({sale.place_of_supply_state_code || '—'}) · {interState ? 'Interstate' : 'Intrastate'}</span></div>}
         </section>
 
         <section className="invoice-overview">
@@ -114,7 +133,7 @@ export default function RetailSaleInvoice() {
             <strong>{customer.name || 'Walk-in customer'}</strong>
             {customer.phone && <span>{customer.phone}</span>}
             {customer.address && <span>{customer.address}</span>}
-            {hasTax && customer.tax_id && <span>GSTIN: {customer.tax_id}</span>}
+            {(sale.customer_gstin || customer.tax_id) && <span>GSTIN: {sale.customer_gstin || customer.tax_id}</span>}
           </div>
           <div className="invoice-from">
             <span className="invoice-label">Invoice From:</span>
@@ -122,19 +141,21 @@ export default function RetailSaleInvoice() {
             {company.phone && <span>{company.phone}</span>}
             {company.address && <span>{company.address}</span>}
             {isArabelegance && <a href="https://www.arabeleganceperfume.com" target="_blank" rel="noreferrer">www.arabeleganceperfume.com</a>}
-            {hasTax && company.tax_id && <span>GSTIN: {company.tax_id}</span>}
+            {(sale.seller_gstin || company.tax_id) && <span>GSTIN: {sale.seller_gstin || company.tax_id}</span>}
           </div>
         </section>
 
         <div className="invoice-table-wrap">
-          <table className="invoice-table">
+          <table className={`invoice-table${regularGst ? ' invoice-table--gst' : ''}`}>
             <thead>
               <tr>
                 <th>#</th>
                 <th>Product</th>
+                {regularGst && <th>HSN</th>}
                 <th className="numeric">Qty</th>
                 <th className="numeric">Rate</th>
-                {hasTax && <th className="numeric">Tax</th>}
+                {regularGst && <th className="numeric">Taxable</th>}
+                {regularGst ? <th className="numeric">GST breakup</th> : hasTax && <th className="numeric">Tax</th>}
                 <th className="numeric">Amount</th>
               </tr>
             </thead>
@@ -149,14 +170,18 @@ export default function RetailSaleInvoice() {
                   : (packingMaterial?.sku || (isMeasured ? null : variant.size_label || variant.sku));
                 const quantityUnit = packingMaterial ? ` ${packingMaterial.unit || 'pcs'}` : isMeasured ? ` ${variant.product.measurement_unit || 'ml'}` : '';
                 const lineAmount = Number(item.quantity || 0) * Number(item.unit_price || 0);
+                const split = itemTax(item);
+                const taxable = Number(item.total || 0) - Number(item.tax_amount || 0);
                 return (
                   <tr key={item.id || index}>
                     <td>{index + 1}</td>
                     <td><strong>{productName}</strong>{variantName && <small>{variantName}{!isArabelegance && variant.sku && variantName !== variant.sku ? ` · ${variant.sku}` : ''}</small>}</td>
+                    {regularGst && <td>{item.hsn_code || '—'}</td>}
                     <td className="numeric">{quantity(item.quantity)}{quantityUnit}</td>
                     <td className="numeric">{money(item.unit_price)}</td>
-                    {hasTax && <td className="numeric">{Number(item.tax_rate || 0).toLocaleString('en-IN')}%</td>}
-                    <td className="numeric"><strong>{money(lineAmount)}</strong></td>
+                    {regularGst && <td className="numeric">{money(taxable)}</td>}
+                    {regularGst ? <td className="numeric">{Number(item.tax_rate || 0).toLocaleString('en-IN')}%{interState ? <small>IGST {money(split.igst)}</small> : <><small>CGST {money(split.cgst)}</small><small>SGST {money(split.sgst)}</small></>}</td> : hasTax && <td className="numeric">{Number(item.tax_rate || 0).toLocaleString('en-IN')}%</td>}
+                    <td className="numeric"><strong>{money(regularGst ? item.total : lineAmount)}</strong></td>
                   </tr>
                 );
               })}
@@ -171,7 +196,7 @@ export default function RetailSaleInvoice() {
           <dl className="invoice-totals">
             <div><dt>Subtotal</dt><dd>{money(sale.subtotal)}</dd></div>
             {hasDiscount && <div><dt>Discount</dt><dd>− {money(sale.discount_amount)}</dd></div>}
-            {hasTax && <div><dt>{company.tax_system || 'GST'}</dt><dd>{money(sale.tax_amount)}</dd></div>}
+            {regularGst ? interState ? <div><dt>IGST</dt><dd>{money(gstTotals.igst)}</dd></div> : <><div><dt>CGST</dt><dd>{money(gstTotals.cgst)}</dd></div><div><dt>SGST</dt><dd>{money(gstTotals.sgst)}</dd></div></> : hasTax && <div><dt>{company.tax_system || 'Tax'}</dt><dd>{money(sale.tax_amount)}</dd></div>}
             <div className="invoice-grand-total"><dt>Total</dt><dd>{money(sale.total_amount)}</dd></div>
             {Number(sale.store_credit_used || 0) > 0 && <div><dt>Store credit used</dt><dd>{money(sale.store_credit_used)}</dd></div>}
             {Number(sale.paid_amount || 0) - Number(sale.store_credit_used || 0) > 0 && <div><dt>Amount received</dt><dd>{money(Number(sale.paid_amount || 0) - Number(sale.store_credit_used || 0))}</dd></div>}
@@ -181,7 +206,7 @@ export default function RetailSaleInvoice() {
 
         <footer className="invoice-footer">
           <strong>{isArabelegance ? 'Thank you for choosing Arabelegance Perfume.' : 'Thank you for your business.'}</strong>
-          {!isArabelegance && <span>This is a computer-generated invoice.</span>}
+          {regularGst ? <span>For {company.name || 'Company'} · Authorized signatory</span> : !isArabelegance && <span>This is a computer-generated invoice.</span>}
         </footer>
       </article>
     </main>

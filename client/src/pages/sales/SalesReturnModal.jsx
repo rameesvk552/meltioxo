@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Checkbox, Form, Input, InputNumber, Modal, Select, Table, Tag, Typography, message } from 'antd';
+import { Alert, Form, Input, InputNumber, Modal, Select, Table, Tag, Typography, message } from 'antd';
 import client from '../../api/client';
 import useApiData from '../../hooks/useApiData';
 
@@ -7,7 +7,7 @@ const { Text } = Typography;
 const money = value => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(Number(value || 0));
 const quantity = value => Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 4 });
 
-export default function SalesReturnModal({ sale, open, onClose, onCreated }) {
+export default function SalesReturnModal({ sale, open, onClose, onCreated, settlementType = 'refund' }) {
   const [form] = Form.useForm();
   const [rows, setRows] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -18,15 +18,15 @@ export default function SalesReturnModal({ sale, open, onClose, onCreated }) {
     setRows((sale.retailSaleItems || []).map(item => ({
       id: item.id,
       returnable: Number(item.returnable_quantity ?? item.quantity),
-      quantity: 0,
-      restock: false
+      quantity: 0
     })));
-    form.setFieldsValue({
-      refund_payment_method_id: sale.payment_method_id || methodsQuery.data.find(item => item.is_default)?.id,
-      reason: undefined,
-      notes: ''
-    });
-  }, [form, methodsQuery.data, open, sale]);
+    form.setFieldsValue({ refund_payment_method_id: undefined, reason: undefined, notes: '' });
+  }, [form, open, sale.id, sale.retailSaleItems]);
+
+  useEffect(() => {
+    if (!open || form.getFieldValue('refund_payment_method_id')) return;
+    form.setFieldValue('refund_payment_method_id', methodsQuery.data.find(item => item.id === sale.payment_method_id)?.id || methodsQuery.data.find(item => item.is_default)?.id || methodsQuery.data[0]?.id);
+  }, [form, methodsQuery.data, open, sale.payment_method_id]);
 
   const saleItems = useMemo(() => new Map((sale.retailSaleItems || []).map(item => [item.id, item])), [sale.retailSaleItems]);
   const selectedRows = rows.filter(row => Number(row.quantity) > 0);
@@ -34,6 +34,12 @@ export default function SalesReturnModal({ sale, open, onClose, onCreated }) {
     const item = saleItems.get(row.id);
     return sum + Number(item?.total || 0) * Number(row.quantity) / Number(item?.quantity || 1);
   }, 0);
+  const estimatedOffset = Math.min(estimatedRefund, Number(sale.balance_due || 0));
+  const estimatedSettlement = Math.max(0, estimatedRefund - estimatedOffset);
+  const isStoreCredit = settlementType === 'store_credit';
+  const remainingOriginalCredit = Math.max(0, Number(sale.store_credit_used || 0) - (sale.salesReturns || []).reduce((sum, row) => sum + Number(row.reinstated_credit_amount || 0), 0));
+  const estimatedReinstated = Math.min(estimatedSettlement, remainingOriginalCredit);
+  const estimatedCashRefund = Math.max(0, estimatedSettlement - estimatedReinstated);
 
   const updateRow = (id, changes) => setRows(current => current.map(row => row.id === id ? { ...row, ...changes } : row));
 
@@ -44,13 +50,14 @@ export default function SalesReturnModal({ sale, open, onClose, onCreated }) {
       setSaving(true);
       const response = await client.post(`/retail-sales/${sale.id}/returns`, {
         ...values,
+        settlement_type: settlementType,
         items: selectedRows.map(row => ({
           retail_sale_item_id: row.id,
           quantity: Number(row.quantity),
-          restock_quantity: row.restock ? Number(row.quantity) : 0
+          restock_quantity: Number(row.quantity)
         }))
       });
-      message.success(`Return ${response.data.return_number} posted. ${money(response.data.total_amount)} refunded.`);
+      message.success(`Return ${response.data.return_number} posted. ${money(response.data.receivable_offset_amount)} reduced from the invoice, ${money(response.data.refund_amount)} refunded, ${money(response.data.store_credit_amount)} added to store credit.`);
       await onCreated?.(response.data);
       onClose();
     } catch (error) {
@@ -76,24 +83,21 @@ export default function SalesReturnModal({ sale, open, onClose, onCreated }) {
       width: 150,
       render: (_, row) => <span>{quantity(row.returnable)}</span>
     },
+    { title: 'Original net / unit', width: 150, render: (_, row) => { const item = saleItems.get(row.id); return money(Number(item?.total || 0) / Number(item?.quantity || 1)); } },
+    { title: 'Discount / unit', width: 145, render: (_, row) => { const item = saleItems.get(row.id); const unitDiscount = (Number(item?.quantity || 0) * Number(item?.unit_price || 0) + Number(item?.tax_amount || 0) - Number(item?.total || 0)) / Number(item?.quantity || 1); return money(unitDiscount); } },
     {
-      title: 'Return quantity',
+      title: 'Return quantity (will be restocked)',
       width: 170,
-      render: (_, row) => <InputNumber min={0} max={row.returnable} precision={4} value={row.quantity} onChange={value => updateRow(row.id, { quantity: Number(value || 0), ...(Number(value || 0) ? {} : { restock: false }) })} style={{ width: '100%' }} />
-    },
-    {
-      title: 'Put back in stock',
-      width: 160,
-      render: (_, row) => <Checkbox checked={row.restock} disabled={!Number(row.quantity)} onChange={event => updateRow(row.id, { restock: event.target.checked })}>Restock</Checkbox>
+      render: (_, row) => <InputNumber min={0} max={row.returnable} precision={4} value={row.quantity} onChange={value => updateRow(row.id, { quantity: Number(value || 0) })} style={{ width: '100%' }} />
     }
   ];
 
   return <Modal
-    title={`Return items from ${sale.sale_number || 'sale'}`}
+    title={`${isStoreCredit ? 'Store credit' : 'Refund'} · ${sale.sale_number || 'sale'}`}
     open={open}
     onCancel={() => !saving && onClose()}
     onOk={submit}
-    okText={`Post return · ${money(estimatedRefund)}`}
+    okText={`Post ${isStoreCredit ? 'store credit' : 'refund'} return`}
     okButtonProps={{ danger: true, disabled: !selectedRows.length }}
     confirmLoading={saving}
     width={900}
@@ -103,23 +107,24 @@ export default function SalesReturnModal({ sale, open, onClose, onCreated }) {
     <Alert
       showIcon
       type="warning"
-      message="This creates a permanent credit transaction"
-      description="The original invoice stays unchanged. The refund is recorded in the open register. Select Restock only when the returned product can be sold again. For a billing correction, return the incorrect items and then create a new sale."
+      message="Original invoice discounts and tax are preserved"
+      description="The return first reduces any unpaid balance. The remaining value follows the selected settlement. Returned quantities are automatically added back to stock."
       style={{ marginBottom: 16 }}
     />
     <Table rowKey="id" dataSource={rows.filter(row => row.returnable > 0.00005)} columns={columns} pagination={false} scroll={{ x: 700 }} size="small" />
     <Form form={form} layout="vertical" style={{ marginTop: 18 }}>
-      <Form.Item name="refund_payment_method_id" label="Refund method" rules={[{ required: true, message: 'Select the refund method' }]}>
+      {!isStoreCredit && estimatedCashRefund > 0 && <Form.Item name="refund_payment_method_id" label="Refund method" rules={[{ required: true, message: 'Select the refund method' }]}>
         <Select placeholder="Select how the customer was refunded" options={methodsQuery.data.map(method => ({ value: method.id, label: `${method.name} · ${method.account?.name || 'Cash / Bank'}` }))} loading={methodsQuery.loading} />
-      </Form.Item>
+      </Form.Item>}
       <Form.Item name="reason" label="Reason" rules={[{ required: true, message: 'Select a return reason' }]}>
         <Select showSearch placeholder="Select a reason" options={['Customer return', 'Wrong product', 'Damaged product', 'Billing correction', 'Other'].map(value => ({ value, label: value }))} />
       </Form.Item>
       <Form.Item name="notes" label="Notes (optional)"><Input.TextArea rows={3} maxLength={2000} placeholder="Condition, approval, or correction details" /></Form.Item>
     </Form>
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: '#fafafa', borderRadius: 8 }}>
-      <Text type="secondary">Estimated refund; the posted amount uses the invoice’s exact tax and discount allocation.</Text>
-      <Tag color="red" style={{ margin: 0, fontSize: 14, padding: '4px 10px' }}>{money(estimatedRefund)}</Tag>
+      <Text type="secondary">Estimated return {money(estimatedRefund)} · unpaid balance reduced {money(estimatedOffset)}. Final cents use the invoice’s exact discount and tax allocation.</Text>
+      <Tag color={isStoreCredit ? 'gold' : 'red'} style={{ margin: 0, fontSize: 14, padding: '4px 10px' }}>{isStoreCredit ? 'Store credit' : 'Cash refund'} {money(isStoreCredit ? estimatedSettlement : estimatedCashRefund)}</Tag>
     </div>
+    {!isStoreCredit && estimatedReinstated > 0 && <Text type="secondary">About {money(estimatedReinstated)} of store credit used on the original sale will be restored first.</Text>}
   </Modal>;
 }

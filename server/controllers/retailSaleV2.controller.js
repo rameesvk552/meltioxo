@@ -4,11 +4,34 @@ const { AppError } = require('../middleware/errorHandler');
 const accounting = require('../services/accounting.service');
 const production = require('../services/production.service');
 const businessDays = require('../services/businessDay.service');
+const storeCredit = require('../services/storeCredit.service');
 const saleNumbers = require('../services/saleNumber.service');
 const invoiceWhatsapp = require('../services/invoiceWhatsapp.service');
+const incentives = require('../services/incentive.service');
+const compositionLevy = require('../services/compositionLevy.service');
+const gst = require('../services/gst.service');
 const { ACCOUNT_CODES } = require('../config/constants');
 
 const number = value => Number(value || 0);
+
+
+exports.getCompositionLevy = async (req, res, next) => {
+  try {
+    const indiaParts = Object.fromEntries(new Intl.DateTimeFormat('en', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).formatToParts(new Date()).map(part => [part.type, part.value]));
+    const currentYear = Number(indiaParts.year), currentMonth = Number(indiaParts.month);
+    const year = req.query.year === undefined ? currentYear : Number(req.query.year);
+    const quarter = req.query.quarter === undefined ? Math.ceil(currentMonth / 3) : Number(req.query.quarter);
+    if (!Number.isInteger(year) || year < 2017 || year > 2100 || !Number.isInteger(quarter) || quarter < 1 || quarter > 4) throw new AppError('Enter a valid year and quarter', 400);
+    const tenantSettings = await db.tenant.findByPk(req.tenantId);
+    if (!tenantSettings) throw new AppError('Company not found', 404);
+    const { from, to } = compositionLevy.quarterDates(year, quarter);
+    const [sales, returns] = await Promise.all([
+      db.retailSale.findAll({ where: { tenant_id: req.tenantId, gst_scheme: 'COMPOSITION', sale_date: { [Op.between]: [from, to] } }, attributes: ['subtotal', 'discount_amount'] }),
+      db.salesReturn.findAll({ where: { tenant_id: req.tenantId, return_date: { [Op.between]: [from, to] } }, attributes: ['subtotal', 'discount_amount'], include: [{ model: db.retailSale, required: true, attributes: [], where: { tenant_id: req.tenantId, gst_scheme: 'COMPOSITION' } }] })
+    ]);
+    res.json({ year, quarter, from, to, sale_count: sales.length, return_count: returns.length, ...compositionLevy.estimateLevy({ sales, returns, rate: tenantSettings.gst_composition_rate || 1 }), note: 'Estimate from POS composition sales and returns only. Reconcile other turnover, exempt sales, and GST portal figures before CMP-08.' });
+  } catch (error) { next(error); }
+};
 const allocateFixedDiscount = (bases, amount) => {
   const baseCents = bases.map(base => Math.round(number(base) * 100));
   const subtotalCents = baseCents.reduce((sum, cents) => sum + cents, 0);
@@ -77,6 +100,8 @@ const buildPreview = async (tenantId, items, transaction) => {
         item_type: 'packaging_material',
         packaging_material_id: material.id,
         product_name: material.name,
+        hsn_code: material.hsn_code || null,
+        gst_rate: material.gst_rate,
         variant_name: material.sku,
         sku: material.sku,
         unit: material.unit || 'pcs',
@@ -108,6 +133,8 @@ const buildPreview = async (tenantId, items, transaction) => {
       item_type: 'finished_good',
       finished_good_id: variant.id,
       product_name: variant.product.name,
+      hsn_code: variant.product.hsn_code || null,
+      gst_rate: variant.product.gst_rate,
       variant_name: variant.size_label || variant.name,
       sku: variant.sku,
       fill_quantity_ml: fillQuantityMl ?? number(variant.fill_quantity_ml),
@@ -214,6 +241,7 @@ const buildPreview = async (tenantId, items, transaction) => {
 
 const saleInclude = [
   db.customer,
+  { model: db.user, as: 'salesperson', attributes: ['id', 'name', 'is_active'] },
   db.paymentMethod,
   { model: db.account, as: 'paymentAccount' },
   { model: db.salesReturn, as: 'salesReturns', include: [
@@ -233,6 +261,7 @@ const saleInclude = [
 ];
 const saleListInclude = [
   db.customer,
+  { model: db.user, as: 'salesperson', attributes: ['id', 'name', 'is_active'] },
   { model: db.retailSaleItem, include: [{ model: db.finishedGood, include: [db.product] }, db.packagingMaterial] },
   db.paymentMethod,
   { model: db.account, as: 'paymentAccount' },
@@ -263,6 +292,7 @@ const addReturnSummary = sale => {
   data.returned_revenue = accounting.money((data.salesReturns || []).reduce((sum, item) => sum + number(item.subtotal) - number(item.discount_amount), 0));
   data.returned_cost = accounting.money((data.salesReturns || []).reduce((sum, item) => sum + number(item.restocked_cost), 0));
   data.return_status = fullyReturned ? 'full' : hasReturn ? 'partial' : 'none';
+  data.effective_incentive_amount = incentives.effectiveIncentive(data);
   return data;
 };
 
@@ -325,6 +355,40 @@ exports.getAll = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
+exports.getSalespeople = async (req, res, next) => {
+  try {
+    const users = await db.user.findAll({ where: { tenant_id: req.tenantId, is_active: true }, attributes: ['id', 'name', 'role'], order: [['name', 'ASC']] });
+    res.json(users);
+  } catch (error) { next(error); }
+};
+
+exports.getIncentives = async (req, res, next) => {
+  try {
+    const { from, to } = req.query;
+    if ((from && !/^\d{4}-\d{2}-\d{2}$/.test(from)) || (to && !/^\d{4}-\d{2}-\d{2}$/.test(to)) || (from && to && from > to)) throw new AppError('Enter a valid date range', 400);
+    const where = { tenant_id: req.tenantId, salesperson_id: { [Op.ne]: null } };
+    if (from || to) where.sale_date = { ...(from ? { [Op.gte]: from } : {}), ...(to ? { [Op.lte]: to } : {}) };
+    const sales = await db.retailSale.findAll({ where, include: [
+      { model: db.user, as: 'salesperson', attributes: ['id', 'name'] },
+      { model: db.salesReturn, as: 'salesReturns', attributes: ['subtotal', 'discount_amount', 'total_amount'] }
+    ], order: [['sale_date', 'DESC'], ['created_at', 'DESC']] });
+    const rows = sales.map(instance => {
+      const sale = instance.toJSON();
+      sale.returned_amount = accounting.money((sale.salesReturns || []).reduce((sum, row) => sum + number(row.total_amount), 0));
+      sale.returned_revenue = accounting.money((sale.salesReturns || []).reduce((sum, row) => sum + number(row.subtotal) - number(row.discount_amount), 0));
+      return { id: sale.id, sale_number: sale.sale_number, sale_date: sale.sale_date, salesperson_id: sale.salesperson_id, salesperson_name: sale.salesperson?.name || 'Inactive user', sale_amount: sale.total_amount, incentive_rate: sale.incentive_rate, incentive_amount: sale.incentive_amount, effective_incentive_amount: incentives.effectiveIncentive(sale) };
+    });
+    const byPerson = new Map();
+    rows.forEach(row => {
+      const current = byPerson.get(row.salesperson_id) || { salesperson_id: row.salesperson_id, salesperson_name: row.salesperson_name, sales: 0, incentive_amount: 0 };
+      current.sales += 1;
+      current.incentive_amount = accounting.money(current.incentive_amount + row.effective_incentive_amount);
+      byPerson.set(row.salesperson_id, current);
+    });
+    res.json({ summary: [...byPerson.values()], sales: rows });
+  } catch (error) { next(error); }
+};
+
 exports.getById = async (req, res, next) => {
   try {
     const sale = await db.retailSale.findOne({ where: { id: req.params.id, tenant_id: req.tenantId }, include: saleInclude });
@@ -335,11 +399,11 @@ exports.getById = async (req, res, next) => {
       include: [db.paymentMethod],
       order: [['created_at', 'ASC']]
     }) : [];
-    const allocations=await db.paymentAllocation.findAll({where:{invoice_type:'retail_sale',invoice_id:sale.id}});
-    const allocated=allocations.reduce((sum,row)=>sum+number(row.allocated_amount),0);
-    const originalPaid=data.payments.reduce((sum,row)=>sum+number(row.amount),0);
-    data.paid_amount=accounting.money(allocations.length?allocated:originalPaid);
-    data.balance_due=accounting.money(Math.max(0,number(sale.total_amount)-data.paid_amount));
+    const allocations = await db.paymentAllocation.findAll({ where: { invoice_type: 'retail_sale', invoice_id: sale.id } });
+    const allocationTotal = allocations.reduce((sum, row) => sum + number(row.allocated_amount), 0);
+    const originalPaymentTotal = data.payments.reduce((sum, row) => sum + number(row.amount), 0);
+    data.paid_amount = accounting.money((allocations.length ? allocationTotal : originalPaymentTotal) + number(sale.store_credit_used));
+    data.balance_due = accounting.money(Math.max(0, number(sale.total_amount) - number(data.returned_amount) - data.paid_amount));
     res.json(data);
   } catch (error) { next(error); }
 };
@@ -478,7 +542,7 @@ const removeSaleDataForRebuild = async (tenantId, sale, transaction) => {
   const saleItems = await db.retailSaleItem.findAll({ where: { retail_sale_id: sale.id }, transaction, lock: transaction.LOCK.UPDATE });
   const productionOrderIds = [...new Set(saleItems.map(item => item.production_order_id).filter(Boolean))];
   const returnCount = await db.salesReturn.count({ where: { tenant_id: tenantId, retail_sale_id: sale.id }, transaction });
-  if (returnCount || sale.exchange_return_id) {
+  if (returnCount || sale.exchange_return_id || number(sale.store_credit_used) > 0) {
     throw new AppError('A sale with returns or an exchange cannot be edited. Correct it with a return instead.', 409);
   }
 
@@ -527,24 +591,51 @@ const removeSaleDataForRebuild = async (tenantId, sale, transaction) => {
 };
 
 const saveSale = async (req, res, next, isEdit = false) => {
-  const transaction = await db.sequelize.transaction();
+  const internal = Boolean(req.exchangeTransaction);
+  const transaction = req.exchangeTransaction || await db.sequelize.transaction();
   try {
     const { items = [], customer_id = null, notes, allow_negative_materials = false, exchange_return_id = null, order_discount_amount } = req.body;
-    const creditSale=Boolean(req.body.credit_sale);
-    const tenantSettings=await db.tenant.findByPk(req.tenantId,{transaction});
-    if(creditSale&&!tenantSettings?.credit_sales_enabled)throw new AppError('Credit sales are not enabled in Settings',403);
-    if(creditSale&&!customer_id)throw new AppError('Select a customer for a credit sale',400);
+    if (exchange_return_id && !internal) throw new AppError('Post exchanges through the exchange action', 400);
+    const storeCreditUsed = accounting.money(req.body.store_credit_used, 'Store credit used');
+    if (storeCreditUsed < 0) throw new AppError('Store credit used cannot be negative', 400);
+    if (isEdit && storeCreditUsed > 0) throw new AppError('Store credit cannot be added while editing a posted sale', 409);
+    if (storeCreditUsed > 0 && !customer_id) throw new AppError('Select a customer to use store credit', 400);
+    const creditSale = Boolean(req.body.credit_sale);
+    const tenantSettings = await db.tenant.findByPk(req.tenantId, { transaction });
+    const composition = tenantSettings?.tax_system === 'GST' && tenantSettings?.gst_scheme === 'COMPOSITION';
+    if (creditSale && !tenantSettings?.credit_sales_enabled) throw new AppError('Credit sales are not enabled in Settings', 403);
+    if (creditSale && !customer_id) throw new AppError('Select a customer for a credit sale', 400);
     const existingSale = isEdit ? await db.retailSale.findOne({ where: { id: req.params.id, tenant_id: req.tenantId }, transaction, lock: transaction.LOCK.UPDATE }) : null;
+    if (existingSale && (existingSale.gst_scheme || 'REGULAR') !== (composition ? 'COMPOSITION' : 'REGULAR')) throw new AppError('This sale was created under a different GST scheme and cannot be rebuilt. Issue a correction under the original scheme.', 409);
     if (isEdit && !existingSale) throw new AppError('Sale not found', 404);
+    let salespersonId = null;
+    let incentiveRate = 0;
+    let incentiveBasis = null;
+    if (tenantSettings?.incentive_enabled) {
+      salespersonId = tenantSettings.incentive_salesperson_mode === 'SELECT'
+        ? (req.body.salesperson_id || existingSale?.salesperson_id)
+        : req.user.id;
+      if (!salespersonId) throw new AppError('Select a salesperson for this sale', 400);
+      const salesperson = await db.user.findOne({ where: { id: salespersonId, tenant_id: req.tenantId, is_active: true }, transaction });
+      if (!salesperson) throw new AppError('Select an active salesperson from this company', 400);
+      incentiveRate = number(tenantSettings.incentive_rate);
+      incentiveBasis = tenantSettings.incentive_basis;
+    } else if (existingSale?.salesperson_id) {
+      salespersonId = existingSale.salesperson_id;
+      incentiveRate = number(existingSale.incentive_rate);
+      incentiveBasis = existingSale.incentive_basis;
+    }
     if (isEdit) await removeSaleDataForRebuild(req.tenantId, existingSale, transaction);
     const businessDay = isEdit && existingSale.business_day_id
       ? await db.businessDay.findOne({ where: { id: existingSale.business_day_id, tenant_id: req.tenantId }, transaction, lock: transaction.LOCK.UPDATE })
       : await businessDays.requireOpen(req.tenantId, transaction);
     if (!businessDay) throw new AppError('The sale business day no longer exists', 409);
     const sale_date = isEdit ? existingSale.sale_date : businessDay.business_date;
+    let selectedCustomer = null;
     if (customer_id) {
-      const customer = await db.customer.findOne({ where: { id: customer_id, tenant_id: req.tenantId, is_active: true }, transaction });
+      const customer = await db.customer.findOne({ where: { id: customer_id, tenant_id: req.tenantId, ...(exchange_return_id ? {} : { is_active: true }) }, transaction });
       if (!customer) throw new AppError('Customer not found', 400);
+      selectedCustomer = customer;
     }
     if (exchange_return_id) {
       const exchangeReturn = await db.salesReturn.findOne({ where: { id: exchange_return_id, tenant_id: req.tenantId }, transaction, lock: transaction.LOCK.UPDATE });
@@ -556,7 +647,21 @@ const saveSale = async (req, res, next, isEdit = false) => {
       if (existingExchange) throw new AppError(`Return ${exchangeReturn.return_number} is already linked to exchange sale ${existingExchange.sale_number}`, 409);
     }
     const preview = await buildPreview(req.tenantId, items, transaction);
+    const regularGst = tenantSettings?.tax_system === 'GST' && tenantSettings?.gst_scheme === 'REGULAR';
+    const sellerState = gst.stateCodeFromGstin(tenantSettings?.tax_id);
+    const customerState = gst.stateCodeFromGstin(selectedCustomer?.tax_id);
+    if (regularGst && !sellerState) throw new AppError('Set a valid company GSTIN in Settings before issuing a tax invoice', 400);
+    if (regularGst && selectedCustomer?.tax_id && !customerState) throw new AppError('The customer GSTIN is invalid. Correct it before issuing a tax invoice', 400);
+    const placeOfSupply = regularGst ? (customerState || req.body.place_of_supply_state_code || sellerState) : null;
+    if (regularGst && placeOfSupply && !/^\d{2}$/.test(String(placeOfSupply))) throw new AppError('Enter a valid two-digit place of supply state code', 400);
+    if (regularGst && customerState && req.body.place_of_supply_state_code && customerState !== req.body.place_of_supply_state_code) throw new AppError('Place of supply does not match the customer GSTIN state code', 400);
+    const supplyType = regularGst && sellerState && placeOfSupply && sellerState !== placeOfSupply ? 'INTER' : 'INTRA';
     if (preview.requires_negative_confirmation && !allow_negative_materials) {
+      if (internal) {
+        const error = new AppError('Confirm the material shortages to complete this sale', 409);
+        error.preview = preview;
+        throw error;
+      }
       await transaction.rollback();
       return res.status(409).json({ success: false, code: 'NEGATIVE_STOCK_CONFIRMATION_REQUIRED', message: 'Confirm the material shortages to complete this sale', preview, shortages: preview.shortages });
     }
@@ -567,26 +672,46 @@ const saveSale = async (req, res, next, isEdit = false) => {
       : null;
     let subtotal = 0, discountAmount = 0, taxAmount = 0;
     const calculated = items.map((row, index) => {
-      const quantity = number(row.quantity), price = number(row.unit_price), discountPct = number(row.discount_pct), taxRate = number(row.tax_rate);
+      const quantity = number(row.quantity), price = number(row.unit_price), discountPct = number(row.discount_pct);
+      const previewLine = preview.lines[index];
+      if (regularGst && (!previewLine.hsn_code || previewLine.gst_rate === null || previewLine.gst_rate === undefined)) throw new AppError(`Set the HSN code and GST rate on ${previewLine.product_name} before selling`, 400);
+      if (regularGst) try { gst.validateRate(previewLine.gst_rate); } catch (error) { throw new AppError(`${previewLine.product_name}: ${error.message}`, 400); }
+      const taxRate = regularGst ? number(previewLine.gst_rate) : number(row.tax_rate);
       if (price < 0) throw new AppError('Sale price cannot be negative', 400);
       if (discountPct < 0 || discountPct > 100 || taxRate < 0 || taxRate > 100) throw new AppError('Discount and tax rates must be between 0 and 100', 400);
+      if (composition && taxRate !== 0) throw new AppError('Composition sales cannot charge GST. Set every sale tax rate to 0%.', 400);
       const base = accounting.money(quantity * price), discount = hasFixedOrderDiscount ? fixedLineDiscounts[index] : accounting.money(base * discountPct / 100), taxable = accounting.money(base - discount), tax = accounting.money(taxable * taxRate / 100);
       subtotal += base; discountAmount += discount; taxAmount += tax;
-      const previewLine = preview.lines[index];
-      return { ...row, item_type: previewLine.item_type, line_number: index + 1, fulfillment_mode: previewLine.fulfillment_mode, measurement_source_type: previewLine.measurement_source_type, measurement_source_id: previewLine.measurement_source_id, source_quantity: previewLine.source_quantity, exclude_formula_packaging: previewLine.exclude_formula_packaging, fill_quantity_ml: previewLine.fill_quantity_ml, pack_count: previewLine.pack_count, packing_kit: previewLine.packing_kit, sale_packaging: previewLine.sale_packaging, quantity, unit_price: price, discount_pct: hasFixedOrderDiscount && base ? accounting.money(discount / base * 100) : discountPct, tax_rate: taxRate, tax_amount: tax, total: accounting.money(taxable + tax) };
+      return { ...row, item_type: previewLine.item_type, hsn_code: regularGst ? previewLine.hsn_code : null, ...gst.splitTax(regularGst ? tax : 0, supplyType), line_number: index + 1, fulfillment_mode: previewLine.fulfillment_mode, measurement_source_type: previewLine.measurement_source_type, measurement_source_id: previewLine.measurement_source_id, source_quantity: previewLine.source_quantity, exclude_formula_packaging: previewLine.exclude_formula_packaging, fill_quantity_ml: previewLine.fill_quantity_ml, pack_count: previewLine.pack_count, packing_kit: previewLine.packing_kit, sale_packaging: previewLine.sale_packaging, quantity, unit_price: price, discount_pct: hasFixedOrderDiscount && base ? accounting.money(discount / base * 100) : discountPct, tax_rate: taxRate, tax_amount: tax, total: accounting.money(taxable + tax) };
     });
     subtotal = accounting.money(subtotal); discountAmount = accounting.money(discountAmount); taxAmount = accounting.money(taxAmount);
     const totalAmount = accounting.money(subtotal - discountAmount + taxAmount);
-    const paymentSplits=await accounting.resolvePaymentSplits(req.tenantId,req.body,totalAmount,transaction,{allowPartial:creditSale});
-    const paidAmount=accounting.money(paymentSplits.reduce((sum,row)=>sum+row.amount,0));
-    const balanceDue=accounting.money(totalAmount-paidAmount);
-    const customerLedger=creditSale?await accounting.getCustomerLedger(req.tenantId,customer_id,transaction):null;
-    if(creditSale&&balanceDue>0){const customer=await db.customer.findOne({where:{id:customer_id,tenant_id:req.tenantId},transaction});const limit=number(customer?.credit_limit);if(limit>0&&number(customerLedger.balance)+balanceDue>limit+0.005)throw new AppError("This sale exceeds the customer's available credit limit of "+limit.toFixed(2),409);}
-    const primaryPayment=paymentSplits[0]||null;
+    const incentiveAmount = salespersonId ? incentives.calculateIncentive({ subtotal, discount_amount: discountAmount, total_amount: totalAmount }, incentiveRate, incentiveBasis, tenantSettings?.incentive_enabled ? tenantSettings.incentive_min_sale_amount : 0) : 0;
+    if (storeCreditUsed > totalAmount) throw new AppError('Store credit cannot exceed the sale total', 400);
+    if (storeCreditUsed > 0) {
+      const availableCredit = await storeCredit.balance(req.tenantId, customer_id, transaction, true);
+      if (storeCreditUsed > availableCredit + 0.001) throw new AppError(`Only ${availableCredit.toFixed(2)} of store credit is available`, 409);
+    }
+    const cashDue = accounting.money(totalAmount - storeCreditUsed);
+    const paymentSplits = await accounting.resolvePaymentSplits(req.tenantId, cashDue === 0 ? { ...req.body, payments: [] } : req.body, cashDue, transaction, { allowPartial: creditSale || cashDue === 0 });
+    const paidAmount = accounting.money(paymentSplits.reduce((sum, split) => sum + split.amount, 0));
+    const balanceDue = accounting.money(totalAmount - paidAmount - storeCreditUsed);
+    const customerLedger = creditSale ? await accounting.getCustomerLedger(req.tenantId, customer_id, transaction) : null;
+    if (creditSale && balanceDue > 0) {
+      const customer = await db.customer.findOne({ where: { id: customer_id, tenant_id: req.tenantId }, transaction });
+      const creditLimit = number(customer?.credit_limit);
+      if (creditLimit > 0 && number(customerLedger.balance) + balanceDue > creditLimit + 0.005) throw new AppError(`This sale exceeds the customer's available credit limit of ${creditLimit.toFixed(2)}`, 409);
+    }
+    const primaryPayment = paymentSplits[0] || null;
+    const storeCreditAccount = storeCreditUsed > 0 ? await storeCredit.account(req.tenantId, transaction) : null;
+    // The sale header requires an account even when a full discount leaves
+    // nothing to collect. No cash entry or payment is posted in that case.
+    const headerAccountId = primaryPayment?.method.account.id || customerLedger?.id || storeCreditAccount?.id
+      || (totalAmount === 0 ? (await accounting.resolvePaymentMethod(req.tenantId, {}, transaction)).account.id : null);
     const sale = isEdit
       ? existingSale
-      : await db.retailSale.create({ tenant_id: req.tenantId, business_day_id: businessDay.id, exchange_return_id, sale_number: saleNumber, sale_date, customer_id, payment_account_id: primaryPayment?.method.account.id || customerLedger.id, payment_method_id: primaryPayment?.method.id || null, notes, subtotal, discount_amount: discountAmount, tax_amount: taxAmount, total_amount: totalAmount, created_by: req.user.id }, { transaction });
-    if (isEdit) await sale.update({ customer_id, payment_account_id: primaryPayment?.method.account.id || customerLedger?.id || existingSale.payment_account_id, payment_method_id: primaryPayment?.method.id || null, notes, subtotal, discount_amount: discountAmount, tax_amount: taxAmount, total_amount: totalAmount, cogs_amount: 0, journal_entry_id: null, cogs_journal_id: null }, { transaction });
+      : await db.retailSale.create({ tenant_id: req.tenantId, business_day_id: businessDay.id, exchange_return_id, store_credit_used: storeCreditUsed, sale_number: saleNumber, sale_date, customer_id, payment_account_id: headerAccountId, payment_method_id: primaryPayment?.method.id || null, notes, subtotal, discount_amount: discountAmount, tax_amount: taxAmount, gst_scheme: composition ? 'COMPOSITION' : 'REGULAR', gst_enabled: regularGst, supply_type: regularGst ? supplyType : null, place_of_supply_state_code: placeOfSupply, seller_gstin: regularGst ? tenantSettings.tax_id : null, customer_gstin: regularGst ? selectedCustomer?.tax_id : null, total_amount: totalAmount, salesperson_id: salespersonId, incentive_rate: incentiveRate, incentive_basis: incentiveBasis, incentive_amount: incentiveAmount, created_by: req.user.id }, { transaction });
+    if (isEdit) await sale.update({ customer_id, store_credit_used: 0, payment_account_id: primaryPayment?.method.account.id || customerLedger?.id || existingSale.payment_account_id, payment_method_id: primaryPayment?.method.id || null, notes, subtotal, discount_amount: discountAmount, tax_amount: taxAmount, gst_enabled: regularGst, supply_type: regularGst ? supplyType : null, place_of_supply_state_code: placeOfSupply, seller_gstin: regularGst ? tenantSettings.tax_id : null, customer_gstin: regularGst ? selectedCustomer?.tax_id : null, total_amount: totalAmount, salesperson_id: salespersonId, incentive_rate: incentiveRate, incentive_basis: incentiveBasis, incentive_amount: incentiveAmount, cogs_amount: 0, journal_entry_id: null, cogs_journal_id: null }, { transaction });
     let cogs = 0, rawInventoryCost = 0, packagingInventoryCost = 0, finishedInventoryCost = 0;
     for (const line of calculated) {
       const variant = line.item_type === 'packaging_material' ? null : await loadVariant(req.tenantId, line.finished_good_id, transaction);
@@ -624,7 +749,7 @@ const saveSale = async (req, res, next, isEdit = false) => {
         retail_sale_id: sale.id, item_type: line.item_type, finished_good_id: line.finished_good_id || null,
         packaging_material_id: line.packaging_material_id || null, fulfillment_mode: line.fulfillment_mode,
         production_order_id: productionOrderId, quantity: line.quantity, unit_price: line.unit_price,
-        discount_pct: line.discount_pct, tax_rate: line.tax_rate, tax_amount: line.tax_amount, total: line.total,
+        discount_pct: line.discount_pct, tax_rate: line.tax_rate, hsn_code: line.hsn_code, tax_amount: line.tax_amount, cgst_amount: line.cgst_amount, sgst_amount: line.sgst_amount, igst_amount: line.igst_amount, total: line.total,
         cost_amount: lineCost, fill_quantity_ml: line.fill_quantity_ml, pack_count: line.pack_count,
         packing_kit_id: line.packing_kit?.id || null, packaging_cost_amount: packagingCost,
         measurement_source_type: line.measurement_source_type, measurement_source_id: line.measurement_source_id,
@@ -649,9 +774,10 @@ const saveSale = async (req, res, next, isEdit = false) => {
       ACCOUNT_CODES.TAX_PAYABLE,
       ...(discountAmount > 0 ? [ACCOUNT_CODES.DISCOUNT_ALLOWED] : [])
     ], transaction);
-    const revenueJournal = await accounting.createAndPost(req.tenantId, { entry_date: sale_date, reference_type: 'retail_sale_revenue', reference_id: sale.id, narration: 'Retail sale revenue', lines: [
+    const revenueJournal = await accounting.createAndPost(req.tenantId, { entry_date: sale_date, business_day_id: businessDay.id, reference_type: 'retail_sale_revenue', reference_id: sale.id, narration: 'Retail sale revenue', lines: [
       ...paymentSplits.map(split => ({ account_id: split.method.account.id, debit_amount: split.amount, description: `${split.method.name} received for ${sale.sale_number}` })),
-      ...(balanceDue>0?[{account_id:customerLedger.id,debit_amount:balanceDue,description:`Credit balance for ${sale.sale_number}`}]:[]),
+      ...(storeCreditUsed ? [{ account_id: storeCreditAccount.id, debit_amount: storeCreditUsed, description: `Store credit redeemed on ${sale.sale_number}` }] : []),
+      ...(balanceDue > 0 ? [{ account_id: customerLedger.id, debit_amount: balanceDue, description: `Credit balance for ${sale.sale_number}` }] : []),
       ...(discountAmount ? [{ account_id: accounts[ACCOUNT_CODES.DISCOUNT_ALLOWED].id, debit_amount: discountAmount, description: `Discount allowed on ${sale.sale_number}` }] : []),
       { account_id: accounts[ACCOUNT_CODES.SALES_REVENUE].id, credit_amount: subtotal, description: `Retail sale ${sale.sale_number}` },
       ...(taxAmount ? [{ account_id: accounts[ACCOUNT_CODES.TAX_PAYABLE].id, credit_amount: taxAmount, description: `Tax on ${sale.sale_number}` }] : [])
@@ -666,11 +792,12 @@ const saveSale = async (req, res, next, isEdit = false) => {
     const paymentSequence = await db.payment.count({ where: { tenant_id: req.tenantId, payment_type: 'incoming' }, transaction }) + 1;
     const paymentRecords = [];
     for (const [index, split] of paymentSplits.entries()) {
-      const paymentRecord=await db.payment.create({tenant_id:req.tenantId,business_day_id:businessDay.id,payment_number:`PAY-IN-${new Date(sale_date).getFullYear()}-${String(paymentSequence+index).padStart(4,'0')}`,payment_type:'incoming',party_type:'customer',party_id:customer_id,payment_method_id:split.method.id,payment_mode:accounting.paymentModeForType(split.method.method_type),bank_account_id:split.method.account.id,amount:split.amount,payment_date:sale_date,notes:`Retail sale ${sale.sale_number}`,journal_entry_id:revenueJournal.id,created_by:req.user.id},{transaction});
+      const paymentRecord = await db.payment.create({ tenant_id: req.tenantId, business_day_id: businessDay.id, payment_number: `PAY-IN-${new Date(sale_date).getFullYear()}-${String(paymentSequence + index).padStart(4, '0')}`, payment_type: 'incoming', party_type: 'customer', party_id: customer_id, payment_method_id: split.method.id, payment_mode: accounting.paymentModeForType(split.method.method_type), bank_account_id: split.method.account.id, amount: split.amount, payment_date: sale_date, notes: `Retail sale ${sale.sale_number}`, journal_entry_id: revenueJournal.id, created_by: req.user.id }, { transaction });
       paymentRecords.push(paymentRecord);
-      if(creditSale)await db.paymentAllocation.create({payment_id:paymentRecord.id,invoice_type:'retail_sale',invoice_id:sale.id,allocated_amount:split.amount},{transaction});
+      if (creditSale) await db.paymentAllocation.create({ payment_id: paymentRecord.id, invoice_type: 'retail_sale', invoice_id: sale.id, allocated_amount: split.amount }, { transaction });
     }
     await sale.update({ cogs_amount: cogs, journal_entry_id: revenueJournal.id, cogs_journal_id: cogsJournal?.id || null }, { transaction });
+    if (internal) return { ...sale.toJSON(), paid_amount: accounting.money(paidAmount + storeCreditUsed), balance_due: balanceDue, payment_id: paymentRecords[0]?.id || null, payment_ids: paymentRecords.map(record => record.id) };
     await transaction.commit();
     // Send only after the database transaction succeeds; provider failures do
     // not undo a sale, inventory movement, payment, or journal entry.
@@ -681,8 +808,9 @@ const saveSale = async (req, res, next, isEdit = false) => {
     const whatsapp = isEdit ? { attempted: false, status: 'not_sent_for_update' } : await invoiceWhatsapp.sendInvoice({ sale: sale.toJSON(), customer, tenant });
     if (!isEdit) await invoiceWhatsapp.recordDeliveryAttempt({ sale: sale.toJSON(), customer, tenant, result: whatsapp });
     if (whatsapp.status === 'failed') console.error(`Invoice WhatsApp send failed for ${sale.sale_number}: ${whatsapp.reason}`);
-    res.status(isEdit ? 200 : 201).json({ ...sale.toJSON(), paid_amount: paidAmount, balance_due: balanceDue, payment_id: paymentRecords[0]?.id || null, payment_ids: paymentRecords.map(record => record.id), whatsapp });
+    res.status(isEdit ? 200 : 201).json({ ...sale.toJSON(), paid_amount: accounting.money(paidAmount + storeCreditUsed), balance_due: balanceDue, payment_id: paymentRecords[0]?.id || null, payment_ids: paymentRecords.map(record => record.id), whatsapp });
   } catch (error) {
+    if (internal) throw error;
     if (!transaction.finished) await transaction.rollback();
     next(error);
   }
@@ -690,6 +818,82 @@ const saveSale = async (req, res, next, isEdit = false) => {
 
 exports.create = (req, res, next) => saveSale(req, res, next, false);
 exports.update = (req, res, next) => saveSale(req, res, next, true);
+
+// Return and replacement post together, so a failed replacement leaves no
+// refund, stock movement, or credit transaction behind.
+exports.exchange = async (req, res, next) => {
+  const transaction = await db.sequelize.transaction();
+  try {
+    const returnRequest = req.body.return || {};
+    const replacement = req.body.replacement || {};
+    const paymentMethodId = req.body.payment_method_id;
+    if (!Array.isArray(replacement.items) || !replacement.items.length) throw new AppError('Add at least one replacement item', 400);
+    const returnController = require('./salesReturn.controller');
+    const postedReturn = await returnController.create({ ...req, body: {
+      items: returnRequest.items,
+      reason: 'Exchange',
+      notes: returnRequest.notes,
+      settlement_type: 'exchange',
+      refund_payment_method_id: paymentMethodId
+    }, exchangeTransaction: transaction }, null, null);
+    const originalSale = await db.retailSale.findOne({ where: { id: req.params.id, tenant_id: req.tenantId }, transaction });
+    const replacementBases = replacement.items.map(row => accounting.money(number(row.quantity) * number(row.unit_price)));
+    if (replacement.items.some((row, index) => {
+      const quantity = number(row.quantity), price = number(row.unit_price), discountPct = number(row.discount_pct), taxRate = number(row.tax_rate);
+      return !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(price) || price < 0
+        || !Number.isFinite(discountPct) || discountPct < 0 || discountPct > 100
+        || !Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100 || !Number.isFinite(replacementBases[index]);
+    })) throw new AppError('Check replacement quantity, price, discount, and tax', 400);
+    const replacementSubtotal = accounting.money(replacementBases.reduce((sum, base) => sum + base, 0));
+    const hasFixedReplacementDiscount = replacement.order_discount_amount !== undefined && replacement.order_discount_amount !== null;
+    const fixedReplacementDiscount = number(replacement.order_discount_amount);
+    if (hasFixedReplacementDiscount && (!Number.isFinite(fixedReplacementDiscount) || fixedReplacementDiscount < 0 || fixedReplacementDiscount > replacementSubtotal)) {
+      throw new AppError('The fixed replacement discount must be between zero and the replacement subtotal', 400);
+    }
+    const fixedReplacementDiscounts = hasFixedReplacementDiscount
+      ? allocateFixedDiscount(replacementBases, fixedReplacementDiscount)
+      : null;
+    const replacementTotal = accounting.money(replacement.items.reduce((sum, row, index) => {
+      const quantity = number(row.quantity), price = number(row.unit_price);
+      const discountPct = number(row.discount_pct), taxRate = number(row.tax_rate);
+      const base = accounting.money(quantity * price);
+      const discount = hasFixedReplacementDiscount ? fixedReplacementDiscounts[index] : accounting.money(base * discountPct / 100);
+      const taxable = accounting.money(base - discount);
+      return sum + accounting.money(taxable + accounting.money(taxable * taxRate / 100));
+    }, 0));
+    if (replacementTotal <= 0) throw new AppError('The replacement total must be greater than zero', 400);
+    const creditUsed = Math.min(replacementTotal, number(postedReturn.store_credit_amount));
+    const cashDue = accounting.money(replacementTotal - creditUsed);
+    const postedSale = await saveSale({ ...req, body: {
+      customer_id: originalSale.customer_id,
+      exchange_return_id: postedReturn.id,
+      store_credit_used: creditUsed,
+      notes: `Exchange against ${originalSale.sale_number} via ${postedReturn.return_number}`,
+      allow_negative_materials: replacement.allow_negative_materials === true,
+      order_discount_amount: replacement.order_discount_amount,
+      payments: cashDue > 0 ? [{ payment_method_id: paymentMethodId, amount: cashDue }] : [],
+      items: replacement.items
+    }, exchangeTransaction: transaction }, null, null, false);
+    await transaction.commit();
+    let whatsapp = { attempted: false, status: 'not_sent' };
+    try {
+      const [customer, tenant] = await Promise.all([
+        originalSale.customer_id ? db.customer.findOne({ where: { id: originalSale.customer_id, tenant_id: req.tenantId } }) : null,
+        db.tenant.findByPk(req.tenantId)
+      ]);
+      whatsapp = await invoiceWhatsapp.sendInvoice({ sale: postedSale, customer, tenant });
+      await invoiceWhatsapp.recordDeliveryAttempt({ sale: postedSale, customer, tenant, result: whatsapp });
+    } catch (deliveryError) {
+      console.error(`Exchange invoice WhatsApp delivery failed for ${postedSale.sale_number}: ${deliveryError.message}`);
+      whatsapp = { attempted: true, status: 'failed', reason: deliveryError.message };
+    }
+    res.status(201).json({ salesReturn: postedReturn, sale: { ...postedSale, whatsapp }, net_cash_due: accounting.money(cashDue - number(postedReturn.refund_amount)) });
+  } catch (error) {
+    if (!transaction.finished) await transaction.rollback();
+    if (error.preview) return res.status(409).json({ success: false, code: 'NEGATIVE_STOCK_CONFIRMATION_REQUIRED', message: error.message, preview: error.preview, shortages: error.preview.shortages });
+    next(error);
+  }
+};
 
 exports.buildPreview = buildPreview;
 exports.fulfillmentModeForVariant = fulfillmentModeForVariant;

@@ -397,6 +397,23 @@
   color: var(--color-gold);
 }
 
+.purchase-export-controls {
+  display: flex;
+  margin-bottom: 16px;
+}
+
+.purchase-export-controls > span:last-child {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+@media (max-width: 767px) {
+  .purchase-export-controls,
+  .purchase-export-controls .ant-picker {
+    width: 100%;
+  }
+}
+
 .purchase-view__summary {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));

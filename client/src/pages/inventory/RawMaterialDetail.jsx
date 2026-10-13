@@ -79,8 +79,8 @@ export default function RawMaterialDetail() {
           columns={[
             { title: 'Batch #', dataIndex: 'batch', render: t => <Text style={{ color: '#4299e1' }}>{t}</Text> },
             { title: 'Supplier', dataIndex: 'supplier', render: t => <Text style={{ color: 'inherit' }}>{t}</Text> },
-            { title: 'Original Qty', dataIndex: 'qty', render: t => <Text style={{ color: 'inherit' }}>{t} kg</Text> },
-            { title: 'Remaining', dataIndex: 'remaining', render: t => <Text style={{ color: '#48bb78', fontWeight: 600 }}>{t} kg</Text> },
+            { title: 'Original Qty', dataIndex: 'qty', render: t => <Text style={{ color: 'inherit' }}>{t} {material.unit}</Text> },
+            { title: 'Remaining', dataIndex: 'remaining', render: t => <Text style={{ color: '#48bb78', fontWeight: 600 }}>{t} {material.unit}</Text> },
             { title: 'Cost/Unit', dataIndex: 'cost', render: v => <Text style={{ color: 'inherit' }}>₹{v.toLocaleString()}</Text> },
             { title: 'Received', dataIndex: 'date', render: t => <Text style={{ color: 'var(--color-text-secondary)' }}>{t}</Text> },
             { title: 'Expiry', dataIndex: 'expiry', render: t => <Text style={{ color: 'var(--color-text-secondary)' }}>{t}</Text> },
@@ -97,9 +97,9 @@ export default function RawMaterialDetail() {
           columns={[
             { title: 'Date', dataIndex: 'date', render: t => <Text style={{ color: 'var(--color-text-secondary)' }}>{t}</Text> },
             { title: 'Type', dataIndex: 'type', render: t => <Text style={{ color: 'inherit' }}>{t}</Text> },
-            { title: 'Direction', dataIndex: 'dir', render: d => <Tag color={d === 'In' ? 'success' : 'error'}>{d}</Tag> },
-            { title: 'Qty', dataIndex: 'qty', render: t => <Text style={{ color: 'inherit' }}>{t} kg</Text> },
-            { title: 'Balance', dataIndex: 'bal', render: t => <Text style={{ color: 'var(--color-gold)', fontWeight: 600 }}>{t} kg</Text> },
+            { title: 'Direction', dataIndex: 'dir', render: d => <Tag color={d === 'in' ? 'success' : 'error'}>{d}</Tag> },
+            { title: 'Qty', dataIndex: 'qty', render: t => <Text style={{ color: 'inherit' }}>{t} {material.unit}</Text> },
+            { title: 'Balance', dataIndex: 'bal', render: t => <Text style={{ color: 'var(--color-gold)', fontWeight: 600 }}>{t === '—' ? t : `${t} ${material.unit}`}</Text> },
             { title: 'Reference', dataIndex: 'ref', render: t => <Text style={{ color: '#4299e1' }}>{t}</Text> },
             { title: 'Notes', dataIndex: 'notes', render: t => <Text style={{ color: 'var(--color-text-secondary)' }}>{t}</Text> },
           ]}

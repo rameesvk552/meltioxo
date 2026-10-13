@@ -1,5 +1,20 @@
 const db = require('../models');
 const { AppError } = require('../middleware/errorHandler');
+const gst = require('../services/gst.service');
+
+const productGstSettings = async (tenantId, body, existing = null, transaction) => {
+  const tenant = await db.tenant.findByPk(tenantId, { transaction });
+  const regular = tenant?.tax_system === 'GST' && tenant?.gst_scheme === 'REGULAR';
+  if (!regular) return {};
+  const hsnCode = body.hsn_code === undefined ? existing?.hsn_code : body.hsn_code;
+  const gstRate = body.gst_rate === undefined ? existing?.gst_rate : body.gst_rate;
+  try {
+    const hsn_code = gst.validateHsn(hsnCode);
+    if (!hsn_code) throw new Error('Enter an HSN code for this product');
+    if (gstRate === null || gstRate === undefined || gstRate === '') throw new Error('Select a GST rate for this product');
+    return { hsn_code, gst_rate: gst.validateRate(gstRate) };
+  } catch (error) { throw new AppError(error.message, 400); }
+};
 
 const generateVariantSku = async ({ product, tenantId, transaction }) => {
   const base = String(product.code || '').trim();
@@ -42,6 +57,46 @@ const assertProductNameAvailable = async ({ tenantId, name, excludeId = null, tr
   });
   if (rows.length) throw new AppError(`A product named "${normalizedName}" already exists`, 409);
   return normalizedName;
+};
+
+const assertProductCodeAvailable = async ({ tenantId, code, excludeId = null, transaction }) => {
+  const normalizedCode = String(code || '').trim();
+  if (!normalizedCode) throw new AppError('Product code is required', 400);
+  await db.sequelize.query(
+    'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+    { bind: [`product-code:${tenantId}:${normalizedCode.toLowerCase()}`], transaction }
+  );
+  const [rows] = await db.sequelize.query(`
+    SELECT id
+    FROM products
+    WHERE tenant_id = $tenantId
+      AND lower(btrim(code)) = lower($code)
+      ${excludeId ? 'AND id <> $excludeId' : ''}
+    LIMIT 1
+  `, {
+    bind: { tenantId, code: normalizedCode, ...(excludeId ? { excludeId } : {}) },
+    transaction
+  });
+  if (rows.length) throw new AppError(`A product with code "${normalizedCode}" already exists`, 409);
+  return normalizedCode;
+};
+
+const generateProductCode = async ({ tenantId, transaction }) => {
+  let sequence = await db.product.count({ where: { tenant_id: tenantId }, transaction }) + 1;
+  let candidate = `PROD-${String(sequence).padStart(4, '0')}`;
+  while (await db.product.findOne({ where: { tenant_id: tenantId, code: candidate }, attributes: ['id'], transaction })) {
+    candidate = `PROD-${String(++sequence).padStart(4, '0')}`;
+  }
+  return candidate;
+};
+
+const generateMeasurementSku = async ({ tenantId, transaction }) => {
+  let sequence = await db.finishedGood.count({ where: { tenant_id: tenantId }, transaction }) + 1;
+  let candidate = `MEAS-${String(sequence).padStart(4, '0')}`;
+  while (await db.finishedGood.findOne({ where: { tenant_id: tenantId, sku: candidate }, attributes: ['id'], transaction })) {
+    candidate = `MEAS-${String(++sequence).padStart(4, '0')}`;
+  }
+  return candidate;
 };
 
 const validatePackaging = async (tenantId, packaging, transaction) => {
@@ -90,10 +145,9 @@ const syncMeasurementItem = async (tenantId, product, settings, transaction) => 
     return item;
   }
   if (!item) {
-    const sequence = await db.finishedGood.count({ where: { tenant_id: tenantId }, transaction }) + 1;
     item = await db.finishedGood.create({
       tenant_id: tenantId, product_id: product.id, source_type: 'live_make', formula_id: null,
-      name: product.name, size_label: null, uom: 'ml', sku: `MEAS-${String(sequence).padStart(4, '0')}`,
+      name: product.name, size_label: null, uom: 'ml', sku: await generateMeasurementSku({ tenantId, transaction }),
       fill_quantity_ml: 1, selling_price: settings.measurement_price, cost_price: 0,
       current_stock: 0, reorder_level: 0, is_measurement_item: true, is_active: true
     }, { transaction });
@@ -143,6 +197,7 @@ exports.create = async (req, res, next) => {
     }
     await assertProductNameAvailable({ tenantId: req.tenantId, name, transaction });
     const measurement = measurementSettings(req.body);
+    const productGst = await productGstSettings(req.tenantId, req.body, null, transaction);
     const measurementSource = await resolveMeasurementSource(req.tenantId, req.body, measurement, transaction);
     const sourceType = measurement.sell_by_measurement ? 'live_make' : req.body.source_type || 'live_make';
     if (!SOURCE_TYPES.includes(sourceType)) throw new AppError('Select Ready-made or Make live for this product', 400);
@@ -157,12 +212,15 @@ exports.create = async (req, res, next) => {
       throw new AppError('A measured product needs a formula whose output unit is ml or L', 400);
     }
 
-    const sequence = await db.product.count({ where: { tenant_id: req.tenantId }, transaction }) + 1;
+    const code = req.body.code
+      ? await assertProductCodeAvailable({ tenantId: req.tenantId, code: req.body.code, transaction })
+      : await generateProductCode({ tenantId: req.tenantId, transaction });
     const item = await db.product.create({
       tenant_id: req.tenantId,
-      code: req.body.code || `PROD-${String(sequence).padStart(4, '0')}`,
+      code,
       name,
       description: req.body.description,
+      ...productGst,
       source_type: sourceType,
       formula_id: formula?.id || null,
       ...measurement,
@@ -254,7 +312,11 @@ exports.update = async (req, res, next) => {
       : product.name;
     if (!name) throw new AppError('Product name is required', 400);
     await assertProductNameAvailable({ tenantId: req.tenantId, name, excludeId: product.id, transaction });
+    const code = Object.prototype.hasOwnProperty.call(req.body, 'code')
+      ? await assertProductCodeAvailable({ tenantId: req.tenantId, code: req.body.code, excludeId: product.id, transaction })
+      : product.code;
     const previousFormulaId = product.formula_id;
+    const productGst = await productGstSettings(req.tenantId, req.body, product, transaction);
     const measurement = measurementSettings({
       sell_by_measurement: Object.prototype.hasOwnProperty.call(req.body, 'sell_by_measurement') ? req.body.sell_by_measurement : product.sell_by_measurement,
       measurement_unit: req.body.measurement_unit ?? product.measurement_unit,
@@ -281,8 +343,8 @@ exports.update = async (req, res, next) => {
       if (regularVariants) throw new AppError('A product with variants cannot be changed to Sell by measurement. Create a separate measured product.', 409);
     }
 
-    const { initial_variant: _ignoredInitialVariant, ...bodyUpdates } = req.body;
-    const updates = { ...bodyUpdates, name, ...measurement, ...measurementSource, source_type: sourceType };
+    const { initial_variant: _ignoredInitialVariant, hsn_code: _ignoredHsn, gst_rate: _ignoredGstRate, ...bodyUpdates } = req.body;
+    const updates = { ...bodyUpdates, code, name, ...measurement, ...measurementSource, ...productGst, source_type: sourceType };
     if (sourceType === 'ready_made') updates.formula_id = null;
     await product.update(updates, { transaction });
     await syncMeasurementItem(req.tenantId, product, measurement, transaction);

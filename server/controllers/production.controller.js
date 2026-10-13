@@ -17,6 +17,46 @@ const ensureStandardFinishedGood = async ({ product, tenantId, transaction }) =>
   }, { transaction });
 };
 
+const requestKeysForGroups = (requestKey, groupCount) => {
+  if (!requestKey) return [];
+  if (groupCount <= 1) return [requestKey];
+  return Array.from({ length: groupCount }, (_, index) => `${requestKey}:${index + 1}`);
+};
+
+const createProductionOrderForGroup = async ({ req, group, sequence, requestKey, transaction }) => {
+  const firstSpec = group.outputSpecs[0];
+  const item = await productionOrder.create({
+    ...req.body,
+    tenant_id: req.tenantId,
+    formula_id: group.formulaId,
+    finished_good_id: firstSpec.finished_good_id,
+    planned_qty: group.outputSpecs.reduce((sum, row) => sum + row.planned_qty, 0),
+    request_key: requestKey,
+    order_number: req.body.order_number || `PROD-${new Date().getFullYear()}-${String(sequence).padStart(4, '0')}`
+  }, { transaction });
+  await productionOutput.bulkCreate(group.outputSpecs.map(row => ({ ...row, production_order_id: item.id })), { transaction });
+  const requirementRows = await Promise.all(group.outputSpecs.map(row => {
+    const outputVariant = group.variants.find(candidate => candidate.id === row.finished_good_id);
+    return productionService.calculateMaterialRequirements(req.tenantId, item.formula_id, row.planned_qty, row.finished_good_id, transaction, { excludePackaging: Boolean(outputVariant?.is_measurement_item) });
+  }));
+  const requirements = productionService.combineMaterialRequirements(requirementRows.flat());
+  const availability = await productionService.checkAvailability(req.tenantId, requirements);
+  if (availability.length) {
+    await productionMaterial.bulkCreate(availability.map(row => ({
+      production_order_id: item.id,
+      material_type: row.material_type,
+      material_id: row.material_id,
+      required_qty: row.required_qty,
+      available_qty: row.current_stock,
+      is_available: row.is_available
+    })), { transaction });
+  }
+  return productionOrder.findByPk(item.id, {
+    include: [{ model: productionOutput, include: [db.finishedGood] }],
+    transaction
+  });
+};
+
 exports.getAll = async (req, res, next) => {
   try {
     const items = await productionOrder.findAll({
@@ -82,6 +122,7 @@ exports.getById = async (req, res, next) => {
 exports.create = async (req, res, next) => {
   const transaction = await db.sequelize.transaction();
   const requestKey = req.get('Idempotency-Key') || null;
+  let recoveryRequestKeys = requestKey ? [requestKey] : [];
   try {
     // Return the original order when the browser retries the same submission
     // (for example after a response is lost). This check also handles the
@@ -112,69 +153,58 @@ exports.create = async (req, res, next) => {
     if (outputSpecs.some(row => !row.finished_good_id || !Number.isFinite(row.planned_qty) || row.planned_qty <= 0)) throw new AppError('Every product needs a planned quantity greater than zero', 400);
     if (new Set(outputSpecs.map(row => row.finished_good_id)).size !== outputSpecs.length) throw new AppError('Add each variant only once', 400);
 
-    const variant = await db.finishedGood.findOne({
-      where: {
-        id: outputSpecs[0].finished_good_id,
-        tenant_id: req.tenantId,
-        is_active: true
-      },
-      include: [db.product],
-      transaction
-    });
-    if (!variant || !variant.product || !variant.product.is_active) {
-      throw new AppError('Select an active product variant', 400);
-    }
-    if (variant.source_type === 'ready_made') {
-      throw new AppError('Ready-made variants must be purchased and cannot be sent to production', 400);
-    }
-
-    const formulaId = variant.formula_id || variant.product.formula_id;
-    const formula = await db.formula.findOne({
-      where: { id: formulaId, tenant_id: req.tenantId, is_active: true },
-      transaction
-    });
-    if (!formula) throw new AppError('The selected product does not have an active formula', 400);
-
-    const sequence = await productionOrder.count({ where: { tenant_id: req.tenantId }, transaction }) + 1;
     const variants = await db.finishedGood.findAll({
       where: { id: outputSpecs.map(row => row.finished_good_id), tenant_id: req.tenantId, is_active: true },
       include: [db.product], transaction
     });
-    if (variants.length !== outputSpecs.length || variants.some(row => row.source_type === 'ready_made' || !row.product || !row.product.is_active || (row.formula_id || row.product.formula_id) !== formulaId)) {
-      throw new AppError('All variants must be active and use the same product formula', 400);
+    const variantById = new Map(variants.map(row => [row.id, row]));
+    if (variants.length !== outputSpecs.length || variants.some(row => row.source_type === 'ready_made' || !row.product || !row.product.is_active)) {
+      throw new AppError('All variants must be active live-making variants', 400);
     }
-    const item = await productionOrder.create({
-      ...req.body,
-      tenant_id: req.tenantId,
-      formula_id: formulaId,
-      finished_good_id: variant.id,
-      planned_qty: outputSpecs.reduce((sum, row) => sum + row.planned_qty, 0),
-      request_key: requestKey,
-      order_number: req.body.order_number || `PROD-${new Date().getFullYear()}-${String(sequence).padStart(4, '0')}`
-    }, { transaction });
-    await productionOutput.bulkCreate(outputSpecs.map(row => ({ ...row, production_order_id: item.id })), { transaction });
-    const requirementRows = await Promise.all(outputSpecs.map(row => {
-      const outputVariant = variants.find(candidate => candidate.id === row.finished_good_id);
-      return productionService.calculateMaterialRequirements(req.tenantId, item.formula_id, row.planned_qty, row.finished_good_id, transaction, { excludePackaging: Boolean(outputVariant?.is_measurement_item) });
-    }));
-    const requirements = productionService.combineMaterialRequirements(requirementRows.flat());
-    const availability = await productionService.checkAvailability(req.tenantId, requirements);
-    if (availability.length) {
-      await productionMaterial.bulkCreate(availability.map(row => ({
-        production_order_id: item.id,
-        material_type: row.material_type,
-        material_id: row.material_id,
-        required_qty: row.required_qty,
-        available_qty: row.current_stock,
-        is_available: row.is_available
-      })), { transaction });
+    const groupsByFormula = new Map();
+    for (const spec of outputSpecs) {
+      const outputVariant = variantById.get(spec.finished_good_id);
+      const formulaId = outputVariant?.formula_id || outputVariant?.product?.formula_id;
+      if (!formulaId) throw new AppError('The selected product does not have an active formula', 400);
+      const group = groupsByFormula.get(formulaId) || { formulaId, outputSpecs: [], variants: [] };
+      group.outputSpecs.push(spec);
+      group.variants.push(outputVariant);
+      groupsByFormula.set(formulaId, group);
     }
-    const result = await productionOrder.findByPk(item.id, { 
-      include: [{ model: productionOutput, include: [db.finishedGood] }], 
-      transaction 
+    const orderGroups = Array.from(groupsByFormula.values());
+    const activeFormulaCount = await db.formula.count({
+      where: { id: orderGroups.map(group => group.formulaId), tenant_id: req.tenantId, is_active: true },
+      transaction
     });
+    if (activeFormulaCount !== orderGroups.length) {
+      throw new AppError('The selected product does not have an active formula', 400);
+    }
+    const groupRequestKeys = requestKeysForGroups(requestKey, orderGroups.length);
+    recoveryRequestKeys = groupRequestKeys;
+    if (groupRequestKeys.length) {
+      const existingOrders = await productionOrder.findAll({
+        where: { tenant_id: req.tenantId, request_key: groupRequestKeys },
+        include: [{ model: productionOutput, include: [db.finishedGood] }],
+        transaction
+      });
+      if (existingOrders.length === groupRequestKeys.length) {
+        await transaction.rollback();
+        return res.status(200).json(orderGroups.length === 1 ? existingOrders[0] : existingOrders);
+      }
+    }
+    const sequenceStart = await productionOrder.count({ where: { tenant_id: req.tenantId }, transaction }) + 1;
+    const result = [];
+    for (let index = 0; index < orderGroups.length; index += 1) {
+      result.push(await createProductionOrderForGroup({
+        req,
+        group: orderGroups[index],
+        sequence: sequenceStart + index,
+        requestKey: groupRequestKeys[index] || null,
+        transaction
+      }));
+    }
     await transaction.commit();
-    res.status(201).json(result);
+    res.status(201).json(result.length === 1 ? result[0] : result);
   } catch (error) {
     if (transaction && !transaction.finished) {
       await transaction.rollback();
@@ -183,11 +213,11 @@ exports.create = async (req, res, next) => {
     // arrive together, the losing request returns the order made by the winner.
     if (requestKey && error.name === 'SequelizeUniqueConstraintError') {
       try {
-        const existing = await productionOrder.findOne({
-          where: { tenant_id: req.tenantId, request_key: requestKey },
+        const existing = await productionOrder.findAll({
+          where: { tenant_id: req.tenantId, request_key: recoveryRequestKeys },
           include: [{ model: productionOutput, include: [db.finishedGood] }]
         });
-        if (existing) return res.status(200).json(existing);
+        if (existing.length) return res.status(200).json(existing.length === 1 ? existing[0] : existing);
       } catch (_) {
         // Preserve the original error if the recovery lookup cannot run.
       }

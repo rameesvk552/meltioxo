@@ -126,9 +126,9 @@ export default function FormulaBuilder() {
       key: 'materialId',
       width: '40%',
       render: (val, record) => (
-        <Select value={val || undefined} placeholder="Select Raw Material" onChange={v => handleIngredientChange(record.key, 'materialId', v)} style={{ width: '100%' }}>
+        <Select value={val || undefined} showSearch optionFilterProp="label" placeholder="Select Raw Material" onChange={v => handleIngredientChange(record.key, 'materialId', v)} style={{ width: '100%' }}>
           {rawMaterials.map(m => (
-            <Option key={m.id} value={m.id}>{m.name}</Option>
+            <Option key={m.id} value={m.id} label={m.name}>{m.name}</Option>
           ))}
         </Select>
       )
@@ -287,12 +287,14 @@ export default function FormulaBuilder() {
                         <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 4 }}>Raw Material</div>
                         <Select 
                           value={item.materialId || undefined} 
+                          showSearch
+                          optionFilterProp="label"
                           placeholder="Select Raw Material"
                           onChange={v => handleIngredientChange(item.key, 'materialId', v)} 
                           style={{ width: '100%' }}
                         >
                           {rawMaterials.map(m => (
-                            <Option key={m.id} value={m.id}>{m.name}</Option>
+                            <Option key={m.id} value={m.id} label={m.name}>{m.name}</Option>
                           ))}
                         </Select>
                       </div>

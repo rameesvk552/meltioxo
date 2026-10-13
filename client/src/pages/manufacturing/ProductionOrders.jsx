@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Table, Card, Row, Col, Statistic, Tag, Button, Space, Tabs, Modal, Form, Input, InputNumber, Select, DatePicker, message, Radio, Alert, Progress } from 'antd';
+import { Card, Row, Col, Statistic, Tag, Button, Space, Tabs, Modal, Form, Input, InputNumber, Select, DatePicker, message, Radio, Alert, Progress } from 'antd';
 import { ExperimentOutlined, PlusOutlined, EyeOutlined, CheckCircleOutlined, PlayCircleOutlined, CloseCircleOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import client from '../../api/client';
@@ -9,6 +9,23 @@ import ResponsiveListPageHeader from '../../components/common/ResponsiveListPage
 import './ProductionOrders.css';
 
 const { Option } = Select;
+
+const isBulkMeasuredChoice = item => item.is_measurement_item && item.product?.measurement_source_type === 'bulk_stock';
+const choiceName = item => item.product?.name || item.name;
+const choiceVariantLabel = item => {
+  if (item.isStandardProduct) return 'Standard';
+  if (isBulkMeasuredChoice(item)) return `Bulk stock (${item.uom || 'ml'})`;
+  return item.size_label || item.name || 'Variant';
+};
+const choiceQuantityLabel = item => isBulkMeasuredChoice(item) ? `Quantity (${item.uom || 'ml'})` : 'Units';
+const choiceOptionText = item => `${choiceName(item)} (${choiceVariantLabel(item)})${item.isStandardProduct ? ' · Standard' : ''}`;
+const choiceSearchText = item => `${choiceName(item)} ${choiceVariantLabel(item)} ${item.sku || ''}`;
+const choiceFormulaId = item => item?.formula_id || item?.product?.formula_id || null;
+const choiceRequestPayload = row => (
+  String(row.finishedGoodId).startsWith('product:')
+    ? { product_id: String(row.finishedGoodId).slice(8), planned_qty: row.planned }
+    : { finished_good_id: row.finishedGoodId, planned_qty: row.planned }
+);
 
 export default function ProductionOrders() {
   const navigate = useNavigate();
@@ -52,17 +69,26 @@ export default function ProductionOrders() {
     const requestKey = idempotencyKeyRef.current || crypto.randomUUID();
     idempotencyKeyRef.current = requestKey;
     try {
-      await client.post('/production-orders', {
-        outputs: values.outputs.map(row => ({ ...(String(row.finishedGoodId).startsWith('product:') ? { product_id: String(row.finishedGoodId).slice(8) } : { finished_good_id: row.finishedGoodId }), planned_qty: row.planned })),
+      const choicesById = new Map(productionChoices.map(item => [String(item.id), item]));
+      const groupedOutputs = values.outputs.reduce((groups, row) => {
+        const choice = choicesById.get(String(row.finishedGoodId));
+        const formulaId = choiceFormulaId(choice);
+        const groupKey = formulaId || `missing-formula:${row.finishedGoodId}`;
+        const existing = groups.get(groupKey) || [];
+        groups.set(groupKey, [...existing, choiceRequestPayload(row)]);
+        return groups;
+      }, new Map());
+      const orderGroups = Array.from(groupedOutputs.values());
+      await Promise.all(orderGroups.map((outputs, index) => client.post('/production-orders', {
+        outputs,
         batch_number: values.batch,
-        planned_qty: values.planned,
         planned_date: values.date.format('YYYY-MM-DD')
-      }, { headers: { 'Idempotency-Key': requestKey } });
+      }, { headers: { 'Idempotency-Key': `${requestKey}:${index + 1}` } })));
       await Promise.all([reload(), reloadFinishedGoods()]);
       setIsAddModalOpen(false);
       form.resetFields();
       idempotencyKeyRef.current = null;
-      message.success('Production Order planned successfully!');
+      message.success(orderGroups.length > 1 ? `${orderGroups.length} Production Orders planned successfully!` : 'Production Order planned successfully!');
     } finally {
       creatingRef.current = false;
       setIsCreating(false);
@@ -75,7 +101,7 @@ export default function ProductionOrders() {
     message.success('Production order started');
   };
 
-  const handleOpenCompleteModal = async (id, planned) => {
+  const handleOpenCompleteModal = async (id) => {
     const { data: availability } = await client.get(`/production-orders/${id}/availability`);
     const shortages = availability.filter(item => !item.is_available);
     if (shortages.length) {
@@ -234,7 +260,7 @@ export default function ProductionOrders() {
         width={720}
       >
         <Form form={form} layout="vertical" onFinish={handleCreateOrder} initialValues={{ outputs: [{}] }}>
-          <Alert type="info" showIcon style={{ marginBottom: 16 }} message="Products without size variants are planned as Standard. One batch can produce several variants that use the same formula." />
+          <Alert type="info" showIcon style={{ marginBottom: 16 }} message="Products without size variants are planned as Standard. Rows using the same formula are combined; different formulas are planned as separate production orders." />
           <Form.Item
             name="finishedGoodId"
             label="Product Variant to Manufacture"
@@ -245,9 +271,9 @@ export default function ProductionOrders() {
                 <Option
                   key={variant.id}
                   value={variant.id}
-                  label={`${variant.product?.name || variant.name} ${variant.size_label || ''} ${variant.sku || ''}`}
+                  label={choiceSearchText(variant)}
                 >
-                  {variant.product?.name || variant.name} — {variant.size_label || variant.name} ({variant.sku})
+                  {choiceName(variant)} — {choiceVariantLabel(variant)} ({variant.sku})
                 </Option>
               ))}
             </Select>
@@ -270,8 +296,11 @@ export default function ProductionOrders() {
               {fields.map((field, index) => (
                 <div key={field.key} style={{ background: '#fafafa', border: '1px solid #f0f0f0', borderRadius: 8, padding: '12px 12px 0', marginBottom: 8 }}>
                   <Row gutter={12} align="middle">
-                    <Col flex="auto"><Form.Item {...field} name={[field.name, 'finishedGoodId']} label={index === 0 ? 'Product / variant' : 'Another product / variant'} rules={[{ required: true, message: 'Select a product' }]}><Select showSearch optionFilterProp="label" placeholder="Select product or variant">{productionChoices.map(variant => <Option key={variant.id} value={variant.id} label={`${variant.product?.name || variant.name} ${variant.size_label || ''} ${variant.sku || ''}`}>{variant.product?.name || variant.name} ({variant.size_label || variant.name}){variant.isStandardProduct ? ' · Standard' : ''}</Option>)}</Select></Form.Item></Col>
-                    <Col xs={19} sm={7}><Form.Item {...field} name={[field.name, 'planned']} label="Units" rules={[{ required: true, message: 'Enter quantity' }]}><InputNumber min={1} style={{ width: '100%' }} placeholder="Qty" /></Form.Item></Col>
+                    <Col flex="auto"><Form.Item {...field} name={[field.name, 'finishedGoodId']} label={index === 0 ? 'Product / variant' : 'Another product / variant'} rules={[{ required: true, message: 'Select a product' }]}><Select showSearch optionFilterProp="label" placeholder="Select product or variant">{productionChoices.map(variant => <Option key={variant.id} value={variant.id} label={choiceSearchText(variant)}>{choiceOptionText(variant)}</Option>)}</Select></Form.Item></Col>
+                    <Col xs={19} sm={7}><Form.Item noStyle shouldUpdate={(prev, next) => prev.outputs?.[field.name]?.finishedGoodId !== next.outputs?.[field.name]?.finishedGoodId}>{({ getFieldValue }) => {
+                      const selected = productionChoices.find(item => item.id === getFieldValue(['outputs', field.name, 'finishedGoodId']));
+                      return <Form.Item {...field} name={[field.name, 'planned']} label={choiceQuantityLabel(selected || {})} rules={[{ required: true, message: 'Enter quantity' }]}><InputNumber min={1} style={{ width: '100%' }} placeholder="Qty" /></Form.Item>;
+                    }}</Form.Item></Col>
                     {fields.length > 1 && <Col xs={5} sm={2} style={{ paddingTop: 3 }}><Button type="text" danger aria-label="Remove variant" icon={<DeleteOutlined />} onClick={() => remove(field.name)} /></Col>}
                   </Row>
                 </div>
@@ -297,7 +326,7 @@ export default function ProductionOrders() {
         <Form form={completeForm} layout="vertical" onFinish={handleCompleteOrder}>
           <Form.List name="outputs">{fields => fields.map(field => {
             const variant = variants.find(item => item.id === completeForm.getFieldValue(['outputs', field.name, 'finishedGoodId']));
-            return <Card key={field.key} size="small" title={variant ? `${variant.product?.name || variant.name} — ${variant.size_label || variant.name}` : 'Variant output'} style={{ marginBottom: 10 }}><Form.Item {...field} name={[field.name, 'finishedGoodId']} hidden><Input /></Form.Item><Form.Item {...field} name={[field.name, 'actual']} label="Actual finished units" rules={[{ required: true }]} style={{ marginBottom: 0 }}><InputNumber min={0.1} style={{ width: '100%' }} /></Form.Item></Card>;
+            return <Card key={field.key} size="small" title={variant ? `${choiceName(variant)} — ${choiceVariantLabel(variant)}` : 'Variant output'} style={{ marginBottom: 10 }}><Form.Item {...field} name={[field.name, 'finishedGoodId']} hidden><Input /></Form.Item><Form.Item {...field} name={[field.name, 'actual']} label={variant && isBulkMeasuredChoice(variant) ? `Actual output (${variant.uom || 'ml'})` : 'Actual finished units'} rules={[{ required: true }]} style={{ marginBottom: 0 }}><InputNumber min={0.1} style={{ width: '100%' }} /></Form.Item></Card>;
           })}</Form.List>
           <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
             <Space>

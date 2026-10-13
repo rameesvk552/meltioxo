@@ -2,7 +2,8 @@ import React, { useContext, useState } from 'react';
 import useApiData from '../../hooks/useApiData';
 import { AuthContext } from '../../context/AuthContext';
 import { hasViewPermission } from '../../config/permissions';
-import { exportCsv, Metric, ReportShell, StatementLine, useReportRange } from './AccountingUI';
+import { Metric, ReportShell, StatementLine, useReportRange } from './AccountingUI';
+import { reportData } from './reportDownloads';
 import LedgerDrawer from './LedgerDrawer';
 
 export default function PureProfitAndLoss({ embedded = false }) {
@@ -15,7 +16,7 @@ export default function PureProfitAndLoss({ embedded = false }) {
   const section = (title, key, total) => <section><h3>{title}</h3>{accounts[key]?.length ? accounts[key].map(row =>
     <StatementLine key={row.id} code={row.code} label={row.name} value={row.amount} onClick={hasViewPermission(user,'finance.accounts') ? () => setLedger(row) : undefined} />
   ) : <div className="ar-empty">No postings in this period</div>}<StatementLine label={'Total '+title.toLowerCase()} value={total} total /></section>;
-  return <><ReportShell title="Profit & loss" subtitle="Income, direct costs, and operating expenses from the same accounting ledger." embedded={embedded} query={query} controls={period.controls} onExport={() => exportCsv('profit-loss-'+period.from+'-'+period.to+'.csv', [
+  return <><ReportShell title="Profit & loss" subtitle="Income, direct costs, and operating expenses from the same accounting ledger." embedded={embedded} query={query} controls={period.controls} onExport={() => reportData('profit-loss-'+period.from+'-'+period.to+'.csv', [
     ['Profit & loss',period.from,period.to], ['Section','Code','Account','Amount'],
     ...Object.entries(accounts).flatMap(([key,rows]) => rows.map(row => [key,row.code,row.name,row.amount])),
     ['Total income','','',summary.revenue],['Total direct costs','','',summary.cogs],['Gross profit','','',summary.gross_profit],

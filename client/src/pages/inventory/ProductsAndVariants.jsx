@@ -99,6 +99,8 @@ export default function ProductsAndVariants() {
   const { data: formulas, reload: reloadFormulas } = useApiData('/formulas');
   const { data: rawMaterials } = useApiData('/raw-materials');
   const { data: packagingMaterials } = useApiData('/packaging-materials');
+  const { data: tenantSettings } = useApiData('/tenant/settings', { initialData: {} });
+  const regularGst = tenantSettings.tax_system === 'GST' && tenantSettings.gst_scheme === 'REGULAR';
   const [searchText, setSearchText] = useState('');
   const [productModalOpen, setProductModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
@@ -344,6 +346,7 @@ export default function ProductsAndVariants() {
         name: normalizedName,
         code: values.code,
         description: values.description,
+        ...(regularGst ? { hsn_code: values.hsn_code, gst_rate: values.gst_rate } : {}),
         sell_by_measurement: Boolean(values.sell_by_measurement),
         source_type: values.sell_by_measurement ? 'live_make' : values.source_type || 'live_make',
         formula_id: values.sell_by_measurement || values.source_type !== 'ready_made' ? values.formula_id || null : null,
@@ -402,7 +405,9 @@ export default function ProductsAndVariants() {
       measurement_source_type: product.measurement_source_type || 'formula',
       measurement_source_id: product.measurement_source_id || null,
       formula_id: product.formula_id || null,
-      description: product.description
+      description: product.description,
+      hsn_code: product.hsn_code || undefined,
+      gst_rate: product.gst_rate === null || product.gst_rate === undefined ? undefined : Number(product.gst_rate)
     });
     setProductModalOpen(true);
   };
@@ -701,6 +706,10 @@ export default function ProductsAndVariants() {
               </Form.Item>
             </Col>
           </Row>
+          {regularGst && <Row gutter={16}>
+            <Col xs={24} sm={12}><Form.Item name="hsn_code" label="HSN code" rules={[{ required: true, message: 'Enter the HSN code' }, { pattern: /^(?:\d{4}|\d{6}|\d{8})$/, message: 'Enter 4, 6, or 8 digits' }]} extra="Use the HSN classification for this product; it is copied to each tax invoice."><Input inputMode="numeric" maxLength={8} placeholder="HSN code" /></Form.Item></Col>
+            <Col xs={24} sm={12}><Form.Item name="gst_rate" label="GST rate" rules={[{ required: true, message: 'Select the GST rate' }]}><Select options={[0, 0.25, 3, 5, 12, 18, 28, 40].map(value => ({ value, label: `${value}%` }))} /></Form.Item></Col>
+          </Row>}
           <Form.Item name="sell_by_measurement" label="Sell by measurement" valuePropName="checked" extra="Use this for attar sold at any requested quantity in millilitres.">
             <Switch
               checkedChildren="Per ml"

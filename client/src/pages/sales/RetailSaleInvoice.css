@@ -84,6 +84,17 @@
   color: #1e1b18 !important;
 }
 
+.invoice-composition-note {
+  display: block;
+  max-width: 300px;
+  margin-top: 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #36312b;
+}
+
+.invoice-header--gold .invoice-composition-note { color: #fff; }
+
 .invoice-header--gold .invoice-identity h2 { color: #fff !important; }
 
 .invoice-identity {
@@ -221,6 +232,9 @@
   text-align: right;
   white-space: nowrap;
 }
+
+.invoice-table--gst { font-size: 10px; }
+.invoice-table--gst th, .invoice-table--gst td { padding-left: 7px; padding-right: 7px; }
 
 .invoice-summary-area {
   display: grid;

@@ -14,6 +14,7 @@ module.exports = (sequelize, DataTypes) => {
     reorder_level: { type: DataTypes.DECIMAL(15,4), defaultValue: 0 },
     avg_cost: { type: DataTypes.DECIMAL(15,4), defaultValue: 0 },
     selling_price: { type: DataTypes.DECIMAL(15,2), allowNull: false, defaultValue: 0 },
+    hsn_code: { type: DataTypes.STRING(8), allowNull: true },
     tax_rate: { type: DataTypes.DECIMAL(5,2), allowNull: false, defaultValue: 0 }
   }, {
     tableName: 'packaging_materials',

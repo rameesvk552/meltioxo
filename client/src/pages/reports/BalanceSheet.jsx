@@ -4,7 +4,8 @@ import dayjs from 'dayjs';
 import useApiData from '../../hooks/useApiData';
 import { AuthContext } from '../../context/AuthContext';
 import { hasViewPermission } from '../../config/permissions';
-import { exportCsv, fyRange, Metric, ReportShell, StatementLine } from './AccountingUI';
+import { fyRange, Metric, ReportShell, StatementLine } from './AccountingUI';
+import { reportData } from './reportDownloads';
 import LedgerDrawer from './LedgerDrawer';
 
 export default function BalanceSheet({ embedded = false }) {
@@ -16,7 +17,7 @@ export default function BalanceSheet({ embedded = false }) {
   const section = (title, type, total) => <section><h3>{title}</h3>{report.sections?.[type]?.length ? report.sections[type].map(account =>
     <StatementLine key={account.id} code={account.code} label={account.name} value={account.balance} onClick={!account.synthetic && hasViewPermission(user, 'finance.accounts') ? () => setLedger(account) : undefined} />
   ) : <div className="ar-empty">No posted balances</div>}<StatementLine label={'Total '+title.toLowerCase()} value={total} total /></section>;
-  return <><ReportShell title="Balance sheet" subtitle="Your financial position, with every balance traceable to its ledger." query={query} embedded={embedded} controls={<><span>As of</span><DatePicker aria-label="Balance sheet date" value={date} allowClear={false} onChange={setDate} format="DD MMM YYYY" /></>} onExport={() => exportCsv('balance-sheet-'+date.format('YYYY-MM-DD')+'.csv', [
+  return <><ReportShell title="Balance sheet" subtitle="Your financial position, with every balance traceable to its ledger." query={query} embedded={embedded} controls={<><span>As of</span><DatePicker aria-label="Balance sheet date" value={date} allowClear={false} onChange={setDate} format="DD MMM YYYY" /></>} onExport={() => reportData('balance-sheet-'+date.format('YYYY-MM-DD')+'.csv', [
     ['Balance Sheet', date.format('YYYY-MM-DD')], ['Type', 'Code', 'Account', 'Balance'],
     ...(report.accounts || []).map(row => [row.type, row.code, row.name, row.balance]),
     ['Total assets', '', '', report.assets], ['Total liabilities', '', '', report.liabilities], ['Total equity', '', '', report.equity], ['Difference', '', '', report.difference]

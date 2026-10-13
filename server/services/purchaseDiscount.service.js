@@ -13,16 +13,24 @@ const calculatePurchaseTotals = (items, discountValue = 0) => {
   }
   let remaining = discountCents;
   let taxCents = 0;
+  const lineNetAmounts = [];
+  const lineTaxAmounts = [];
   items.forEach((row, index) => {
     const share = index === items.length - 1 ? remaining : subtotalCents
       ? Math.round(discountCents * bases[index] / subtotalCents) : 0;
     remaining -= share;
-    taxCents += Math.round((bases[index] - share) * Number(row.tax_rate || 0) / 100);
+    const netCents = bases[index] - share;
+    const lineTaxCents = Math.round(netCents * Number(row.tax_rate || 0) / 100);
+    taxCents += lineTaxCents;
+    lineNetAmounts.push(netCents / 100);
+    lineTaxAmounts.push(lineTaxCents / 100);
   });
   return {
     subtotal: subtotalCents / 100,
     discount_amount: discountCents / 100,
     tax_amount: taxCents / 100,
+    line_net_amounts: lineNetAmounts,
+    line_tax_amounts: lineTaxAmounts,
     total_amount: (subtotalCents - discountCents + taxCents) / 100
   };
 };

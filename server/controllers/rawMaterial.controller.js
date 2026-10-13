@@ -1,5 +1,30 @@
-const { rawMaterial, stockBatch, stockMovement, formulaIngredient } = require('../models');
+const { rawMaterial, stockBatch, stockMovement, formulaIngredient, rawMaterialMix, tenant } = require('../models');
 const { AppError } = require('../middleware/errorHandler');
+const mixService = require('../services/rawMaterialMix.service');
+
+exports.getMixes = async (req, res, next) => {
+  try {
+    const settings = await tenant.findByPk(req.tenantId);
+    if (!settings?.raw_material_mixing_enabled) throw new AppError('Enable raw material mixing in Company Settings first', 403);
+    const mixes = await rawMaterialMix.findAll({ where: { tenant_id: req.tenantId }, order: [['created_at', 'DESC']], limit: 100 });
+    res.status(200).json(mixes);
+  } catch (error) { next(error); }
+};
+
+exports.createMix = async (req, res, next) => {
+  try {
+    const requestKey = req.get('Idempotency-Key') || null;
+    if (requestKey && requestKey.length > 100) throw new AppError('Idempotency key is too long', 400);
+    const result = await mixService.createMix({
+      tenantId: req.tenantId, branchId: req.branchId, userId: req.user.id,
+      requestKey, data: req.body
+    });
+    res.status(result.repeated ? 200 : 201).json(result);
+  } catch (error) {
+    if (error.name === 'SequelizeUniqueConstraintError') return next(new AppError('This mix or material SKU already exists. Refresh and try again.', 409));
+    next(error);
+  }
+};
 
 exports.getAll = async (req, res, next) => {
   try {
@@ -56,6 +81,8 @@ exports.delete = async (req, res, next) => {
   try {
     const formulaCount = await formulaIngredient.count({ where: { raw_material_id: req.params.id } });
     if (formulaCount) throw new AppError(`Remove this raw material from ${formulaCount} formula ingredient(s) before deleting it.`, 409);
+    const mixMovementCount = await stockMovement.count({ where: { tenant_id: req.tenantId, material_type: 'raw', material_id: req.params.id, reference_type: 'raw_material_mix' } });
+    if (mixMovementCount) throw new AppError('This material has mixing history and cannot be deleted.', 409);
     const deleted = await rawMaterial.destroy({ where: { id: req.params.id, tenant_id: req.tenantId } });
     if (!deleted) throw new AppError('Not found', 404);
     res.status(200).json({ message: 'Deleted successfully' });

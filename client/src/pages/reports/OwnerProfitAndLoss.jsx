@@ -10,6 +10,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 import useApiData from '../../hooks/useApiData';
+import { downloadReport, reportData } from './reportDownloads';
 import './OwnerProfitAndLoss.css';
 
 const { Title, Text } = Typography;
@@ -40,7 +41,6 @@ const presetRange = preset => {
   return [today, today];
 };
 
-const csvValue = value => `"${String(value ?? '').replaceAll('"', '""')}"`;
 
 function SummaryCard({ title, value, description, moneyValue = false, icon, color = '#172033', action }) {
   return <Card className="sales-report-metric" style={{ '--metric-color': color }}>
@@ -82,18 +82,11 @@ function ExpenseBreakdownDrawer({ open, onClose, range }) {
 
   const exportExpenses = () => {
     const headers = ['Code', 'Expense ledger', 'Amount'];
-    const exportRows = rows.map(item => [item.code, item.name, Number(item.amount || 0).toFixed(2)]);
-    exportRows.push(['', 'Total operating expenses', operatingExpenses.toFixed(2)]);
-    const csv = [
-      ['Expense breakdown', `${range[0].format('YYYY-MM-DD')} to ${range[1].format('YYYY-MM-DD')}`],
-      [], headers, ...exportRows
-    ].map(row => row.map(csvValue).join(',')).join('\n');
-    const blob = new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `expense-breakdown-${range[0].format('YYYY-MM-DD')}-${range[1].format('YYYY-MM-DD')}.csv`;
-    link.click();
-    URL.revokeObjectURL(link.href);
+    const exportRows = rows.map(item => [item.code, item.name, Number(item.amount || 0)]);
+    exportRows.push(['', 'Total operating expenses', Number(operatingExpenses || 0)]);
+    return reportData(`expense-breakdown-${range[0].format('YYYY-MM-DD')}-${range[1].format('YYYY-MM-DD')}`, [
+      ['Expense breakdown', range[0].format('YYYY-MM-DD'), range[1].format('YYYY-MM-DD')], headers, ...exportRows
+    ]);
   };
 
   return <Drawer
@@ -102,7 +95,7 @@ function ExpenseBreakdownDrawer({ open, onClose, range }) {
     onClose={onClose}
     width={720}
     destroyOnHidden
-    extra={<Button icon={<DownloadOutlined />} onClick={exportExpenses} disabled={!rows.length}>Export expenses</Button>}
+    extra={<Space><Button icon={<DownloadOutlined />} onClick={() => downloadReport(exportExpenses(), 'xlsx')} disabled={!rows.length || expenseQuery.loading || !!expenseQuery.error}>Excel</Button><Button icon={<DownloadOutlined />} onClick={() => downloadReport(exportExpenses(), 'pdf')} disabled={!rows.length || expenseQuery.loading || !!expenseQuery.error}>PDF</Button></Space>}
   >
     <Alert
       type="info"
@@ -209,13 +202,10 @@ function ProductHistoryDrawer({ product, range, onClose, onOpenInvoice }) {
   const exportHistory = () => {
     const headers = ['Date', 'Type', 'Reference', 'Invoice', 'Customer', 'Variant', 'Quantity', 'Sales ex tax', 'Cost', 'Gross profit'];
     const data = rows.map(row => [row.date, row.type, row.reference, row.invoice, row.customer, row.variant, row.quantity, row.sales, row.cost, row.gross_profit]);
-    const csv = [headers, ...data].map(row => row.map(csvValue).join(',')).join('\n');
-    const blob = new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `product-sales-${product.product_id}-${historyScope}.csv`;
-    link.click();
-    URL.revokeObjectURL(link.href);
+    return reportData(`product-sales-${product.product_id}-${historyScope}`, [
+      ['Product sales history', product.product_name, historyScope === 'period' ? `${range[0].format('YYYY-MM-DD')} to ${range[1].format('YYYY-MM-DD')}` : 'All history'],
+      headers, ...data
+    ]);
   };
 
   const columns = [
@@ -235,7 +225,7 @@ function ProductHistoryDrawer({ product, range, onClose, onOpenInvoice }) {
   return <Drawer
     title={<div><div>{product?.product_name || 'Product sales history'}</div><Text type="secondary" style={{ fontSize: 12 }}>{product?.code}</Text></div>}
     open={Boolean(product)} onClose={onClose} width={1100} destroyOnHidden
-    extra={<Button icon={<DownloadOutlined />} onClick={exportHistory} disabled={!rows.length}>Export history</Button>}
+    extra={<Space><Button icon={<DownloadOutlined />} onClick={() => downloadReport(exportHistory(), 'xlsx')} disabled={!rows.length || history.loading || !!history.error}>Excel</Button><Button icon={<DownloadOutlined />} onClick={() => downloadReport(exportHistory(), 'pdf')} disabled={!rows.length || history.loading || !!history.error}>PDF</Button></Space>}
   >
     <div className="sales-report-history-toolbar">
       <Segmented value={historyScope} onChange={setHistoryScope} options={[{ label: 'Selected dates', value: 'period' }, { label: 'All history', value: 'all' }]} />
@@ -332,21 +322,20 @@ export default function OwnerProfitAndLoss() {
     setPreset('custom');
   };
 
-  const exportInvoices = () => {
-    const headers = ['Date', 'Invoice', 'Customer', 'Items', 'Subtotal', 'Discount', 'Tax', 'Returns', 'Net total'];
-    const rows = invoices.map(sale => [
-      sale.sale_date, sale.sale_number, sale.customer?.name || 'Walk-in customer',
-      (sale.retailSaleItems || []).length, sale.subtotal, sale.discount_amount, sale.tax_amount,
-      sale.returned_amount, Number(sale.total_amount || 0) - Number(sale.returned_amount || 0)
-    ]);
-    const csv = [headers, ...rows].map(row => row.map(csvValue).join(',')).join('\n');
-    const blob = new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `sales-report-${range[0].format('YYYY-MM-DD')}-${range[1].format('YYYY-MM-DD')}.csv`;
-    link.click();
-    URL.revokeObjectURL(link.href);
-  };
+  const exportInvoices = () => reportData(`sales-report-${range[0].format('YYYY-MM-DD')}-${range[1].format('YYYY-MM-DD')}`, [
+    ['Invoice sales', range[0].format('YYYY-MM-DD'), range[1].format('YYYY-MM-DD')],
+    ['Date', 'Invoice', 'Customer', 'Product', 'Variant', 'SKU', 'Qty', 'Unit price', 'Line tax', 'Line total', 'Invoice discount', 'Invoice returns', 'Invoice net'],
+    ...invoices.flatMap(sale => (sale.retailSaleItems?.length ? sale.retailSaleItems : [null]).map((item, index) => {
+      const variant = item?.finishedGood || {};
+      return [sale.sale_date, sale.sale_number, sale.customer?.name || 'Walk-in customer',
+        variant.product?.name || variant.name || '', variant.size_label || '', variant.sku || '',
+        item ? Number(item.quantity || 0) : '', item ? Number(item.unit_price || 0) : '',
+        item ? Number(item.tax_amount || 0) : '', item ? Number(item.total || 0) : '',
+        index === 0 ? Number(sale.discount_amount || 0) : '',
+        index === 0 ? Number(sale.returned_amount || 0) : '',
+        index === 0 ? Number(sale.total_amount || 0) - Number(sale.returned_amount || 0) : ''];
+    }))
+  ]);
 
   const exportProducts = () => {
     const headers = ['Product', 'Code', 'Quantity sold', 'Invoices', 'Sales', 'Average price', 'Cost', 'Gross profit', 'Margin %'];
@@ -354,22 +343,13 @@ export default function OwnerProfitAndLoss() {
       item.product_name, item.code, item.quantity, item.orders, item.revenue,
       item.average_selling_price, item.cogs, item.gross_profit, item.gross_margin_pct
     ]);
-    const csv = [headers, ...rows].map(row => row.map(csvValue).join(',')).join('\n');
-    const blob = new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `product-sales-${range[0].format('YYYY-MM-DD')}-${range[1].format('YYYY-MM-DD')}.csv`;
-    link.click();
-    URL.revokeObjectURL(link.href);
+    return reportData(`product-sales-${range[0].format('YYYY-MM-DD')}-${range[1].format('YYYY-MM-DD')}`, [['Product sales', range[0].format('YYYY-MM-DD'), range[1].format('YYYY-MM-DD')], headers, ...rows]);
   };
 
   const exportPurchases = () => {
     const headers = ['Date', 'Invoice', 'Supplier', 'Receipt', 'Item', 'Type', 'Quantity', 'Unit', 'Unit cost', 'Tax %', 'Tax', 'Line total', 'Status'];
     const rows = purchaseRows.map(item => [item.invoice_date, item.invoice_number, item.supplier, item.receipt_number, item.item_name, item.material_type, item.quantity, item.unit, item.unit_price, item.tax_rate, item.tax_amount, item.line_total, item.status]);
-    const csv = [headers, ...rows].map(row => row.map(csvValue).join(',')).join('\n');
-    const blob = new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' });
-    const link = document.createElement('a'); link.href = URL.createObjectURL(blob);
-    link.download = `purchase-report-${range[0].format('YYYY-MM-DD')}-${range[1].format('YYYY-MM-DD')}.csv`; link.click(); URL.revokeObjectURL(link.href);
+    return reportData(`purchase-report-${range[0].format('YYYY-MM-DD')}-${range[1].format('YYYY-MM-DD')}`, [['Purchases', range[0].format('YYYY-MM-DD'), range[1].format('YYYY-MM-DD')], headers, ...rows]);
   };
 
   const invoiceColumns = [
@@ -440,11 +420,10 @@ export default function OwnerProfitAndLoss() {
       </div>
       <Space wrap className="sales-report-actions">
         <Button icon={<PrinterOutlined />} onClick={() => window.print()}>Print</Button>
-        {reportTab === 'sales' && <Button
-          type="primary" icon={<DownloadOutlined />}
-          onClick={salesView === 'invoices' ? exportInvoices : exportProducts}
-          disabled={salesView === 'invoices' ? !invoices.length : !products.length}
-        >Export {salesView}</Button>}
+        {reportTab === 'sales' && <>
+          <Button type="primary" icon={<DownloadOutlined />} onClick={() => downloadReport((salesView === 'invoices' ? exportInvoices : exportProducts)(), 'xlsx')} disabled={reportQuery.loading || salesQuery.loading || !!reportQuery.error || !!salesQuery.error || (salesView === 'invoices' ? !invoices.length : !products.length)}>Sales Excel</Button>
+          <Button icon={<DownloadOutlined />} onClick={() => downloadReport((salesView === 'invoices' ? exportInvoices : exportProducts)(), 'pdf')} disabled={reportQuery.loading || salesQuery.loading || !!reportQuery.error || !!salesQuery.error || (salesView === 'invoices' ? !invoices.length : !products.length)}>Sales PDF</Button>
+        </>}
       </Space>
     </div>
 
@@ -508,7 +487,7 @@ export default function OwnerProfitAndLoss() {
     {reportTab === 'purchases' && <Card
       title={<Space><ShoppingCartOutlined style={{ color: '#b64232' }} /><span>Detailed purchase report</span></Space>}
       style={{ marginBottom: 16, borderRadius: 12 }}
-      extra={<Space wrap><Text type="secondary">Supplier invoices and received items</Text><Button icon={<DownloadOutlined />} onClick={exportPurchases} disabled={!purchaseRows.length}>Export purchases</Button></Space>}
+      extra={<Space wrap><Text type="secondary">Supplier invoices and received items</Text><Button icon={<DownloadOutlined />} onClick={() => downloadReport(exportPurchases(), 'xlsx')} disabled={!purchaseRows.length || purchaseQuery.loading || !!purchaseQuery.error}>Purchase Excel</Button><Button icon={<DownloadOutlined />} onClick={() => downloadReport(exportPurchases(), 'pdf')} disabled={!purchaseRows.length || purchaseQuery.loading || !!purchaseQuery.error}>Purchase PDF</Button></Space>}
     >
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
         <Col xs={12} sm={6}><Statistic title="Purchase invoices" value={purchaseSummary.invoices || 0} /></Col>

@@ -30,7 +30,11 @@ exports.getCustomerLedger = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 exports.getCustomerStoreCredit = async (req, res, next) => {
-  try { res.json({ customer_id: req.params.id, balance: await storeCredit.balance(req.tenantId, req.params.id) }); }
+  try {
+    const balance = await storeCredit.balance(req.tenantId, req.params.id);
+    const entries = req.query.include_history === '1' ? await storeCredit.history(req.tenantId, req.params.id) : undefined;
+    res.json({ customer_id: req.params.id, balance, ...(entries ? { entries } : {}) });
+  }
   catch (error) { next(error); }
 };
 exports.getCustomerById = async (req, res, next) => {
@@ -72,7 +76,10 @@ exports.createSalesOrder = async (req, res, next) => {
   const transaction = await db.sequelize.transaction();
   try {
     const { items = [], ...header } = req.body;
+    const tenantSettings = await db.tenant.findByPk(req.tenantId, { transaction });
+    const composition = tenantSettings?.tax_system === 'GST' && tenantSettings?.gst_scheme === 'COMPOSITION';
     const calculated = items.map(row => {
+      if (composition && Number(row.tax_rate || 0) !== 0) throw new AppError('Composition sales cannot charge GST. Set every order tax rate to 0%.', 400);
       const base = Number(row.quantity) * Number(row.unit_price);
       const discounted = base * (1 - Number(row.discount_pct || 0) / 100);
       const tax = discounted * Number(row.tax_rate || 0) / 100;

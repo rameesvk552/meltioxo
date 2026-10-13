@@ -1,15 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, Card, Col, DatePicker, Empty, Row, Select, Space, Statistic, Table, Tag, Typography } from 'antd';
+import { Button, Card, Col, DatePicker, Empty, Row, Select, Space, Statistic, Table, Tag, Typography, message } from 'antd';
 import { DownloadOutlined, ReloadOutlined, WhatsAppOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import client from '../../api/client';
+import { downloadReport, reportData } from './reportDownloads';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 
 const statusColors = { sent: 'success', failed: 'error', skipped: 'warning', disabled: 'default' };
 const statusLabel = value => String(value || '—').replace(/_/g, ' ').toUpperCase();
-const csvValue = value => `"${String(value ?? '').replaceAll('"', '""')}"`;
 
 export default function WhatsAppInvoiceReport() {
   const [range, setRange] = useState(() => [dayjs().subtract(29, 'day'), dayjs()]);
@@ -18,6 +18,7 @@ export default function WhatsAppInvoiceReport() {
   const [summary, setSummary] = useState({ total: 0, sent: 0, failed: 0, skipped: 0, disabled: 0 });
   const [pagination, setPagination] = useState({ current: 1, pageSize: 50, total: 0 });
   const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const query = useMemo(() => {
     const params = new URLSearchParams({
@@ -28,7 +29,7 @@ export default function WhatsAppInvoiceReport() {
     });
     if (status) params.set('status', status);
     return params.toString();
-  }, [pagination.current, pagination.pageSize, range, status]);
+  }, [pagination, range, status]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -50,25 +51,34 @@ export default function WhatsAppInvoiceReport() {
     setter(value);
   };
 
-  const exportCsv = () => {
-    const header = ['When', 'Invoice', 'Customer', 'Phone last 4', 'Status', 'Template', 'Provider message ID', 'Error'];
-    const body = rows.map(row => [
-      (row.created_at || row.createdAt) ? dayjs(row.created_at || row.createdAt).format('YYYY-MM-DD HH:mm:ss') : '',
-      row.sale_number,
-      row.customer_name,
-      row.customer_phone_last4,
-      statusLabel(row.status),
-      row.template_name,
-      row.provider_message_id,
-      row.error_message
-    ]);
-    const csv = [header, ...body].map(line => line.map(csvValue).join(',')).join('\n');
-    const blob = new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `whatsapp-invoice-report-${range[0].format('YYYY-MM-DD')}-${range[1].format('YYYY-MM-DD')}.csv`;
-    link.click();
-    URL.revokeObjectURL(link.href);
+  const exportRows = async format => {
+    setExporting(true);
+    try {
+      const params = new URLSearchParams(query);
+      params.set('page', '1');
+      params.set('page_size', '200');
+      const first = (await client.get(`/reports/whatsapp-invoices?${params}`)).data;
+      const allRows = [...(first.rows || [])];
+      const total = Number(first.pagination?.total ?? allRows.length);
+      for (let page = 2; page <= Math.ceil(total / 200); page++) {
+        params.set('page', String(page));
+        allRows.push(...((await client.get(`/reports/whatsapp-invoices?${params}`)).data.rows || []));
+      }
+      if (allRows.length !== total) throw new Error('The report changed while exporting. Please retry.');
+      downloadReport(reportData(`whatsapp-invoice-report-${range[0].format('YYYY-MM-DD')}-${range[1].format('YYYY-MM-DD')}`, [
+        ['WhatsApp invoice delivery', range[0].format('YYYY-MM-DD'), range[1].format('YYYY-MM-DD'), `${allRows.length} attempts`],
+        ['When', 'Invoice', 'Customer', 'Phone last 4', 'Status', 'Template', 'Provider message ID', 'Error'],
+        ...allRows.map(row => [
+          (row.created_at || row.createdAt) ? dayjs(row.created_at || row.createdAt).format('YYYY-MM-DD HH:mm:ss') : '',
+          row.sale_number, row.customer_name, row.customer_phone_last4, statusLabel(row.status),
+          row.template_name, row.provider_message_id, row.error_message
+        ])
+      ]), format);
+    } catch (error) {
+      message.error(error.response?.data?.message || error.message || 'Could not export the report');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const columns = [
@@ -87,8 +97,9 @@ export default function WhatsAppInvoiceReport() {
         <Title level={2} style={{ margin: 0 }}><WhatsAppOutlined style={{ color: '#25D366', marginRight: 8 }} />WhatsApp Invoice Report</Title>
         <Text type="secondary">Invoice delivery attempts recorded by the ERP.</Text>
       </div>
-      <Space>
-        <Button icon={<DownloadOutlined />} onClick={exportCsv} disabled={!rows.length}>Export visible rows</Button>
+      <Space wrap>
+        <Button icon={<DownloadOutlined />} onClick={() => exportRows('xlsx')} loading={exporting} disabled={loading || !pagination.total}>Excel</Button>
+        <Button icon={<DownloadOutlined />} onClick={() => exportRows('pdf')} loading={exporting} disabled={loading || !pagination.total}>PDF</Button>
         <Button icon={<ReloadOutlined />} onClick={load}>Refresh</Button>
       </Space>
     </div>

@@ -1,4 +1,5 @@
 const zlib = require('zlib');
+const { STATE_NAMES } = require('./gst.service');
 const escapePdfText = value => String(value ?? '')
   .replace(/&nbsp;|&#x20;|&#32;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'")
   .replace(/[\u00a0\u1680\u2000-\u200b\u202f\u205f\u3000]/g, ' ')
@@ -16,19 +17,24 @@ const rule = (x1,y1,x2,y2,color='0.86 0.84 0.81 RG',width=.7) => `${color} ${wid
 const fill = (x,y,w,h,color) => `${color} rg ${x} ${y} ${w} ${h} re f`;
 
 const makePdf = (content, logo) => {
-  const objects = [
-    '<< /Type /Catalog /Pages 2 0 R >>',
-    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> ${logo ? '/XObject << /Logo 6 0 R >>' : ''} >> /Contents ${logo ? (logo.mask ? '8' : '7') : '6'} 0 R >>`,
-    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
-    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>',
-  ];
+  const pages = Array.isArray(content) ? content : [content];
+  const objects = ['', ''];
+  const pageIds = pages.map(() => { objects.push(''); return objects.length; });
+  const fontId = objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  const boldFontId = objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>');
+  let logoId = null;
+  let maskId = null;
   if (logo) {
-    objects.push(`<< /Type /XObject /Subtype /Image /Width ${logo.width} /Height ${logo.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /${logo.filter} ${logo.predictor ? `/DecodeParms << /Predictor 15 /Colors 3 /BitsPerComponent 8 /Columns ${logo.width} >>` : ''} ${logo.mask ? '/SMask 7 0 R' : ''} /Length ${logo.data.length} >>\nstream\n`);
-    objects[5] += logo.data.toString('latin1') + '\nendstream';
-    if (logo.mask) objects.push(`<< /Type /XObject /Subtype /Image /Width ${logo.width} /Height ${logo.height} /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode /DecodeParms << /Predictor 15 /Colors 1 /BitsPerComponent 8 /Columns ${logo.width} >> /Length ${logo.mask.length} >>\nstream\n${logo.mask.toString('latin1')}\nendstream`);
+    logoId = objects.push('');
+    if (logo.mask) maskId = objects.push(`<< /Type /XObject /Subtype /Image /Width ${logo.width} /Height ${logo.height} /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode /DecodeParms << /Predictor 15 /Colors 1 /BitsPerComponent 8 /Columns ${logo.width} >> /Length ${logo.mask.length} >>\nstream\n${logo.mask.toString('latin1')}\nendstream`);
+    objects[logoId - 1] = `<< /Type /XObject /Subtype /Image /Width ${logo.width} /Height ${logo.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /${logo.filter} ${logo.predictor ? `/DecodeParms << /Predictor 15 /Colors 3 /BitsPerComponent 8 /Columns ${logo.width} >>` : ''} ${maskId ? `/SMask ${maskId} 0 R` : ''} /Length ${logo.data.length} >>\nstream\n${logo.data.toString('latin1')}\nendstream`;
   }
-  objects.push(`<< /Length ${Buffer.byteLength(content, 'latin1')} >>\nstream\n${content}\nendstream`);
+  const contentIds = pages.map(page => objects.push(`<< /Length ${Buffer.byteLength(page, 'latin1')} >>\nstream\n${page}\nendstream`));
+  pageIds.forEach((id, index) => {
+    objects[id - 1] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 ${fontId} 0 R /F2 ${boldFontId} 0 R >> ${logoId ? `/XObject << /Logo ${logoId} 0 R >>` : ''} >> /Contents ${contentIds[index]} 0 R >>`;
+  });
+  objects[0] = '<< /Type /Catalog /Pages 2 0 R >>';
+  objects[1] = `<< /Type /Pages /Kids [${pageIds.map(id => `${id} 0 R`).join(' ')}] /Count ${pages.length} >>`;
   let pdf = '%PDF-1.4\n%\xE2\xE3\xCF\xD3\n';
   const offsets = [0];
   objects.forEach((object, index) => {
@@ -66,6 +72,9 @@ const decodeLogo = dataUrl => {
 };
 
 const createInvoicePdf = ({ sale, company }) => {
+  const composition = sale.gst_scheme === 'COMPOSITION';
+  const regularGst = sale.gst_enabled === true;
+  const interState = sale.supply_type === 'INTER';
   const customer = sale.customer || {};
   const items = sale.retailSaleItems || [];
   const isArabelegance = /arabelegance|arabglance|arabglaance/i.test(String(company?.name || ''));
@@ -78,43 +87,76 @@ const createInvoicePdf = ({ sale, company }) => {
   const lines = [fill(0, 674, 595, 168, headerColor)];
   const logo = decodeLogo(company?.logo_url);
   if (logo) lines.push('q 185 0 0 94 42 722 cm /Logo Do Q');
-  lines.push(textLine(472, 805, Number(sale.tax_amount||0)>0?'Tax Invoice':'Invoice', 15, true, invoiceTitleColor));
+  lines.push(textLine(composition ? 425 : 472, 805, composition ? 'Bill of Supply' : regularGst || Number(sale.tax_amount||0)>0?'Tax Invoice':'Invoice', 15, true, invoiceTitleColor));
+  if (composition) lines.push(textLine(230, 782, 'Composition taxable person, not eligible to collect tax on supplies.', 8, false, invoiceTitleColor));
+  if (regularGst) lines.push(textLine(230, 693, crop(`Place of supply: ${STATE_NAMES[sale.place_of_supply_state_code] || '-'} (${sale.place_of_supply_state_code || '-'})`, 58), 9, false, invoiceTitleColor));
   lines.push(textLine(42, 654, 'Invoice No:', 11, true), textLine(112, 654, crop(sale.sale_number || sale.id, 25), 11));
   lines.push(textLine(425, 654, 'Date:', 11, true), textLine(458, 654, date(sale.sale_date), 11));
   lines.push(rule(42, 638, 553, 638));
   lines.push(textLine(42, 615, 'Invoice To:', 9, true, '0.35 0.32 0.40'), textLine(42, 594, crop(customer.name || 'Walk-in customer', 42), 13, true));
   if(customer.phone)lines.push(textLine(42, 574, customer.phone, 10, false, '0.35 0.38 0.52'));
   if(customer.address)lines.push(textLine(42, customer.phone ? 556 : 574, crop(customer.address, 58), 10, false, '0.35 0.38 0.52'));
+  if (sale.customer_gstin || customer.tax_id) lines.push(textLine(42, 538, crop(`GSTIN: ${sale.customer_gstin || customer.tax_id}`, 42), 9, false, '0.35 0.38 0.52'));
   lines.push(textLine(318, 615, 'Invoice From:', 9, true, '0.35 0.32 0.40'), textLine(318, 594, crop(company?.name || 'Company', 40), 13, true));
   if(phoneList)lines.push(textLine(318, 574, crop(phoneList, 42), 10, false, '0.35 0.38 0.52'));
   if(cleanAddress)lines.push(textLine(318, phoneList ? 556 : 574, crop(cleanAddress, 42), 10, false, '0.35 0.38 0.52'));
-  if (isArabelegance) lines.push(textLine(318, company?.tax_id ? 520 : (cleanAddress || phoneList ? 538 : 574), 'www.arabeleganceperfume.com', 9, false, '0.35 0.38 0.52'));
-  if(company?.tax_id)lines.push(textLine(318, 502, crop(`${company?.tax_system||'GST'}IN: ${company.tax_id}`, 42), 9, false, '0.35 0.38 0.52'));
+  if (isArabelegance && !regularGst) lines.push(textLine(318, company?.tax_id ? 520 : (cleanAddress || phoneList ? 538 : 574), 'www.arabeleganceperfume.com', 9, false, '0.35 0.38 0.52'));
+  if(sale.seller_gstin || company?.tax_id)lines.push(textLine(318, 538, crop(`GSTIN: ${sale.seller_gstin || company.tax_id}`, 42), 9, false, '0.35 0.38 0.52'));
   lines.push(rule(42, 520, 553, 520));
   lines.push(fill(42, 495, 511, 25, '0.16 0.13 0.11'), textLine(51, 504, '#', 8, true,'1 1 1'), textLine(78, 504, 'PRODUCT', 8, true,'1 1 1'), textLine(354, 504, 'QTY', 8, true,'1 1 1'), textLine(415, 504, 'RATE', 8, true,'1 1 1'), textLine(493, 504, 'AMOUNT', 8, true,'1 1 1'));
-  const rowHeight = items.length > 16 ? 17 : 22;
-  const visibleItems = items.slice(0, Math.min(items.length, 21));
-  let y = 481;
-  visibleItems.forEach((item, index) => {
-    const product = item.packagingMaterial?.name || item.finishedGood?.product?.name || item.finishedGood?.name || 'Product';
-    const variant = isArabelegance
-      ? (item.packagingMaterial ? '' : item.finishedGood?.size_label || '')
-      : (item.packagingMaterial?.sku || item.finishedGood?.size_label || item.finishedGood?.sku || '');
-    if(index%2===1)lines.push(fill(42,y-7,511,rowHeight,'0.985 0.98 0.97'));
-    lines.push(textLine(51, y, String(index + 1), 8), textLine(78, y, crop(product, 42), 9, true));
-    if (variant) lines.push(textLine(78, y - 9, crop(variant, 48), 7));
-    lines.push(textLine(354, y, Number(item.quantity || 0).toLocaleString('en-IN', { maximumFractionDigits: 4 }), 8), textLine(415, y, money(item.unit_price), 8), textLine(493, y, money(item.total ?? Number(item.quantity || 0) * Number(item.unit_price || 0)), 8));
-    y -= rowHeight;
+  const pageSize = 12;
+  const pageCount = Math.max(1, Math.ceil(items.length / pageSize));
+  const pages = Array.from({ length: pageCount }, (_, pageIndex) => {
+    const pageLines = [...lines];
+    const visibleItems = items.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
+    let y = 481;
+    visibleItems.forEach((item, localIndex) => {
+      const index = pageIndex * pageSize + localIndex;
+      const product = item.packagingMaterial?.name || item.finishedGood?.product?.name || item.finishedGood?.name || 'Product';
+      const variant = isArabelegance
+        ? (item.packagingMaterial ? '' : item.finishedGood?.size_label || '')
+        : (item.packagingMaterial?.sku || item.finishedGood?.size_label || item.finishedGood?.sku || '');
+      if (localIndex % 2 === 1) pageLines.push(fill(42, y - 7, 511, 22, '0.985 0.98 0.97'));
+      pageLines.push(textLine(51, y, String(index + 1), 8), textLine(78, y, crop(product, 42), 9, true));
+      if (variant && !regularGst) pageLines.push(textLine(78, y - 9, crop(variant, 48), 7));
+      if (regularGst) {
+        const tax = Number(item.tax_amount || 0);
+        const saved = Number(item.cgst_amount || 0) + Number(item.sgst_amount || 0) + Number(item.igst_amount || 0);
+        const cgst = saved ? Number(item.cgst_amount || 0) : interState ? 0 : Math.round(tax * 50) / 100;
+        const sgst = saved ? Number(item.sgst_amount || 0) : interState ? 0 : Math.round((tax - cgst) * 100) / 100;
+        const igst = saved ? Number(item.igst_amount || 0) : interState ? tax : 0;
+        const hsn = item.hsn_code || '-';
+        pageLines.push(textLine(78, y - 9, crop(`HSN ${hsn} | GST ${Number(item.tax_rate || 0)}% | Taxable ${money(Number(item.total || 0) - tax)} | ${interState ? `IGST ${money(igst)}` : `CGST ${money(cgst)} SGST ${money(sgst)}`}`, 89), 6));
+      }
+      pageLines.push(textLine(354, y, Number(item.quantity || 0).toLocaleString('en-IN', { maximumFractionDigits: 4 }), 8), textLine(415, y, money(item.unit_price), 8), textLine(493, y, money(item.total ?? Number(item.quantity || 0) * Number(item.unit_price || 0)), 8));
+      y -= 22;
+    });
+    if (pageIndex === pageCount - 1) {
+      const summaryY = Math.max(170, y - 14);
+      pageLines.push(rule(335, summaryY + 12, 553, summaryY + 12), textLine(363, summaryY - 5, 'Subtotal', 9), textLine(479, summaryY - 5, money(sale.subtotal), 9));
+      let totalY = summaryY - 23;
+      if (Number(sale.discount_amount || 0)) { pageLines.push(textLine(363, totalY, 'Discount', 9), textLine(479, totalY, `- ${money(sale.discount_amount)}`, 9)); totalY -= 18; }
+      if (regularGst) {
+        const split = items.reduce((totals, item) => {
+          const tax = Number(item.tax_amount || 0);
+          const saved = Number(item.cgst_amount || 0) + Number(item.sgst_amount || 0) + Number(item.igst_amount || 0);
+          const cgst = saved ? Number(item.cgst_amount || 0) : interState ? 0 : Math.round(tax * 50) / 100;
+          totals.cgst += cgst;
+          totals.sgst += saved ? Number(item.sgst_amount || 0) : interState ? 0 : Math.round((tax - cgst) * 100) / 100;
+          totals.igst += saved ? Number(item.igst_amount || 0) : interState ? tax : 0;
+          return totals;
+        }, { cgst: 0, sgst: 0, igst: 0 });
+        for (const [label, value] of (interState ? [['IGST', split.igst]] : [['CGST', split.cgst], ['SGST', split.sgst]])) {
+          pageLines.push(textLine(363, totalY, label, 9), textLine(479, totalY, money(value), 9)); totalY -= 18;
+        }
+      } else if (Number(sale.tax_amount || 0)) { pageLines.push(textLine(363, totalY, company?.tax_system || 'Tax', 9), textLine(479, totalY, money(sale.tax_amount), 9)); totalY -= 18; }
+      pageLines.push(fill(335, totalY - 24, 218, 32, '0.16 0.13 0.11'), textLine(348, totalY - 13, 'TOTAL', 10, true, '1 1 1'), textLine(450, totalY - 13, money(sale.total_amount), 10, true, '1 1 1'));
+    }
+    pageLines.push(rule(42, 74, 553, 74), textLine(42, 57, isArabelegance ? 'Thank you for choosing Arabelegance Perfume.' : 'Thank you for your business.', 10, true), textLine(520, 57, `${pageIndex + 1}/${pageCount}`, 8));
+    if (regularGst) pageLines.push(textLine(415, 57, 'Authorized signatory', 9));
+    return pageLines.join('\n');
   });
-  if (items.length > visibleItems.length) lines.push(textLine(51,y,`+ ${items.length-visibleItems.length} more items.`,8));
-  const summaryY=Math.max(110,y-14);
-  lines.push(rule(335,summaryY+12,553,summaryY+12),textLine(363,summaryY-5,'Subtotal',9),textLine(479,summaryY-5,money(sale.subtotal),9));
-  let totalY=summaryY-23;
-  if(Number(sale.discount_amount||0)){lines.push(textLine(363,totalY,'Discount',9),textLine(479,totalY,`- ${money(sale.discount_amount)}`,9));totalY-=18;}
-  if(Number(sale.tax_amount||0)){lines.push(textLine(363,totalY,company?.tax_system||'Tax',9),textLine(479,totalY,money(sale.tax_amount),9));totalY-=18;}
-  lines.push(fill(335,totalY-24,218,32,'0.16 0.13 0.11'),textLine(348,totalY-13,'TOTAL PAID',10,true,'1 1 1'),textLine(450,totalY-13,money(sale.total_amount),10,true,'1 1 1'));
-  lines.push(rule(42,74,553,74),textLine(42,57,isArabelegance ? 'Thank you for choosing Arabelegance Perfume.' : 'Thank you for your business.',10,true));
-  return makePdf(lines.join('\n'), logo);
+  return makePdf(pages, logo);
 };
 
 module.exports = { createInvoicePdf };

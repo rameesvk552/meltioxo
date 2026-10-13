@@ -47,6 +47,10 @@ body {
   height: var(--wayon-logo-size, 42px);
   flex: 0 0 auto;
   object-fit: contain;
+  /* Tenant logos in the sidebar can be white on transparent backgrounds,
+     which disappears against the light sider. Recolor this compact mark
+     with the app brand color so it remains visible. */
+  filter: brightness(0) saturate(100%) invert(24%) sepia(32%) saturate(2444%) hue-rotate(337deg) brightness(91%) contrast(91%);
 }
 
 .wayon-logo__name {
