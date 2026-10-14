@@ -12,7 +12,9 @@ test('invoice spreadsheet exports the saved buyer, seller, HSN, and both 9% tax 
   assert.equal(spec.headerRowIndex, 5);
   assert.deepEqual(spec.rows[1].slice(0, 4), ['Seller', 'Seller Co', 'Seller GSTIN', company.tax_id]);
   assert.deepEqual(spec.rows[2].slice(0, 4), ['Customer', 'Buyer Co', 'Customer GSTIN', sale.customer_gstin]);
-  assert.deepEqual(spec.rows[6].slice(3, 14), ['330300', 1, 100, 100, 18, 9, 9, 9, 9, '', 0]);
+  assert.deepEqual(spec.rows[5].slice(1, 4), ['Product', 'SKU', 'HSN']);
+  assert.ok(!spec.rows[5].some(heading => String(heading).includes('IGST')));
+  assert.deepEqual(spec.rows[6].slice(3), ['330300', 1, 100, 100, 18, 9, 9, 9, 9, 118]);
 });
 
 test('sales exports include GST amounts once per item and invoice totals once per sale', () => {
@@ -40,6 +42,9 @@ test('interstate sales retain the IGST column and amount', () => {
   const sheet = salesSpreadsheet([interstate], company, '2026-10-14');
   assert.ok(sheet.rows[3].includes('IGST amount'));
   assert.equal(sheet.rows[4][18], 18);
+  const invoice = invoiceSpreadsheet(interstate, company);
+  assert.ok(invoice.rows[5].includes('IGST amount'));
+  assert.equal(invoice.rows[6][13], 18);
 });
 
 test('a non-GST invoice does not inherit customer GST details or show a GST breakup', () => {
@@ -60,4 +65,5 @@ test('generated Excel keeps the metadata header and GST values as spreadsheet ce
   assert.match(file, /Customer GSTIN/);
   assert.match(file, /330300/);
   assert.match(file, /<v>9<\/v>/);
+  assert.doesNotMatch(file, /IGST/);
 });
