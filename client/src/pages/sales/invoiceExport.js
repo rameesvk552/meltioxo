@@ -36,7 +36,7 @@ export const invoiceTaxTotals = sale => (sale.retailSaleItems || []).reduce((tot
 const productName = item => {
   const variant = item.finishedGood || {};
   const name = item.packagingMaterial?.name || variant.product?.name || variant.name || 'Product';
-  return `${name}${variant.size_label ? ` · ${variant.size_label}` : ''}`;
+  return `${name}${variant.size_label ? ` - ${variant.size_label}` : ''}`;
 };
 const customerFor = sale => sale.customerDetails || (typeof sale.customer === 'object' ? sale.customer : { name: sale.customer });
 const sku = item => item.packagingMaterial?.sku || item.finishedGood?.sku || '';
@@ -98,13 +98,14 @@ export const salesSpreadsheet = (sales, company, rangeLabel) => {
     ['Date', 'Invoice', 'Customer', 'Customer address', 'Product', 'SKU', 'Quantity', 'Unit price', 'Line total', 'Invoice total', 'Returned amount', 'Net total', 'Status'],
     ...listRows(sales).map(({ sale, item, first }) => [sale.sale_date || '', sale.sale_number || '', customerFor(sale)?.name || 'Walk-in customer', customerFor(sale)?.address || '', item ? productName(item) : '', item ? sku(item) : '', item ? number(item.quantity) : '', item ? number(item.unit_price) : '', item ? number(item.total) : '', first ? number(sale.total_amount) : '', first ? number(sale.returned_amount) : '', first ? rounded(number(sale.total_amount) - number(sale.returned_amount)) : '', sale.status || ''])
   ], 3);
+  const hasInterstateGst = sales.some(sale => sale.gst_enabled === true && sale.supply_type === 'INTER');
   return reportData(`sales-invoices-${rangeLabel}`, [
   ['Sales invoices', rangeLabel],
   ['Seller', company.name || '', 'Seller GSTIN', company.tax_system === 'GST' ? company.tax_id || '' : '', 'Seller address', company.address || '', 'Seller phone', company.phone || ''],
   [],
-  ['Date', 'Invoice', 'Invoice type', 'Customer', 'Customer GSTIN', 'Customer address', 'Product', 'SKU', 'HSN', 'Quantity', 'Unit price', 'Taxable value', 'GST %', 'CGST %', 'CGST amount', 'SGST %', 'SGST amount', 'IGST %', 'IGST amount', 'Line total', 'Invoice total', 'Returned amount', 'Net total', 'Status'],
+  ['Date', 'Invoice', 'Invoice type', 'Customer', 'Customer GSTIN', 'Customer address', 'Product', 'SKU', 'HSN', 'Quantity', 'Unit price', 'Taxable value', 'GST %', 'CGST %', 'CGST amount', 'SGST %', 'SGST amount', ...(hasInterstateGst ? ['IGST %', 'IGST amount'] : []), 'Line total', 'Invoice total', 'Returned amount', 'Net total', 'Status'],
   ...listRows(sales).map(({ sale, item, split, rates, first }) => [
-    sale.sale_date || '', sale.sale_number || '', title(sale), customerFor(sale)?.name || 'Walk-in customer', customerGstin(sale), customerFor(sale)?.address || '', item ? productName(item) : '', item ? sku(item) : '', sale.gst_enabled === true ? item?.hsn_code || '' : '', item ? number(item.quantity) : '', item ? number(item.unit_price) : '', item ? taxable(item) : '', sale.gst_enabled === true && item ? number(item.tax_rate) : '', rates.cgst, split.cgst, rates.sgst, split.sgst, rates.igst, split.igst, item ? number(item.total) : '', first ? number(sale.total_amount) : '', first ? number(sale.returned_amount) : '', first ? rounded(number(sale.total_amount) - number(sale.returned_amount)) : '', sale.status || ''
+    sale.sale_date || '', sale.sale_number || '', title(sale), customerFor(sale)?.name || 'Walk-in customer', customerGstin(sale), customerFor(sale)?.address || '', item ? productName(item) : '', item ? sku(item) : '', sale.gst_enabled === true ? item?.hsn_code || '' : '', item ? number(item.quantity) : '', item ? number(item.unit_price) : '', item ? taxable(item) : '', sale.gst_enabled === true && item ? number(item.tax_rate) : '', rates.cgst, split.cgst, rates.sgst, split.sgst, ...(hasInterstateGst ? [rates.igst, split.igst] : []), item ? number(item.total) : '', first ? number(sale.total_amount) : '', first ? number(sale.returned_amount) : '', first ? rounded(number(sale.total_amount) - number(sale.returned_amount)) : '', sale.status || ''
   ])
 ], 3);
 };
@@ -116,12 +117,13 @@ export const salesPdfReport = (sales, company, rangeLabel) => {
     ['Date', 'Invoice', 'Customer', 'Product', 'Qty', 'Unit price', 'Line total'],
     ...listRows(sales).map(({ sale, item }) => [sale.sale_date || '', sale.sale_number || '', customerFor(sale)?.name || 'Walk-in customer', item ? productName(item) : '', item ? number(item.quantity) : '', item ? number(item.unit_price) : '', item ? number(item.total) : ''])
   ], 2);
+  const hasInterstateGst = sales.some(sale => sale.gst_enabled === true && sale.supply_type === 'INTER');
   return reportData(`sales-invoices-${rangeLabel}`, [
   ['Sales invoices', rangeLabel],
   [company.name || 'Company', `GSTIN: ${company.tax_system === 'GST' ? company.tax_id || '-' : '-'}`, company.address || '', company.phone || ''],
-  ['Date', 'Invoice', 'Customer / GSTIN', 'Product / HSN', 'Qty', 'Taxable', 'GST %', 'CGST % / amt', 'SGST % / amt', 'IGST % / amt', 'Line total'],
+  ['Date', 'Invoice', 'Customer / GSTIN', 'Product', 'HSN', 'Qty', 'Taxable', 'GST %', 'CGST % / amt', 'SGST % / amt', ...(hasInterstateGst ? ['IGST % / amt'] : []), 'Line total'],
   ...listRows(sales).map(({ sale, item, split, rates }) => [
-    sale.sale_date || '', sale.sale_number || '', `${customerFor(sale)?.name || 'Walk-in customer'}${customerGstin(sale) ? ` / ${customerGstin(sale)}` : ''}`, item ? `${productName(item)}${sale.gst_enabled === true ? ` / HSN ${item.hsn_code || '-'}` : ''}` : '', item ? number(item.quantity) : '', item ? taxable(item) : '', sale.gst_enabled === true && item ? `${rate(item.tax_rate)}%` : '', rates.cgst === '' ? '' : `${rate(rates.cgst)}% / ${split.cgst.toFixed(2)}`, rates.sgst === '' ? '' : `${rate(rates.sgst)}% / ${split.sgst.toFixed(2)}`, rates.igst === '' ? '' : `${rate(rates.igst)}% / ${split.igst.toFixed(2)}`, item ? number(item.total) : ''
+    sale.sale_date || '', sale.sale_number || '', `${customerFor(sale)?.name || 'Walk-in customer'}${customerGstin(sale) ? ` / ${customerGstin(sale)}` : ''}`, item ? productName(item) : '', sale.gst_enabled === true && item ? item.hsn_code || '-' : '', item ? number(item.quantity) : '', item ? taxable(item) : '', sale.gst_enabled === true && item ? `${rate(item.tax_rate)}%` : '', rates.cgst === '' ? '' : `${rate(rates.cgst)}% / ${split.cgst.toFixed(2)}`, rates.sgst === '' ? '' : `${rate(rates.sgst)}% / ${split.sgst.toFixed(2)}`, ...(hasInterstateGst ? [rates.igst === '' ? '' : `${rate(rates.igst)}% / ${split.igst.toFixed(2)}`] : []), item ? number(item.total) : ''
   ])
 ], 2);
 };

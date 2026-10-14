@@ -21,11 +21,25 @@ test('sales exports include GST amounts once per item and invoice totals once pe
   assert.equal(sheet.rows[4][8], '330300');
   assert.equal(sheet.rows[4][14], 9);
   assert.equal(sheet.rows[4][16], 9);
-  assert.equal(sheet.rows[4][20], 236);
-  assert.equal(sheet.rows[5][20], '');
+  assert.equal(sheet.rows[4][18], 236);
+  assert.equal(sheet.rows[5][18], '');
+  assert.ok(!sheet.rows[3].some(heading => String(heading).includes('IGST')));
   const pdf = salesPdfReport([sale], company, '2026-10-14');
   assert.match(pdf.rows[1].join(' '), /Seller Co.*27ABCDE1234F1Z5/);
+  assert.deepEqual(pdf.rows[2].slice(3, 6), ['Product', 'HSN', 'Qty']);
+  assert.deepEqual(pdf.rows[3].slice(3, 6), ['Perfume', '330300', 1]);
+  assert.ok(!pdf.rows[2].some(heading => String(heading).includes('IGST')));
   assert.match(pdf.rows[3].join(' '), /9% \/ 9\.00.*9% \/ 9\.00/);
+});
+
+test('interstate sales retain the IGST column and amount', () => {
+  const interstate = { ...sale, supply_type: 'INTER', retailSaleItems: [{ ...item, cgst_amount: 0, sgst_amount: 0, igst_amount: 18 }] };
+  const pdf = salesPdfReport([interstate], company, '2026-10-14');
+  assert.ok(pdf.rows[2].includes('IGST % / amt'));
+  assert.ok(pdf.rows[3].includes('18% / 18.00'));
+  const sheet = salesSpreadsheet([interstate], company, '2026-10-14');
+  assert.ok(sheet.rows[3].includes('IGST amount'));
+  assert.equal(sheet.rows[4][18], 18);
 });
 
 test('a non-GST invoice does not inherit customer GST details or show a GST breakup', () => {
