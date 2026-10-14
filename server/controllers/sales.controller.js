@@ -3,6 +3,7 @@ const { customer, salesOrder, salesOrderItem, salesInvoice } = db;
 const { AppError } = require('../middleware/errorHandler');
 const accounting = require('../services/accounting.service');
 const storeCredit = require('../services/storeCredit.service');
+const gst = require('../services/gst.service');
 const { Op } = require('sequelize');
 
 exports.getCustomers = async (req, res, next) => {
@@ -40,12 +41,21 @@ exports.getCustomerStoreCredit = async (req, res, next) => {
 exports.getCustomerById = async (req, res, next) => {
   try { res.status(200).json(await customer.findOne({ where: { id: req.params.id, tenant_id: req.tenantId } })); } catch (error) { next(error); }
 };
+const customerValues = body => {
+  const values = { ...body };
+  if (values.tax_id !== undefined) {
+    const gstin = String(values.tax_id || '').trim().toUpperCase();
+    if (gstin && !gst.stateCodeFromGstin(gstin)) throw new AppError('Enter a valid 15-character customer GSTIN', 400);
+    values.tax_id = gstin || null;
+  }
+  return values;
+};
 exports.createCustomer = async (req, res, next) => {
-  try { res.status(201).json(await customer.create({ ...req.body, tenant_id: req.tenantId })); } catch (error) { next(error); }
+  try { res.status(201).json(await customer.create({ ...customerValues(req.body), tenant_id: req.tenantId })); } catch (error) { next(error); }
 };
 exports.updateCustomer = async (req, res, next) => {
   try {
-    const [updated] = await customer.update(req.body, {
+    const [updated] = await customer.update(customerValues(req.body), {
       where: { id: req.params.id, tenant_id: req.tenantId }
     });
     if (!updated) throw new AppError('Not found', 404);

@@ -52,6 +52,7 @@ const CompanySettings = () => {
   const canManageUsers = PRIVILEGED_ROLES.includes(currentUser?.role);
   const [formCompany] = Form.useForm();
   const [formPrefs] = Form.useForm();
+  const selectedTaxSystem = Form.useWatch('taxSystem', formPrefs);
   const selectedGstScheme = Form.useWatch('gstScheme', formPrefs);
   const [paymentForm] = Form.useForm();
   const [paymentModalOpen, setPaymentModalOpen] = React.useState(false);
@@ -413,19 +414,20 @@ const CompanySettings = () => {
             </Col>
             <Col xs={24} sm={12} lg={8}>
               <Form.Item name="taxSystem" label={<span >Tax System</span>}>
-                <Select>
+                <Select onChange={value => { if (value !== 'GST') formPrefs.setFieldsValue({ gstScheme: 'REGULAR' }); }}>
                   <Option value="GST">GST (India)</Option>
                   <Option value="VAT">VAT</Option>
                   <Option value="SalesTax">Sales Tax</Option>
+                  <Option value="NONE">No tax registration</Option>
                 </Select>
               </Form.Item>
             </Col>
-            {canManageUsers && <Col xs={24} sm={12} lg={8}>
+            {canManageUsers && selectedTaxSystem === 'GST' && <Col xs={24} sm={12} lg={8}>
               <Form.Item name="gstScheme" label="GST registration scheme" extra="Set this to match the GST portal. Composition bills do not collect GST, and purchase GST becomes cost. CMP-08 and GSTR-4 filing remain outside this app.">
                 <Select options={[{ value: 'REGULAR', label: 'Regular GST' }, { value: 'COMPOSITION', label: 'Composition GST' }]} />
               </Form.Item>
             </Col>}
-            {canManageUsers && selectedGstScheme === 'COMPOSITION' && <Col xs={24} sm={12} lg={8}>
+            {canManageUsers && selectedTaxSystem === 'GST' && selectedGstScheme === 'COMPOSITION' && <Col xs={24} sm={12} lg={8}>
               <Form.Item name="gstCompositionRate" label="Composition levy rate" extra="Paid by the business on turnover; never added to the bill of supply.">
                 <Select options={[{ value: 1, label: '1% · eligible goods trader or manufacturer' }, { value: 5, label: '5% · restaurant service' }, { value: 6, label: '6% · eligible service supplier' }]} />
               </Form.Item>

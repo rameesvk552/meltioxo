@@ -12,9 +12,31 @@ const crop = (value, length) => {
   const text = String(value || '');
   return text.length > length ? `${text.slice(0, Math.max(0, length - 3))}...` : text;
 };
+const wrap = (value, maxChars) => {
+  const words = String(value || '').split(/\s+/).filter(Boolean);
+  const lines = [''];
+  for (const word of words) {
+    const last = lines.length - 1;
+    if (lines[last] && `${lines[last]} ${word}`.length > maxChars) lines.push(word);
+    else lines[last] = [lines[last], word].filter(Boolean).join(' ');
+  }
+  return lines.slice(0, 2);
+};
 const textLine = (x, y, text, size = 10, bold = false, color = '0 0 0') => `${color} rg BT /${bold ? 'F2' : 'F1'} ${size} Tf ${x} ${y} Td (${escapePdfText(text)}) Tj ET`;
 const rule = (x1,y1,x2,y2,color='0.86 0.84 0.81 RG',width=.7) => `${color} ${width} w ${x1} ${y1} m ${x2} ${y2} l S`;
 const fill = (x,y,w,h,color) => `${color} rg ${x} ${y} ${w} ${h} re f`;
+const taxBreakup = (sale, item) => {
+  if (sale.gst_enabled !== true) return { cgst: 0, sgst: 0, igst: 0 };
+  const tax = Number(item.tax_amount || 0);
+  const cgst = Number(item.cgst_amount || 0);
+  const sgst = Number(item.sgst_amount || 0);
+  const igst = Number(item.igst_amount || 0);
+  if (cgst + sgst + igst || !tax) return { cgst, sgst, igst };
+  if (sale.supply_type === 'INTER') return { cgst: 0, sgst: 0, igst: tax };
+  const half = Math.round(tax * 50) / 100;
+  return { cgst: half, sgst: Math.round((tax - half) * 100) / 100, igst: 0 };
+};
+const percent = value => Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 3 });
 
 const makePdf = (content, logo) => {
   const pages = Array.isArray(content) ? content : [content];
@@ -87,6 +109,7 @@ const createInvoicePdf = ({ sale, company }) => {
   const lines = [fill(0, 674, 595, 168, headerColor)];
   const logo = decodeLogo(company?.logo_url);
   if (logo) lines.push('q 185 0 0 94 42 722 cm /Logo Do Q');
+  else lines.push(textLine(42, 782, crop(company?.name || 'Company', 36), 16, true, invoiceTitleColor));
   lines.push(textLine(composition ? 425 : 472, 805, composition ? 'Bill of Supply' : regularGst || Number(sale.tax_amount||0)>0?'Tax Invoice':'Invoice', 15, true, invoiceTitleColor));
   if (composition) lines.push(textLine(230, 782, 'Composition taxable person, not eligible to collect tax on supplies.', 8, false, invoiceTitleColor));
   if (regularGst) lines.push(textLine(230, 693, crop(`Place of supply: ${STATE_NAMES[sale.place_of_supply_state_code] || '-'} (${sale.place_of_supply_state_code || '-'})`, 58), 9, false, invoiceTitleColor));
@@ -94,17 +117,21 @@ const createInvoicePdf = ({ sale, company }) => {
   lines.push(textLine(425, 654, 'Date:', 11, true), textLine(458, 654, date(sale.sale_date), 11));
   lines.push(rule(42, 638, 553, 638));
   lines.push(textLine(42, 615, 'Invoice To:', 9, true, '0.35 0.32 0.40'), textLine(42, 594, crop(customer.name || 'Walk-in customer', 42), 13, true));
-  if(customer.phone)lines.push(textLine(42, 574, customer.phone, 10, false, '0.35 0.38 0.52'));
-  if(customer.address)lines.push(textLine(42, customer.phone ? 556 : 574, crop(customer.address, 58), 10, false, '0.35 0.38 0.52'));
-  if (sale.customer_gstin || customer.tax_id) lines.push(textLine(42, 538, crop(`GSTIN: ${sale.customer_gstin || customer.tax_id}`, 42), 9, false, '0.35 0.38 0.52'));
+  const customerContact = [customer.phone, customer.email].filter(Boolean).join('  |  ');
+  if(customerContact)lines.push(textLine(42, 574, crop(customerContact, 52), 9, false, '0.35 0.38 0.52'));
+  if(customer.address)wrap(customer.address, 49).forEach((part, index) => lines.push(textLine(42, 556 - index * 11, part, 9, false, '0.35 0.38 0.52')));
+  if (regularGst && sale.customer_gstin) lines.push(textLine(42, 532, crop(`GSTIN: ${sale.customer_gstin}`, 42), 9, false, '0.35 0.38 0.52'));
   lines.push(textLine(318, 615, 'Invoice From:', 9, true, '0.35 0.32 0.40'), textLine(318, 594, crop(company?.name || 'Company', 40), 13, true));
-  if(phoneList)lines.push(textLine(318, 574, crop(phoneList, 42), 10, false, '0.35 0.38 0.52'));
-  if(cleanAddress)lines.push(textLine(318, phoneList ? 556 : 574, crop(cleanAddress, 42), 10, false, '0.35 0.38 0.52'));
-  if (isArabelegance && !regularGst) lines.push(textLine(318, company?.tax_id ? 520 : (cleanAddress || phoneList ? 538 : 574), 'www.arabeleganceperfume.com', 9, false, '0.35 0.38 0.52'));
-  if(sale.seller_gstin || company?.tax_id)lines.push(textLine(318, 538, crop(`GSTIN: ${sale.seller_gstin || company.tax_id}`, 42), 9, false, '0.35 0.38 0.52'));
+  const companyContact = [phoneList, company?.email].filter(Boolean).join('  |  ');
+  if(companyContact)lines.push(textLine(318, 574, crop(companyContact, 42), 9, false, '0.35 0.38 0.52'));
+  if(cleanAddress)wrap(cleanAddress, 39).forEach((part, index) => lines.push(textLine(318, 556 - index * 11, part, 9, false, '0.35 0.38 0.52')));
+  if (isArabelegance && !regularGst) lines.push(textLine(318, company?.tax_id ? 522 : (cleanAddress || phoneList ? 532 : 574), 'www.arabeleganceperfume.com', 9, false, '0.35 0.38 0.52'));
+  const sellerGstin = regularGst ? sale.seller_gstin : composition ? company?.tax_id : null;
+  if(sellerGstin)lines.push(textLine(318, 532, crop(`GSTIN: ${sellerGstin}`, 42), 9, false, '0.35 0.38 0.52'));
   lines.push(rule(42, 520, 553, 520));
   lines.push(fill(42, 495, 511, 25, '0.16 0.13 0.11'), textLine(51, 504, '#', 8, true,'1 1 1'), textLine(78, 504, 'PRODUCT', 8, true,'1 1 1'), textLine(354, 504, 'QTY', 8, true,'1 1 1'), textLine(415, 504, 'RATE', 8, true,'1 1 1'), textLine(493, 504, 'AMOUNT', 8, true,'1 1 1'));
-  const pageSize = 12;
+  const pageSize = regularGst ? 7 : 12;
+  const rowHeight = regularGst ? 35 : 22;
   const pageCount = Math.max(1, Math.ceil(items.length / pageSize));
   const pages = Array.from({ length: pageCount }, (_, pageIndex) => {
     const pageLines = [...lines];
@@ -116,20 +143,20 @@ const createInvoicePdf = ({ sale, company }) => {
       const variant = isArabelegance
         ? (item.packagingMaterial ? '' : item.finishedGood?.size_label || '')
         : (item.packagingMaterial?.sku || item.finishedGood?.size_label || item.finishedGood?.sku || '');
-      if (localIndex % 2 === 1) pageLines.push(fill(42, y - 7, 511, 22, '0.985 0.98 0.97'));
-      pageLines.push(textLine(51, y, String(index + 1), 8), textLine(78, y, crop(product, 42), 9, true));
+      if (localIndex % 2 === 1) pageLines.push(fill(42, y - rowHeight + 14, 511, rowHeight, '0.985 0.98 0.97'));
+      pageLines.push(textLine(51, y, String(index + 1), 8), textLine(78, y, crop(`${product}${variant ? ` - ${variant}` : ''}`, 47), 9, true));
       if (variant && !regularGst) pageLines.push(textLine(78, y - 9, crop(variant, 48), 7));
       if (regularGst) {
         const tax = Number(item.tax_amount || 0);
-        const saved = Number(item.cgst_amount || 0) + Number(item.sgst_amount || 0) + Number(item.igst_amount || 0);
-        const cgst = saved ? Number(item.cgst_amount || 0) : interState ? 0 : Math.round(tax * 50) / 100;
-        const sgst = saved ? Number(item.sgst_amount || 0) : interState ? 0 : Math.round((tax - cgst) * 100) / 100;
-        const igst = saved ? Number(item.igst_amount || 0) : interState ? tax : 0;
-        const hsn = item.hsn_code || '-';
-        pageLines.push(textLine(78, y - 9, crop(`HSN ${hsn} | GST ${Number(item.tax_rate || 0)}% | Taxable ${money(Number(item.total || 0) - tax)} | ${interState ? `IGST ${money(igst)}` : `CGST ${money(cgst)} SGST ${money(sgst)}`}`, 89), 6));
+        const split = taxBreakup(sale, item);
+        const componentRate = percent(Number(item.tax_rate || 0) / 2);
+        pageLines.push(textLine(78, y - 10, `HSN ${item.hsn_code || '-'}  |  Taxable ${money(Number(item.total || 0) - tax)}  |  GST ${percent(item.tax_rate)}%`, 7));
+        pageLines.push(textLine(78, y - 19, interState
+          ? `IGST ${percent(item.tax_rate)}%: ${money(split.igst)}`
+          : `CGST ${componentRate}%: ${money(split.cgst)}  |  SGST ${componentRate}%: ${money(split.sgst)}`, 7));
       }
       pageLines.push(textLine(354, y, Number(item.quantity || 0).toLocaleString('en-IN', { maximumFractionDigits: 4 }), 8), textLine(415, y, money(item.unit_price), 8), textLine(493, y, money(item.total ?? Number(item.quantity || 0) * Number(item.unit_price || 0)), 8));
-      y -= 22;
+      y -= rowHeight;
     });
     if (pageIndex === pageCount - 1) {
       const summaryY = Math.max(170, y - 14);
@@ -138,17 +165,16 @@ const createInvoicePdf = ({ sale, company }) => {
       if (Number(sale.discount_amount || 0)) { pageLines.push(textLine(363, totalY, 'Discount', 9), textLine(479, totalY, `- ${money(sale.discount_amount)}`, 9)); totalY -= 18; }
       if (regularGst) {
         const split = items.reduce((totals, item) => {
-          const tax = Number(item.tax_amount || 0);
-          const saved = Number(item.cgst_amount || 0) + Number(item.sgst_amount || 0) + Number(item.igst_amount || 0);
-          const cgst = saved ? Number(item.cgst_amount || 0) : interState ? 0 : Math.round(tax * 50) / 100;
-          totals.cgst += cgst;
-          totals.sgst += saved ? Number(item.sgst_amount || 0) : interState ? 0 : Math.round((tax - cgst) * 100) / 100;
-          totals.igst += saved ? Number(item.igst_amount || 0) : interState ? tax : 0;
+          const itemSplit = taxBreakup(sale, item);
+          totals.cgst += itemSplit.cgst;
+          totals.sgst += itemSplit.sgst;
+          totals.igst += itemSplit.igst;
           return totals;
         }, { cgst: 0, sgst: 0, igst: 0 });
         for (const [label, value] of (interState ? [['IGST', split.igst]] : [['CGST', split.cgst], ['SGST', split.sgst]])) {
           pageLines.push(textLine(363, totalY, label, 9), textLine(479, totalY, money(value), 9)); totalY -= 18;
         }
+        pageLines.push(textLine(363, totalY, 'Total GST', 9), textLine(479, totalY, money(sale.tax_amount), 9)); totalY -= 18;
       } else if (Number(sale.tax_amount || 0)) { pageLines.push(textLine(363, totalY, company?.tax_system || 'Tax', 9), textLine(479, totalY, money(sale.tax_amount), 9)); totalY -= 18; }
       pageLines.push(fill(335, totalY - 24, 218, 32, '0.16 0.13 0.11'), textLine(348, totalY - 13, 'TOTAL', 10, true, '1 1 1'), textLine(450, totalY - 13, money(sale.total_amount), 10, true, '1 1 1'));
     }

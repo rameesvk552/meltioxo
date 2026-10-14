@@ -8,6 +8,7 @@ router.get('/', authenticate, tenantContext, ctrl.getAll);
 router.get('/salespeople', authenticate, tenantContext, ctrl.getSalespeople);
 router.get('/incentives', authenticate, tenantContext, authorize('super_admin', 'admin', 'manager', 'accountant'), ctrl.getIncentives);
 router.get('/composition-levy', authenticate, tenantContext, authorize('super_admin', 'admin', 'accountant'), ctrl.getCompositionLevy);
+router.get('/:id/pdf', authenticate, tenantContext, ctrl.downloadPdf);
 router.get('/:id', authenticate, tenantContext, ctrl.getById);
 router.post('/preview', authenticate, tenantContext, ctrl.preview);
 router.post('/', authenticate, tenantContext, ctrl.create);

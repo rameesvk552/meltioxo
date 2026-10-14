@@ -10,6 +10,7 @@ const invoiceWhatsapp = require('../services/invoiceWhatsapp.service');
 const incentives = require('../services/incentive.service');
 const compositionLevy = require('../services/compositionLevy.service');
 const gst = require('../services/gst.service');
+const { createInvoicePdf } = require('../services/invoicePdf.service');
 const { ACCOUNT_CODES } = require('../config/constants');
 
 const number = value => Number(value || 0);
@@ -408,6 +409,20 @@ exports.getById = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
+exports.downloadPdf = async (req, res, next) => {
+  try {
+    const sale = await db.retailSale.findOne({ where: { id: req.params.id, tenant_id: req.tenantId }, include: [
+      db.customer,
+      { model: db.retailSaleItem, include: [{ model: db.finishedGood, include: [db.product] }, db.packagingMaterial] }
+    ] });
+    if (!sale) throw new AppError('Sale not found', 404);
+    const company = await db.tenant.findByPk(req.tenantId);
+    const filename = String(sale.sale_number || 'invoice').replace(/[^a-zA-Z0-9._-]/g, '_');
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${filename}.pdf"`, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' });
+    res.send(createInvoicePdf({ sale: sale.toJSON(), company: company?.toJSON() }));
+  } catch (error) { next(error); }
+};
+
 exports.preview = async (req, res, next) => {
   try { res.json(await buildPreview(req.tenantId, req.body.items)); } catch (error) { next(error); }
 };
@@ -676,7 +691,7 @@ const saveSale = async (req, res, next, isEdit = false) => {
       const previewLine = preview.lines[index];
       if (regularGst && (!previewLine.hsn_code || previewLine.gst_rate === null || previewLine.gst_rate === undefined)) throw new AppError(`Set the HSN code and GST rate on ${previewLine.product_name} before selling`, 400);
       if (regularGst) try { gst.validateRate(previewLine.gst_rate); } catch (error) { throw new AppError(`${previewLine.product_name}: ${error.message}`, 400); }
-      const taxRate = regularGst ? number(previewLine.gst_rate) : number(row.tax_rate);
+      const taxRate = tenantSettings?.tax_system === 'NONE' ? 0 : regularGst ? number(previewLine.gst_rate) : number(row.tax_rate);
       if (price < 0) throw new AppError('Sale price cannot be negative', 400);
       if (discountPct < 0 || discountPct > 100 || taxRate < 0 || taxRate > 100) throw new AppError('Discount and tax rates must be between 0 and 100', 400);
       if (composition && taxRate !== 0) throw new AppError('Composition sales cannot charge GST. Set every sale tax rate to 0%.', 400);

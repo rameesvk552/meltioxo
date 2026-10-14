@@ -34,6 +34,7 @@ export default function SalesOrderPOS() {
   const { user: currentUser } = React.useContext(AuthContext);
   const [form] = Form.useForm();
   const [customerForm] = Form.useForm();
+  const customerGstRegistration = Form.useWatch('gst_registration', customerForm);
   const navigate = useNavigate();
   const { id: editId } = useParams();
   const isEditing = Boolean(editId);
@@ -44,6 +45,7 @@ export default function SalesOrderPOS() {
   const { data: tenantSettings } = useApiData('/tenant/settings', { initialData: {} });
   const composition = tenantSettings.tax_system === 'GST' && tenantSettings.gst_scheme === 'COMPOSITION';
   const regularGst = tenantSettings.tax_system === 'GST' && tenantSettings.gst_scheme === 'REGULAR';
+  const noTax = tenantSettings.tax_system === 'NONE';
   const { data: salespeople } = useApiData(tenantSettings.incentive_enabled && tenantSettings.incentive_salesperson_mode === 'SELECT' ? '/retail-sales/salespeople' : null);
   const { data: packingKits } = useApiData('/packing-kits');
   const { data: dayState, loading: dayLoading, reload: reloadDay } = useApiData('/business-days/current', { initialData: {} });
@@ -110,8 +112,8 @@ export default function SalesOrderPOS() {
 
   const products = finishedGoods
     .filter(item => item.is_active !== false && item.product?.is_active !== false)
-    .map(item => ({ ...item, price: Number(item.selling_price || 0), tax: Number(regularGst ? item.product?.gst_rate ?? 0 : item.tax_rate || 0) }));
-  const packingMaterialsForSale = packagingMaterials.map(item => ({ ...item, price: Number(item.selling_price || 0), tax: Number(item.tax_rate || 0) }));
+    .map(item => ({ ...item, price: Number(item.selling_price || 0), tax: noTax ? 0 : Number(regularGst ? item.product?.gst_rate ?? 0 : item.tax_rate || 0) }));
+  const packingMaterialsForSale = packagingMaterials.map(item => ({ ...item, price: Number(item.selling_price || 0), tax: noTax ? 0 : Number(item.tax_rate || 0) }));
   const selectedItemFor = item => item.itemType === 'packaging_material'
     ? packingMaterialsForSale.find(material => material.id === item.product)
     : products.find(product => product.id === item.product);
@@ -152,7 +154,7 @@ export default function SalesOrderPOS() {
     const base = roundMoney(Number(item.price || 0) * saleQuantity(item));
     const lineDiscount = fixedDiscounts ? fixedDiscounts[index] : roundMoney(base * discountPct / 100);
     const taxable = roundMoney(base - lineDiscount);
-    const lineTax = composition ? 0 : roundMoney(taxable * Number(item.tax || 0) / 100);
+    const lineTax = composition || noTax ? 0 : roundMoney(taxable * Number(item.tax || 0) / 100);
     return { item, total: roundMoney(taxable + lineTax), lineDiscount, lineTax };
   });
   const discountAmount = roundMoney(saleLineTotals.reduce((sum, line) => sum + line.lineDiscount, 0));
@@ -179,7 +181,7 @@ export default function SalesOrderPOS() {
       : products.find(item => item.id === productId);
     if (!product) return;
     const initialQuantity = product.product?.sell_by_measurement ? 0 : 1;
-    setItems(current => current.map(item => item.key === key ? { ...item, product: productId, qty: initialQuantity, packCount: 1, packingKit: null, packingKitQuantities: null, price: product.price, tax: composition ? 0 : product.tax } : item));
+    setItems(current => current.map(item => item.key === key ? { ...item, product: productId, qty: initialQuantity, packCount: 1, packingKit: null, packingKitQuantities: null, price: product.price, tax: composition || noTax ? 0 : product.tax } : item));
   };
 
   const updateItem = (value, field, key) => setItems(current => current.map(item => item.key === key ? { ...item, [field]: value } : item));
@@ -208,7 +210,8 @@ export default function SalesOrderPOS() {
   };
 
   const openCustomerModal = () => {
-    customerForm.setFieldsValue({ phone: normalizedPhone, name: '', address: '' });
+    customerForm.resetFields();
+    customerForm.setFieldsValue({ phone: normalizedPhone, name: '', address: '', gst_registration: 'NON_GST', tax_id: '' });
     setCustomerModalOpen(true);
   };
 
@@ -219,6 +222,7 @@ export default function SalesOrderPOS() {
       phone: customerPhone,
       name: values.name?.trim() || 'Walk-in customer',
       address: values.address?.trim() || undefined,
+      ...(regularGst ? { tax_id: values.gst_registration === 'GST_REGISTERED' ? values.tax_id?.trim().toUpperCase() : null } : {}),
     });
     selectCustomer(data);
     setCustomerModalOpen(false);
@@ -392,7 +396,7 @@ export default function SalesOrderPOS() {
               <div className="pos-section-label"><UserOutlined /><div><strong>Customer</strong><span>Optional for walk-ins</span></div></div>
               <div className="pos-customer-search">
                 <Input allowClear prefix={<SearchOutlined />} inputMode="numeric" placeholder="Search phone number" value={phone} onChange={event => { setPhone(event.target.value); setSelectedCustomer(null); }} />
-                {selectedCustomer && <div className="pos-selected-customer"><span><strong>{selectedCustomer.name || 'Walk-in customer'}</strong> · {selectedCustomer.phone}</span><Tag color="success">Selected</Tag></div>}
+                {selectedCustomer && <div className="pos-selected-customer"><span><strong>{selectedCustomer.name || 'Walk-in customer'}</strong> · {selectedCustomer.phone}</span><Tag color={selectedCustomer.tax_id ? 'blue' : 'success'}>{regularGst ? selectedCustomer.tax_id ? 'GST registered' : 'Non-GST customer' : 'Selected'}</Tag></div>}
                 {!selectedCustomer && normalizedPhone.length >= 3 && <div className="pos-customer-results">
                   {matchingCustomers.map(customer => <button type="button" key={customer.id} onClick={() => selectCustomer(customer)}><strong>{customer.name || 'Walk-in customer'}</strong><span>{customer.phone}</span></button>)}
                   <Button size="small" type="dashed" icon={<UserAddOutlined />} onClick={openCustomerModal}>Add new customer</Button>
@@ -460,7 +464,7 @@ export default function SalesOrderPOS() {
             <Divider />
             <label className="pos-discount-label">Order discount <span>Optional</span></label>
             <div className="pos-discount"><Radio.Group value={discountMode} onChange={event => { setDiscountMode(event.target.value); setDiscount(0); }} optionType="button" buttonStyle="solid" size="small"><Radio.Button value="percentage">%</Radio.Button><Radio.Button value="amount">₹</Radio.Button></Radio.Group><InputNumber min={0} max={discountMode === 'percentage' ? 100 : subtotal} value={discount} onChange={value => setDiscount(value || 0)} suffix={discountMode === 'percentage' ? '%' : undefined} prefix={discountMode === 'amount' ? '₹' : undefined} /></div>
-            <div className="pos-total"><div><span>Total due</span><small>{composition ? 'Bill of supply · GST not collected' : 'Taxes included where applicable'}</small></div><strong>{money(total)}</strong></div>
+            <div className="pos-total"><div><span>Total due</span><small>{composition ? 'Bill of supply · GST not collected' : noTax ? 'No tax charged' : 'Taxes included where applicable'}</small></div><strong>{money(total)}</strong></div>
             {!isEditing && selectedCustomer && availableStoreCredit > 0 && <div className="pos-credit-toggle" style={{ display: 'block' }}>
               <strong>Use store credit</strong><small style={{ display: 'block' }}>Available {money(availableStoreCredit)} · applied after the order discount</small>
               <InputNumber aria-label="Store credit to use" min={0} max={Math.min(total, availableStoreCredit)} precision={2} prefix="₹" value={storeCreditRequested} onChange={value => setStoreCreditRequested(value || 0)} style={{ width: '100%', marginTop: 8 }} />
@@ -481,11 +485,13 @@ export default function SalesOrderPOS() {
     </Form>
 
     <Modal title="Add customer" open={customerModalOpen} onCancel={() => setCustomerModalOpen(false)} footer={null} destroyOnHidden>
-      <Text type="secondary" className="pos-modal-note">Only the phone number is required.</Text>
+      <Text type="secondary" className="pos-modal-note">Phone number is required. Non-GST customers do not need a GSTIN.</Text>
       <Form form={customerForm} layout="vertical" onFinish={createCustomer}>
         <Form.Item name="phone" label="Phone number" rules={[{ required: true, message: 'Enter a phone number' }]}><Input inputMode="numeric" /></Form.Item>
         <Form.Item name="name" label="Name (optional)"><Input placeholder="Customer name" /></Form.Item>
         <Form.Item name="address" label="Address (optional)"><TextArea rows={3} placeholder="Address" /></Form.Item>
+        {regularGst && <><Form.Item name="gst_registration" label="Customer GST registration"><Radio.Group options={[{ label: 'Non-GST customer', value: 'NON_GST' }, { label: 'GST registered', value: 'GST_REGISTERED' }]} /></Form.Item>
+          {customerGstRegistration === 'GST_REGISTERED' && <Form.Item name="tax_id" label="Customer GSTIN" normalize={value => value?.trim().toUpperCase()} rules={[{ required: true, message: 'Enter the customer GSTIN' }, { pattern: /^\d{2}[A-Z0-9]{13}$/, message: 'Enter a valid 15-character GSTIN' }]}><Input maxLength={15} placeholder="15-character GSTIN" /></Form.Item>}</>}
         <Space className="pos-modal-actions"><Button onClick={() => setCustomerModalOpen(false)}>Cancel</Button><Button type="primary" htmlType="submit">Save & select</Button></Space>
       </Form>
     </Modal>

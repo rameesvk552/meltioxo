@@ -5,7 +5,8 @@ import { useNavigate } from 'react-router-dom';
 import useApiData from '../../hooks/useApiData';
 import ResponsiveDataTable from '../../components/common/ResponsiveDataTable';
 import ResponsiveListPageHeader from '../../components/common/ResponsiveListPageHeader';
-import { downloadReport, reportData } from '../reports/reportDownloads';
+import { downloadReport } from '../reports/reportDownloads';
+import { salesPdfReport, salesSpreadsheet } from './invoiceExport';
 
 const money = value => `₹${Number(value || 0).toLocaleString('en-IN')}`;
 const paymentLabel = sale => {
@@ -20,9 +21,11 @@ const paymentLabel = sale => {
 const SalesOrders = () => {
   const navigate = useNavigate();
   const { data: salesData, loading, error } = useApiData('/retail-sales');
+  const { data: company } = useApiData('/tenant/settings', { initialData: {} });
   const [listRange, setListRange] = useState(null);
   const salesRows = salesData.map(item => ({
     ...item,
+    customerDetails: item.customer,
     customer: item.customer?.name || item.customer_id || '—',
     customerPhone: item.customer?.phone || '',
     date: item.sale_date,
@@ -36,21 +39,7 @@ const SalesOrders = () => {
   const visibleSales = salesRows.filter(sale => !listRange ||
     (String(sale.date || '').slice(0, 10) >= listRange[0].format('YYYY-MM-DD')
       && String(sale.date || '').slice(0, 10) <= listRange[1].format('YYYY-MM-DD')));
-  const exportSalesList = () => reportData(`sales-list-${listRange ? `${listRange[0].format('YYYY-MM-DD')}-${listRange[1].format('YYYY-MM-DD')}` : 'all'}`, [
-    ['Sales listing', listRange ? `${listRange[0].format('YYYY-MM-DD')} to ${listRange[1].format('YYYY-MM-DD')}` : 'All dates', `${visibleSales.length} invoices`],
-    ['Date', 'Invoice', 'Customer', 'Product / variant', 'SKU', 'Quantity', 'Unit price', 'Tax %', 'Line total', 'Returned qty', 'Invoice discount', 'Invoice total', 'Returned amount', 'Net total', 'Payment', 'Status'],
-    ...visibleSales.flatMap(sale => {
-      const saleItems = sale.retailSaleItems || [];
-      return (saleItems.length ? saleItems : [null]).map((item, index) => {
-        const variant = item?.finishedGood || {};
-        return [sale.date, sale.sale_number, sale.customer, item ? `${variant.product?.name || variant.name || 'Product'}${variant.size_label ? ` · ${variant.size_label}` : ''}` : '',
-          variant.sku || '', item ? Number(item.quantity || 0) : '', item ? Number(item.unit_price || 0) : '',
-          item ? Number(item.tax_rate || 0) : '', item ? Number(item.total || 0) : '', item ? Number(item.returned_quantity || 0) : '',
-          index === 0 ? Number(sale.discount_amount || 0) : '', index === 0 ? sale.total : '',
-          index === 0 ? sale.returned : '', index === 0 ? sale.netTotal : '', paymentLabel(sale), sale.status];
-      });
-    })
-  ]);
+  const exportRange = listRange ? `${listRange[0].format('YYYY-MM-DD')}-${listRange[1].format('YYYY-MM-DD')}` : 'all';
 
   const handleWhatsAppShare = (record) => {
     const phone = record.customerPhone;
@@ -138,7 +127,7 @@ const SalesOrders = () => {
       </Row>
 
       <Card>
-        <Space wrap style={{ marginBottom: 16 }}><DatePicker.RangePicker aria-label="Sales list date range" value={listRange} onChange={setListRange} placeholder={['From date', 'To date']} /><Button icon={<DownloadOutlined />} disabled={loading || !!error || !visibleSales.length} onClick={() => downloadReport(exportSalesList(), 'xlsx')}>Excel</Button><Button icon={<DownloadOutlined />} disabled={loading || !!error || !visibleSales.length} onClick={() => downloadReport(exportSalesList(), 'pdf')}>PDF</Button><span>{visibleSales.length} invoices</span></Space>
+        <Space wrap style={{ marginBottom: 16 }}><DatePicker.RangePicker aria-label="Sales list date range" value={listRange} onChange={setListRange} placeholder={['From date', 'To date']} /><Button icon={<DownloadOutlined />} disabled={loading || !!error || !visibleSales.length} onClick={() => downloadReport(salesSpreadsheet(visibleSales, company, exportRange), 'xlsx')}>Excel</Button><Button icon={<DownloadOutlined />} disabled={loading || !!error || !visibleSales.length} onClick={() => downloadReport(salesPdfReport(visibleSales, company, exportRange), 'pdf')}>PDF</Button><span>{visibleSales.length} invoices</span></Space>
         <ResponsiveDataTable columns={columns} dataSource={visibleSales} loading={loading} emptyText="No sales found" mobileRenderItem={(sale) => <><div className="mobile-data-list__title-row"><strong>{sale.sale_number || sale.id}</strong><Tag color={sale.status === 'Posted' ? 'success' : sale.status === 'Partially returned' ? 'orange' : 'default'}>{sale.status}</Tag></div><span className="mobile-data-list__code">{sale.customer} · {sale.items} item{sale.items === 1 ? '' : 's'}</span><div className="mobile-data-list__metrics"><span>Net total <strong>₹{sale.netTotal.toLocaleString('en-IN')}</strong></span><span>Date <strong>{sale.date || '—'}</strong></span></div><Space.Compact block style={{ marginTop: 12 }}><Button icon={<EyeOutlined />} onClick={() => navigate(`/app/retail-sales/${sale.id}`)} style={{ width: '50%' }}>View Sale</Button><Button type="primary" icon={<FileTextOutlined />} onClick={() => navigate(`/app/retail-sales/${sale.id}/invoice`)} style={{ width: '50%' }}>Invoice</Button></Space.Compact></>} />
       </Card>
     </div>

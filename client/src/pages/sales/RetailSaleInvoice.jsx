@@ -1,13 +1,16 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Empty, Space, Spin, Typography, message } from 'antd';
-import { ArrowLeftOutlined, PrinterOutlined, ShopOutlined, WhatsAppOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, DownloadOutlined, PrinterOutlined, ShopOutlined, WhatsAppOutlined } from '@ant-design/icons';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import dayjs from 'dayjs';
 import useApiData from '../../hooks/useApiData';
+import client from '../../api/client';
 import { GST_STATE_NAMES } from '../../utils/gstStateNames';
+import { downloadReport } from '../reports/reportDownloads';
+import { invoiceSpreadsheet, invoiceTaxBreakup, invoiceTaxRates, invoiceTaxTotals } from './invoiceExport';
 import './RetailSaleInvoice.css';
 
-const { Text, Title } = Typography;
+const { Title } = Typography;
 const money = value => new Intl.NumberFormat('en-IN', {
   style: 'currency',
   currency: 'INR',
@@ -31,6 +34,7 @@ export default function RetailSaleInvoice() {
   const { data: sale, loading, error } = useApiData(`/retail-sales/${id}`, { initialData: {} });
   const { data: company, loading: companyLoading } = useApiData('/tenant/settings', { initialData: {} });
   const autoPrintStarted = useRef(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   const items = sale.retailSaleItems || [];
   const customer = sale.customer || {};
@@ -39,22 +43,28 @@ export default function RetailSaleInvoice() {
   const composition = sale.gst_scheme === 'COMPOSITION';
   const regularGst = sale.gst_enabled === true;
   const interState = sale.supply_type === 'INTER';
-  const itemTax = item => {
-    const tax = Number(item.tax_amount || 0);
-    if (!regularGst) return { cgst: 0, sgst: 0, igst: 0 };
-    const saved = Number(item.cgst_amount || 0) + Number(item.sgst_amount || 0) + Number(item.igst_amount || 0);
-    if (saved || !tax) return { cgst: Number(item.cgst_amount || 0), sgst: Number(item.sgst_amount || 0), igst: Number(item.igst_amount || 0) };
-    if (interState) return { cgst: 0, sgst: 0, igst: tax };
-    const cgst = Math.round(tax * 50) / 100;
-    return { cgst, sgst: Math.round((tax - cgst) * 100) / 100, igst: 0 };
-  };
-  const gstTotals = items.reduce((total, item) => {
-    const split = itemTax(item);
-    return { cgst: total.cgst + split.cgst, sgst: total.sgst + split.sgst, igst: total.igst + split.igst };
-  }, { cgst: 0, sgst: 0, igst: 0 });
+  const gstTotals = invoiceTaxTotals(sale);
   const hasDiscount = Number(sale.discount_amount || 0) > 0 || items.some(item => Number(item.discount_pct || 0) > 0);
 
   const handlePrint = () => printInvoice(sale.sale_number || id);
+  const handlePdf = async () => {
+    setDownloadingPdf(true);
+    try {
+      const response = await client.get(`/retail-sales/${id}/pdf`, { responseType: 'blob' });
+      const url = URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${String(sale.sale_number || id).replace(/[^a-zA-Z0-9._-]/g, '_')}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch {
+      message.error('Could not download the invoice PDF. Please try again.');
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
   const handleSettle = () => navigate(`/app/payments/new?type=incoming&party_id=${sale.customer_id}&invoice_id=${sale.id}&amount=${Number(sale.balance_due || 0)}`);
 
   useEffect(() => {
@@ -99,6 +109,8 @@ export default function RetailSaleInvoice() {
         <Space wrap>
           <Button icon={<WhatsAppOutlined />} disabled={!customer.phone} onClick={handleWhatsAppShare}>WhatsApp</Button>
           {Number(sale.balance_due || 0) > 0 && <Button type="primary" onClick={handleSettle}>Settle invoice · {money(sale.balance_due)}</Button>}
+          <Button icon={<DownloadOutlined />} onClick={() => downloadReport(invoiceSpreadsheet(sale, company), 'xlsx')}>Excel</Button>
+          <Button icon={<DownloadOutlined />} onClick={handlePdf} loading={downloadingPdf}>PDF</Button>
           <Button type="primary" icon={<PrinterOutlined />} onClick={handlePrint}>Print Invoice</Button>
         </Space>
       </div>
@@ -133,15 +145,17 @@ export default function RetailSaleInvoice() {
             <strong>{customer.name || 'Walk-in customer'}</strong>
             {customer.phone && <span>{customer.phone}</span>}
             {customer.address && <span>{customer.address}</span>}
-            {(sale.customer_gstin || customer.tax_id) && <span>GSTIN: {sale.customer_gstin || customer.tax_id}</span>}
+            {customer.email && <span>{customer.email}</span>}
+            {regularGst && sale.customer_gstin && <span>GSTIN: {sale.customer_gstin}</span>}
           </div>
           <div className="invoice-from">
             <span className="invoice-label">Invoice From:</span>
             <strong>{company.name || 'Company'}</strong>
             {company.phone && <span>{company.phone}</span>}
             {company.address && <span>{company.address}</span>}
+            {company.email && <span>{company.email}</span>}
             {isArabelegance && <a href="https://www.arabeleganceperfume.com" target="_blank" rel="noreferrer">www.arabeleganceperfume.com</a>}
-            {(sale.seller_gstin || company.tax_id) && <span>GSTIN: {sale.seller_gstin || company.tax_id}</span>}
+            {(regularGst ? sale.seller_gstin : composition ? company.tax_id : null) && <span>GSTIN: {regularGst ? sale.seller_gstin : company.tax_id}</span>}
           </div>
         </section>
 
@@ -170,7 +184,8 @@ export default function RetailSaleInvoice() {
                   : (packingMaterial?.sku || (isMeasured ? null : variant.size_label || variant.sku));
                 const quantityUnit = packingMaterial ? ` ${packingMaterial.unit || 'pcs'}` : isMeasured ? ` ${variant.product.measurement_unit || 'ml'}` : '';
                 const lineAmount = Number(item.quantity || 0) * Number(item.unit_price || 0);
-                const split = itemTax(item);
+                const split = invoiceTaxBreakup(sale, item);
+                const rates = invoiceTaxRates(sale, item);
                 const taxable = Number(item.total || 0) - Number(item.tax_amount || 0);
                 return (
                   <tr key={item.id || index}>
@@ -180,7 +195,7 @@ export default function RetailSaleInvoice() {
                     <td className="numeric">{quantity(item.quantity)}{quantityUnit}</td>
                     <td className="numeric">{money(item.unit_price)}</td>
                     {regularGst && <td className="numeric">{money(taxable)}</td>}
-                    {regularGst ? <td className="numeric">{Number(item.tax_rate || 0).toLocaleString('en-IN')}%{interState ? <small>IGST {money(split.igst)}</small> : <><small>CGST {money(split.cgst)}</small><small>SGST {money(split.sgst)}</small></>}</td> : hasTax && <td className="numeric">{Number(item.tax_rate || 0).toLocaleString('en-IN')}%</td>}
+                    {regularGst ? <td className="numeric">GST {Number(item.tax_rate || 0).toLocaleString('en-IN')}%{interState ? <small>IGST {rates.igst}% · {money(split.igst)}</small> : <><small>CGST {rates.cgst}% · {money(split.cgst)}</small><small>SGST {rates.sgst}% · {money(split.sgst)}</small></>}</td> : hasTax && <td className="numeric">{Number(item.tax_rate || 0).toLocaleString('en-IN')}%</td>}
                     <td className="numeric"><strong>{money(regularGst ? item.total : lineAmount)}</strong></td>
                   </tr>
                 );
@@ -197,6 +212,7 @@ export default function RetailSaleInvoice() {
             <div><dt>Subtotal</dt><dd>{money(sale.subtotal)}</dd></div>
             {hasDiscount && <div><dt>Discount</dt><dd>− {money(sale.discount_amount)}</dd></div>}
             {regularGst ? interState ? <div><dt>IGST</dt><dd>{money(gstTotals.igst)}</dd></div> : <><div><dt>CGST</dt><dd>{money(gstTotals.cgst)}</dd></div><div><dt>SGST</dt><dd>{money(gstTotals.sgst)}</dd></div></> : hasTax && <div><dt>{company.tax_system || 'Tax'}</dt><dd>{money(sale.tax_amount)}</dd></div>}
+            {regularGst && <div><dt>Total GST</dt><dd>{money(sale.tax_amount)}</dd></div>}
             <div className="invoice-grand-total"><dt>Total</dt><dd>{money(sale.total_amount)}</dd></div>
             {Number(sale.store_credit_used || 0) > 0 && <div><dt>Store credit used</dt><dd>{money(sale.store_credit_used)}</dd></div>}
             {Number(sale.paid_amount || 0) - Number(sale.store_credit_used || 0) > 0 && <div><dt>Amount received</dt><dd>{money(Number(sale.paid_amount || 0) - Number(sale.store_credit_used || 0))}</dd></div>}

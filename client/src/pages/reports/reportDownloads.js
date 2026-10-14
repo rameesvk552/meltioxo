@@ -1,10 +1,11 @@
 // Browser-side report exports. Keep the source rows as values so spreadsheet
 // formulas cannot be introduced by customer, supplier, or account names.
-export const reportData = (filename, rows) => ({
+export const reportData = (filename, rows, headerRowIndex = 1) => ({
   filename: Array.from(String(filename).replace(/\.csv$/i, ''))
     .map(character => /[<>:"/\\|?*]/.test(character) || character.charCodeAt(0) < 32 ? '-' : character)
     .join('').replace(/[. ]+$/g, '') || 'report',
-  rows
+  rows,
+  headerRowIndex
 });
 
 const xml = value => Array.from(String(value ?? '')).filter(character =>
@@ -18,10 +19,10 @@ const col = index => {
   return label;
 };
 const bytes = new TextEncoder();
-const amountColumns = rows => new Set((rows[1] || []).flatMap((heading, index) =>
+const amountColumns = (rows, headerRowIndex = 1) => new Set((rows[headerRowIndex] || []).flatMap((heading, index) =>
   /\b(amount|balance|total|price|cost|profit|sales|income|revenue|expense|expenses|discount|returns|tax|paid|due|inflow|outflow|transfer|debit|credit|outstanding)\b/i.test(String(heading))
   && !/(%|percent|rate|margin|date)/i.test(String(heading)) ? [index] : []));
-const displayRows = (rows, amounts) => rows.map((row, index) => index === 1
+const displayRows = (rows, amounts, headerRowIndex = 1) => rows.map((row, index) => index === headerRowIndex
   ? row.map((value, column) => amounts.has(column) ? `${value} (INR)` : value) : row);
 const formatAmount = value => Number(value).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const u16 = number => [number & 255, (number >>> 8) & 255];
@@ -57,9 +58,9 @@ function zip(files) {
   return new Blob([...local, ...central, end], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
 
-export function makeXlsx({ rows }) {
-  const amounts = amountColumns(rows);
-  rows = displayRows(rows, amounts);
+export function makeXlsx({ rows, headerRowIndex = 1 }) {
+  const amounts = amountColumns(rows, headerRowIndex);
+  rows = displayRows(rows, amounts, headerRowIndex);
   const width = Math.max(1, ...rows.map(row => row.length));
   const columns = Array.from({ length: width }, (_, i) => {
     const max = Math.max(10, ...rows.map(row => String(row[i] ?? '').length));
@@ -67,7 +68,7 @@ export function makeXlsx({ rows }) {
   }).join('');
   const sheetRows = rows.map((row, rowIndex) => `<row r="${rowIndex + 1}">${row.map((value, index) => {
     const address = `${col(index)}${rowIndex + 1}`;
-    const style = rowIndex === 0 ? 1 : rowIndex === 1 ? 2 : amounts.has(index) ? 3 : 0;
+    const style = rowIndex === 0 ? 1 : rowIndex === headerRowIndex ? 2 : amounts.has(index) ? 3 : 0;
     return typeof value === 'number' && Number.isFinite(value)
       ? `<c r="${address}" s="${style}" t="n"><v>${value}</v></c>`
       : `<c r="${address}" s="${style}" t="inlineStr"><is><t xml:space="preserve">${xml(value)}</t></is></c>`;
@@ -78,7 +79,7 @@ export function makeXlsx({ rows }) {
     'xl/workbook.xml': '<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Report" sheetId="1" r:id="rId1"/></sheets></workbook>',
     'xl/_rels/workbook.xml.rels': '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>',
     'xl/styles.xml': '<?xml version="1.0" encoding="UTF-8"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="11"/><name val="Aptos"/></font><font><b/><sz val="15"/><color rgb="FFFFFFFF"/><name val="Aptos"/></font><font><b/><color rgb="FFFFFFFF"/><name val="Aptos"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF304F46"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="0" fontId="2" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs></styleSheet>',
-    'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:${col(width - 1)}${Math.max(1, rows.length)}"/><sheetViews><sheetView workbookViewId="0"><pane ySplit="2" topLeftCell="A3" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>${columns}</cols><sheetData>${sheetRows}</sheetData><autoFilter ref="A2:${col(width - 1)}${Math.max(2, rows.length)}"/></worksheet>`
+    'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:${col(width - 1)}${Math.max(1, rows.length)}"/><sheetViews><sheetView workbookViewId="0"><pane ySplit="${headerRowIndex + 1}" topLeftCell="A${headerRowIndex + 2}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>${columns}</cols><sheetData>${sheetRows}</sheetData><autoFilter ref="A${headerRowIndex + 1}:${col(width - 1)}${Math.max(headerRowIndex + 1, rows.length)}"/></worksheet>`
   };
   files['xl/styles.xml'] = files['xl/styles.xml']
     .replace('<fonts count="3">', '<numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0.00"/></numFmts><fonts count="3">')
@@ -94,14 +95,15 @@ const pdfText = value => String(value ?? '').normalize('NFKD').replace(/[^\x20-\
 });
 const pdfEscape = value => pdfText(value).replace(/[\\()]/g, '\\$&');
 const pdfLine = (x, y, value, size = 8, bold = false) => `BT /F${bold ? 2 : 1} ${size} Tf ${x.toFixed(1)} ${y.toFixed(1)} Td (${pdfEscape(value)}) Tj ET\n`;
-export function makePdf({ rows }) {
-  const amounts = amountColumns(rows);
-  rows = displayRows(rows, amounts);
+export function makePdf({ rows, headerRowIndex = 1 }) {
+  const amounts = amountColumns(rows, headerRowIndex);
+  rows = displayRows(rows, amounts, headerRowIndex);
   const width = 1190, height = 842, margin = 34, usable = width - margin * 2;
   const title = pdfText(rows[0]?.[0] || 'Report');
   const subtitle = pdfText((rows[0] || []).slice(1).filter(Boolean).join('  |  '));
-  const headers = rows[1]?.length > 2 ? rows[1] : null;
-  const detail = headers ? rows.slice(2) : rows.slice(1);
+  const headers = rows[headerRowIndex]?.length > 2 ? rows[headerRowIndex] : null;
+  const metadata = headers ? rows.slice(1, headerRowIndex) : [];
+  const detail = headers ? rows.slice(headerRowIndex + 1) : rows.slice(1);
   const count = Math.max(1, ...rows.map(row => row.length));
   const columnWidth = usable / count;
   const fontSize = count > 10 ? 6.5 : count > 6 ? 7.5 : 9;
@@ -122,6 +124,7 @@ export function makePdf({ rows }) {
   const begin = () => {
     commands = `0.18 0.31 0.27 rg 0 ${height - 46} ${width} 46 re f\n1 1 1 rg\n${pdfLine(margin, height - 30, title, 16, true)}${pdfLine(width - margin - Math.min(480, subtitle.length * 5), height - 28, subtitle.slice(0, 95), 9)}0 0 0 rg\n`;
     y = height - 63;
+    metadata.forEach(row => { commands += pdfLine(margin, y - 7, row.filter(Boolean).join('  |  ').slice(0, 180), 9); y -= 19; });
     if (headers) draw(headers, true);
   };
   const draw = (row, heading = false, stripe = 0) => {

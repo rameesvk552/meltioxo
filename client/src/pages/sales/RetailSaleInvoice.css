@@ -152,6 +152,7 @@
 .invoice-number-row {
   display: flex;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 24px;
   padding: 28px 0 18px;
   color: #55525d;
@@ -339,4 +340,7 @@
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
   }
+
+  .invoice-table--gst { font-size: 9px; }
+  .invoice-table--gst th, .invoice-table--gst td { padding: 7px 4px; }
 }
