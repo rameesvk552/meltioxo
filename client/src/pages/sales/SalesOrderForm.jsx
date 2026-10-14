@@ -15,6 +15,7 @@ const SalesOrderForm = () => {
   const { data: finishedGoods } = useApiData('/finished-goods');
   const { data: customers } = useApiData('/customers');
   const { data: paymentMethods } = useApiData('/accounts/payment-methods');
+  const { data: tenantSettings } = useApiData('/tenant/settings', { initialData: {} });
   const [customerForm] = Form.useForm();
   const [phone, setPhone] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState(null);
@@ -26,7 +27,7 @@ const SalesOrderForm = () => {
     ...item, price: Number(item.selling_price || 0), tax: Number(item.tax_rate || 0)
   }));
   const [items, setItems] = useState([
-    { key: '1', product: null, qty: 1, price: 0, discount: 0, tax: 18, total: 0, fulfillment: 'stock' }
+    { key: '1', product: null, qty: 1, price: 0, discount: 0, tax: 18, total: 0 }
   ]);
 
   const handleProductChange = (val, key) => {
@@ -54,7 +55,7 @@ const SalesOrderForm = () => {
   };
 
   const addItem = () => {
-    setItems([...items, { key: Date.now().toString(), product: null, qty: 1, price: 0, discount: 0, tax: 18, total: 0, fulfillment: 'stock' }]);
+    setItems([...items, { key: Date.now().toString(), product: null, qty: 1, price: 0, discount: 0, tax: 18, total: 0 }]);
   };
 
   const removeItem = (key) => {
@@ -110,7 +111,6 @@ const SalesOrderForm = () => {
       allow_negative_materials: allowNegativeMaterials,
       items: saleItems.map(item => ({
         finished_good_id: item.product,
-        fulfillment_mode: item.fulfillment,
         quantity: item.qty,
         unit_price: item.price,
         // The API stores a line-level percentage. A fixed order discount is
@@ -252,23 +252,12 @@ const SalesOrderForm = () => {
                 <Select style={{ width: '100%', marginBottom: 10 }} showSearch optionFilterProp="children" placeholder="Select product" value={item.product} onChange={(value) => handleProductChange(value, item.key)}>
                   {products.map(product => <Option key={product.id} value={product.id}>{product.product?.name || product.name} · {product.size_label || product.name} ({product.sku})</Option>)}
                 </Select>
-                <Text type="secondary" style={{ display: 'block', marginBottom: 6 }}>How should this item be fulfilled?</Text>
-                <Radio.Group
-                  value={item.fulfillment}
-                  onChange={event => handleItemChange(event.target.value, 'fulfillment', item.key)}
-                  optionType="button"
-                  buttonStyle="solid"
-                  style={{ marginBottom: 10 }}
-                >
-                  <Radio.Button value="stock">Sell from Stock</Radio.Button>
-                  <Radio.Button value="make_now">Make Now</Radio.Button>
-                </Radio.Group>
                 {item.product && (() => {
                   const selected = products.find(product => product.id === item.product);
                   if (!selected) return null;
-                  if (item.fulfillment === 'stock') return <div style={{ marginBottom: 10 }}><Tag color={Number(selected.current_stock) >= item.qty ? 'success' : 'error'}>{Number(selected.current_stock || 0)} in finished stock</Tag></div>;
+                  if (selected.source_type === 'ready_made') return <div style={{ marginBottom: 10 }}><Tag color={Number(selected.current_stock) >= item.qty ? 'success' : 'error'}>Ready-made · {Number(selected.current_stock || 0)} in stock</Tag></div>;
                   const packages = (selected.variantPackagings || []).map(row => `${Number(row.quantity) * item.qty} ${row.packagingMaterial?.name || 'packaging'}`).join(' + ');
-                  return <div style={{ marginBottom: 10, padding: '8px 10px', borderRadius: 8, background: '#fff7e6' }}><Text>Uses {Number(selected.fill_quantity_ml || 0) * item.qty} ml formula{packages ? ` + ${packages}` : ''}</Text></div>;
+                  return <div style={{ marginBottom: 10, padding: '8px 10px', borderRadius: 8, background: '#fff7e6' }}><Text>Make live automatically · {Number(selected.fill_quantity_ml || 0) * item.qty} ml {tenantSettings.show_formula_in_sales ? 'formula' : 'required'}{packages ? ` + ${packages}` : ''}</Text></div>;
                 })()}
                 <Row gutter={10}>
                   <Col span={12}><Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>Quantity</Text><InputNumber min={1} value={item.qty} onChange={(value) => handleItemChange(value, 'qty', item.key)} style={{ width: '100%' }} /></Col>
@@ -301,10 +290,10 @@ const SalesOrderForm = () => {
                 <Text style={{ color: 'var(--color-text-secondary)' }}>Discount:</Text>
                 <Text style={{ color: '#ff4d4f' }}>- ₹{totalDiscount.toLocaleString('en-IN')}</Text>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+              {totalTax > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                 <Text style={{ color: 'var(--color-text-secondary)' }}>Tax:</Text>
                 <Text >+ ₹{totalTax.toLocaleString('en-IN')}</Text>
-              </div>
+              </div>}
               <Divider style={{ margin: '12px 0', borderColor: '#30363d' }} />
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <Title level={4} style={{ color: 'var(--color-gold)', margin: 0 }}>Grand Total:</Title>

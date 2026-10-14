@@ -2,6 +2,7 @@ module.exports = (sequelize, DataTypes) => {
   const ProductionOrder = sequelize.define('productionOrder', {
     id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
     tenant_id: { type: DataTypes.UUID },
+    branch_id: { type: DataTypes.UUID, allowNull: true },
     order_number: { type: DataTypes.STRING },
     formula_id: { type: DataTypes.UUID },
     finished_good_id: { type: DataTypes.UUID, allowNull: true },
@@ -15,11 +16,16 @@ module.exports = (sequelize, DataTypes) => {
     completion_date: { type: DataTypes.DATEONLY, allowNull: true },
     notes: { type: DataTypes.TEXT, allowNull: true },
     journal_entry_id: { type: DataTypes.UUID, allowNull: true },
+    // A browser-generated key makes a retried Plan Production request safe.
+    // PostgreSQL permits multiple NULL values, so integrations that do not yet
+    // send a key keep their current behaviour.
+    request_key: { type: DataTypes.STRING(100), allowNull: true },
     created_by: { type: DataTypes.UUID }
   }, {
     tableName: 'production_orders',
     underscored: true,
-    timestamps: true
+    timestamps: true,
+    indexes: [{ unique: true, fields: ['tenant_id', 'request_key'] }]
   });
   return ProductionOrder;
 };

@@ -2,7 +2,7 @@ module.exports = (sequelize, DataTypes) => {
   const PurchaseOrderItem = sequelize.define('purchaseOrderItem', {
     id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
     purchase_order_id: { type: DataTypes.UUID },
-    material_type: { type: DataTypes.ENUM('raw','packaging') },
+    material_type: { type: DataTypes.ENUM('raw','packaging','finished') },
     material_id: { type: DataTypes.UUID },
     quantity: { type: DataTypes.DECIMAL(15,4) },
     received_qty: { type: DataTypes.DECIMAL(15,4), defaultValue: 0 },

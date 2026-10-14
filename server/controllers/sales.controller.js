@@ -1,19 +1,61 @@
 const db = require('../models');
 const { customer, salesOrder, salesOrderItem, salesInvoice } = db;
 const { AppError } = require('../middleware/errorHandler');
+const accounting = require('../services/accounting.service');
+const storeCredit = require('../services/storeCredit.service');
+const gst = require('../services/gst.service');
+const { Op } = require('sequelize');
 
 exports.getCustomers = async (req, res, next) => {
-  try { res.status(200).json(await customer.findAll({ where: { tenant_id: req.tenantId } })); } catch (error) { next(error); }
+  try {
+    const customers = await customer.findAll({ where: { tenant_id: req.tenantId } });
+    const ledgers = customers.length ? await db.account.findAll({ where: { tenant_id: req.tenantId, customer_id: customers.map(row => row.id) } }) : [];
+    const ledgerByCustomer = new Map(ledgers.map(row => [row.customer_id, row]));
+    const [creditsIssued, creditsUsed] = customers.length ? await Promise.all([
+      db.salesReturn.findAll({ where: { tenant_id: req.tenantId, store_credit_amount: { [Op.gt]: 0 } }, include: [{ model: db.retailSale, required: true, attributes: ['customer_id'] }], attributes: ['store_credit_amount'] }),
+      db.retailSale.findAll({ where: { tenant_id: req.tenantId, store_credit_used: { [Op.gt]: 0 } }, attributes: ['customer_id', 'store_credit_used'] })
+    ]) : [[], []];
+    const creditByCustomer = new Map();
+    creditsIssued.forEach(row => creditByCustomer.set(row.retailSale.customer_id, (creditByCustomer.get(row.retailSale.customer_id) || 0) + Number(row.store_credit_amount)));
+    creditsUsed.forEach(row => creditByCustomer.set(row.customer_id, (creditByCustomer.get(row.customer_id) || 0) - Number(row.store_credit_used)));
+    res.status(200).json(customers.map(row => ({ ...row.toJSON(), ledger: ledgerByCustomer.get(row.id) || null, outstanding: Number(ledgerByCustomer.get(row.id)?.balance || 0), store_credit_balance: accounting.money(creditByCustomer.get(row.id) || 0) })));
+  } catch (error) { next(error); }
+};
+exports.getCustomerLedger = async (req, res, next) => {
+  try {
+    const ledger = await accounting.getCustomerLedger(req.tenantId, req.params.id);
+    const lines = await db.journalEntryLine.findAll({ where: { account_id: ledger.id }, include: [{ model: db.journalEntry, where: { tenant_id: req.tenantId, status: 'posted' } }], order: [[db.journalEntry, 'entry_date', 'ASC'], ['created_at', 'ASC']] });
+    let balance = 0;
+    const entries = lines.map(line => { balance += Number(line.debit || 0) - Number(line.credit || 0); return { id: line.id, date: line.journalEntry.entry_date, entry_number: line.journalEntry.entry_number, reference_type: line.journalEntry.reference_type, reference_id: line.journalEntry.reference_id, description: line.description || line.journalEntry.narration, debit: Number(line.debit || 0), credit: Number(line.credit || 0), balance }; });
+    res.json({ ledger, entries });
+  } catch (error) { next(error); }
+};
+exports.getCustomerStoreCredit = async (req, res, next) => {
+  try {
+    const balance = await storeCredit.balance(req.tenantId, req.params.id);
+    const entries = req.query.include_history === '1' ? await storeCredit.history(req.tenantId, req.params.id) : undefined;
+    res.json({ customer_id: req.params.id, balance, ...(entries ? { entries } : {}) });
+  }
+  catch (error) { next(error); }
 };
 exports.getCustomerById = async (req, res, next) => {
   try { res.status(200).json(await customer.findOne({ where: { id: req.params.id, tenant_id: req.tenantId } })); } catch (error) { next(error); }
 };
+const customerValues = body => {
+  const values = { ...body };
+  if (values.tax_id !== undefined) {
+    const gstin = String(values.tax_id || '').trim().toUpperCase();
+    if (gstin && !gst.stateCodeFromGstin(gstin)) throw new AppError('Enter a valid 15-character customer GSTIN', 400);
+    values.tax_id = gstin || null;
+  }
+  return values;
+};
 exports.createCustomer = async (req, res, next) => {
-  try { res.status(201).json(await customer.create({ ...req.body, tenant_id: req.tenantId })); } catch (error) { next(error); }
+  try { res.status(201).json(await customer.create({ ...customerValues(req.body), tenant_id: req.tenantId })); } catch (error) { next(error); }
 };
 exports.updateCustomer = async (req, res, next) => {
   try {
-    const [updated] = await customer.update(req.body, {
+    const [updated] = await customer.update(customerValues(req.body), {
       where: { id: req.params.id, tenant_id: req.tenantId }
     });
     if (!updated) throw new AppError('Not found', 404);
@@ -44,7 +86,10 @@ exports.createSalesOrder = async (req, res, next) => {
   const transaction = await db.sequelize.transaction();
   try {
     const { items = [], ...header } = req.body;
+    const tenantSettings = await db.tenant.findByPk(req.tenantId, { transaction });
+    const composition = tenantSettings?.tax_system === 'GST' && tenantSettings?.gst_scheme === 'COMPOSITION';
     const calculated = items.map(row => {
+      if (composition && Number(row.tax_rate || 0) !== 0) throw new AppError('Composition sales cannot charge GST. Set every order tax rate to 0%.', 400);
       const base = Number(row.quantity) * Number(row.unit_price);
       const discounted = base * (1 - Number(row.discount_pct || 0) / 100);
       const tax = discounted * Number(row.tax_rate || 0) / 100;

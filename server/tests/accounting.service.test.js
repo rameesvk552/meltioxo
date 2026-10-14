@@ -24,3 +24,27 @@ test('rejects a line containing both debit and credit', () => {
     { account_id: 'sales', credit_amount: 100 }
   ]), /either a debit or a credit/);
 });
+
+test('normalizes split payments that equal the document total', () => {
+  assert.deepEqual(accounting.normalizePaymentSplits({ payments: [
+    { payment_method_id: 'cash', amount: 60 },
+    { payment_method_id: 'upi', amount: 40.005 }
+  ] }, 100.01), [
+    { payment_method_id: 'cash', amount: 60 },
+    { payment_method_id: 'upi', amount: 40.01 }
+  ]);
+});
+
+test('rejects split payments that do not equal the document total', () => {
+  assert.throws(() => accounting.normalizePaymentSplits({ payments: [
+    { payment_method_id: 'cash', amount: 50 },
+    { payment_method_id: 'upi', amount: 40 }
+  ] }, 100), /must equal document total/);
+});
+
+test('rejects duplicate methods in one split payment', () => {
+  assert.throws(() => accounting.normalizePaymentSplits({ payments: [
+    { payment_method_id: 'cash', amount: 50 },
+    { payment_method_id: 'cash', amount: 50 }
+  ] }, 100), /only once/);
+});

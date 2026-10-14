@@ -15,6 +15,9 @@ build/
 *.log
 .DS_Store
 Thumbs.db
+.local-accounting/
+client/accounting-preview.html
+client/src/accounting-preview.jsx
 
 # Backups and packaged release artifacts
 ec2-cleanup-backup-*/

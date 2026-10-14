@@ -1,17 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Card, Row, Col, Tag, Button, Input, Select, Space, Typography, Progress, Modal, Form, message } from 'antd';
-import { PlusOutlined, SearchOutlined, EyeOutlined, EditOutlined, ToolOutlined } from '@ant-design/icons';
+import { Table, Card, Row, Col, Tag, Button, Input, InputNumber, Select, Space, Typography, Progress, Modal, Form, Radio, message } from 'antd';
+import { PlusOutlined, SearchOutlined, EyeOutlined, EditOutlined, ToolOutlined, DeleteOutlined } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
 import useApiData from '../../hooks/useApiData';
 import client from '../../api/client';
 import MobileDataList from '../../components/common/MobileDataList';
 import PageDrawerControls from '../../components/common/PageDrawerControls';
+import SingleTagSelect from '../../components/common/SingleTagSelect';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
 
 export default function RawMaterials() {
   const { data, loading, reload } = useApiData('/raw-materials');
+  const { data: tenantSettings } = useApiData('/tenant/settings', { initialData: {} });
+  const mixingEnabled = Boolean(tenantSettings.raw_material_mixing_enabled);
+  const { data: mixes, reload: reloadMixes } = useApiData('/raw-materials/mixes', { enabled: mixingEnabled });
   const [materials, setMaterials] = useState([]);
 
   useEffect(() => {
@@ -33,6 +37,39 @@ export default function RawMaterials() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState(null);
   const [form] = Form.useForm();
+  const [mixForm] = Form.useForm();
+  const [mixOpen, setMixOpen] = useState(false);
+  const [mixing, setMixing] = useState(false);
+  const [mixOutputMode, setMixOutputMode] = useState('existing');
+  const mixRequestKey = React.useRef(null);
+
+  const closeMix = () => {
+    setMixOpen(false);
+    mixForm.resetFields();
+    mixRequestKey.current = null;
+    setMixOutputMode('existing');
+  };
+
+  const submitMix = async values => {
+    try {
+      setMixing(true);
+      mixRequestKey.current ||= crypto.randomUUID();
+      const payload = {
+        ...(mixOutputMode === 'existing'
+          ? { output_material_id: values.output_material_id }
+          : { new_material: { ...values.new_material, category: Array.isArray(values.new_material?.category) ? values.new_material.category[0] : values.new_material?.category } }),
+        output_quantity: Number(values.output_quantity),
+        ingredients: values.ingredients.map(row => ({ material_id: row.material_id, quantity: Number(row.quantity) })),
+        notes: values.notes || undefined
+      };
+      await client.post('/raw-materials/mixes', payload, { headers: { 'Idempotency-Key': mixRequestKey.current } });
+      await Promise.all([reload(), reloadMixes()]);
+      closeMix();
+      message.success('Raw materials mixed and stock updated.');
+    } catch (error) {
+      message.error(error.response?.data?.message || 'Could not complete the mix.');
+    } finally { setMixing(false); }
+  };
 
   const handleSearch = (e) => {
     setSearchText(e.target.value);
@@ -70,6 +107,15 @@ export default function RawMaterials() {
     form.setFieldsValue({ sku: material.sku, name: material.name, category: material.category, unit: material.unit, stock: material.stock, reorder: material.reorder, avgCost: material.avgCost });
     setIsModalOpen(true);
   };
+  const deleteMaterial = material => Modal.confirm({
+    title: `Delete ${material.name}?`,
+    content: 'A raw material must be removed from every formula before it can be deleted.',
+    okText: 'Delete material', okButtonProps: { danger: true },
+    onOk: async () => {
+      try { await client.delete(`/raw-materials/${material.id}`); message.success('Raw material deleted successfully.'); await reload(); }
+      catch (error) { message.error(error.response?.data?.message || 'Could not delete raw material.'); }
+    }
+  });
 
   const filteredMaterials = materials.filter(m => {
     const matchesSearch = m.name.toLowerCase().includes(searchText.toLowerCase()) || 
@@ -122,6 +168,7 @@ export default function RawMaterials() {
           <Button type="text" icon={<EyeOutlined />} style={{ color: '#4299e1' }} />
         </Link>
         <Button type="text" icon={<EditOutlined />} style={{ color: 'var(--color-gold)' }} onClick={() => openEditMaterial(r)} />
+        <Button type="text" danger icon={<DeleteOutlined />} aria-label={`Delete ${r.name}`} onClick={() => deleteMaterial(r)} />
         <Button type="text" icon={<ToolOutlined />} style={{ color: 'var(--color-text-secondary)' }} />
       </Space>
     )}
@@ -145,13 +192,14 @@ export default function RawMaterials() {
   );
 
   return (
-    <div style={{ padding: '24px' }}>
+    <div className="standard-page">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
-          <Title className="mobile-page-title" level={2} style={{ color: 'var(--color-gold)', fontFamily: 'Playfair Display', margin: 0 }}>Raw Materials</Title>
+          <Title className="mobile-page-title" level={2} style={{ margin: 0 }}>Raw Materials</Title>
         </div>
         <Space>
           <PageDrawerControls title="Raw materials" summary={summary} filters={filters} activeFilterCount={[searchText, categoryFilter !== 'All Categories', stockFilter !== 'All Stock'].filter(Boolean).length} onReset={() => { setSearchText(''); setCategoryFilter('All Categories'); setStockFilter('All Stock'); }} />
+          {mixingEnabled && <Button onClick={() => setMixOpen(true)}>Mix Materials</Button>}
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setIsModalOpen(true)}>Add Material</Button>
         </Space>
       </div>
@@ -212,6 +260,7 @@ export default function RawMaterials() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 12 }}>
                 <Link to={`/app/raw-materials/${material.id}`}><Button block icon={<EyeOutlined />}>View</Button></Link>
                 <Button type="primary" icon={<EditOutlined />} onClick={() => openEditMaterial(material)}>Edit</Button>
+                <Button danger icon={<DeleteOutlined />} onClick={() => deleteMaterial(material)}>Delete</Button>
               </div>
             </>
           )} />
@@ -227,6 +276,67 @@ export default function RawMaterials() {
           style={{ background: 'transparent' }}
         /></div>
       </Card>
+
+      {mixingEnabled && <Card title="Recent mixes" style={{ marginTop: 24 }}>
+        <Table
+          rowKey="id"
+          dataSource={mixes}
+          pagination={{ pageSize: 10 }}
+          scroll={{ x: 700 }}
+          columns={[
+            { title: 'Date', dataIndex: 'createdAt', render: value => value ? new Date(value).toLocaleString() : '—' },
+            { title: 'Output', dataIndex: 'output_material_id', render: id => materials.find(item => item.id === id)?.name || id },
+            { title: 'Quantity', dataIndex: 'output_quantity', render: (value, row) => `${Number(value)} ${materials.find(item => item.id === row.output_material_id)?.unit || ''}` },
+            { title: 'Inputs deducted', dataIndex: 'ingredients', render: rows => (rows || []).map(row => `${row.name}: ${Number(row.quantity)} ${row.unit}`).join(', ') },
+            { title: 'Input cost', dataIndex: 'total_cost', render: value => `₹${Number(value || 0).toLocaleString()}` },
+            { title: 'Batch', dataIndex: 'batch_number' }
+          ]}
+        />
+      </Card>}
+
+      <Modal title="Mix raw materials" open={mixOpen} onCancel={() => { if (!mixing) closeMix(); }} maskClosable={!mixing} closable={!mixing} footer={null} width={760} destroyOnHidden>
+        <Form form={mixForm} layout="vertical" onFinish={submitMix} initialValues={{ ingredients: [{}, {}] }} onValuesChange={() => { mixRequestKey.current = null; }}>
+          <Text type="secondary">Enter the quantities actually used. Completing the mix deducts the inputs and receives the output in one transaction.</Text>
+          <Form.Item label="Output material" style={{ marginTop: 16 }}>
+            <Radio.Group value={mixOutputMode} onChange={event => { setMixOutputMode(event.target.value); mixRequestKey.current = null; }}>
+              <Radio value="existing">Existing material</Radio>
+              <Radio value="new">Create new material</Radio>
+            </Radio.Group>
+          </Form.Item>
+          {mixOutputMode === 'existing'
+            ? <Form.Item name="output_material_id" label="Receive into" rules={[{ required: true, message: 'Select the output material' }]}>
+                <Select showSearch optionFilterProp="label" placeholder="Select output raw material" options={materials.map(item => ({ value: item.id, label: `${item.name} (${item.unit})` }))} />
+              </Form.Item>
+            : <Row gutter={12}>
+                <Col xs={24} sm={10}><Form.Item name={['new_material', 'name']} label="New material name" rules={[{ required: true }]}><Input /></Form.Item></Col>
+                <Col xs={12} sm={8}><Form.Item name={['new_material', 'category']} label="Category" rules={[{ required: true }]}><SingleTagSelect showSearch optionFilterProp="label" options={categories.map(category => ({ value: category, label: category }))} /></Form.Item></Col>
+                <Col xs={12} sm={6}><Form.Item name={['new_material', 'unit']} label="Unit" rules={[{ required: true }]}><Select options={['kg', 'g', 'L', 'ml', 'pcs'].map(value => ({ value, label: value }))} /></Form.Item></Col>
+              </Row>}
+          <Form.Item name="output_quantity" label="Quantity produced" rules={[{ required: true, message: 'Enter the produced quantity' }]}>
+            <InputNumber min={0.0001} precision={4} style={{ width: '100%' }} />
+          </Form.Item>
+          <Text strong>Input materials</Text>
+          <Form.List name="ingredients">
+            {(fields, { add, remove }) => <>
+              {fields.map(field => <Row gutter={12} key={field.key} align="middle">
+                <Col xs={24} sm={13}><Form.Item name={[field.name, 'material_id']} label="Raw material" rules={[{ required: true, message: 'Select an input' }]}>
+                  <Select showSearch optionFilterProp="label" placeholder="Select input" options={materials.map(item => ({ value: item.id, label: `${item.name} — ${Math.max(0, item.stock - Number(item.reserved_stock || 0))} ${item.unit} available` }))} />
+                </Form.Item></Col>
+                <Col xs={18} sm={8}><Form.Item name={[field.name, 'quantity']} label="Quantity used" rules={[{ required: true, message: 'Enter quantity' }]}>
+                  <InputNumber min={0.0001} precision={4} style={{ width: '100%' }} />
+                </Form.Item></Col>
+                <Col xs={6} sm={3}><Button danger onClick={() => remove(field.name)} disabled={fields.length === 1} aria-label="Remove input">Remove</Button></Col>
+              </Row>)}
+              <Button type="dashed" onClick={() => add()} disabled={fields.length >= 100} icon={<PlusOutlined />}>Add input</Button>
+            </>}
+          </Form.List>
+          <Form.Item name="notes" label="Notes" style={{ marginTop: 16 }}><Input.TextArea rows={2} maxLength={2000} /></Form.Item>
+          <Space style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <Button onClick={closeMix} disabled={mixing}>Cancel</Button>
+            <Button type="primary" htmlType="submit" loading={mixing}>Complete Mix</Button>
+          </Space>
+        </Form>
+      </Modal>
 
       <Modal
         title={editingMaterial ? 'Edit Raw Material' : 'Add New Raw Material'}
@@ -247,13 +357,11 @@ export default function RawMaterials() {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item name="category" label="Category" rules={[{ required: true, message: 'Please enter a category' }]}>
-                <Select
+                <SingleTagSelect
                   showSearch
                   optionFilterProp="label"
                   placeholder="Select or type a new category"
                   options={categories.map(category => ({ value: category, label: category }))}
-                  mode="tags"
-                  maxCount={1}
                 />
               </Form.Item>
             </Col>

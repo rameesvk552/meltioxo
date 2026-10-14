@@ -1,5 +1,13 @@
-const { packagingMaterial, stockBatch, stockMovement } = require('../models');
+const { packagingMaterial, stockBatch, stockMovement, formulaPackaging, variantPackaging, packingKitItem, retailSaleItem } = require('../models');
 const { AppError } = require('../middleware/errorHandler');
+const gst = require('../services/gst.service');
+const gstFields = body => {
+  try {
+    const taxRate = Number(body.tax_rate);
+    if (body.tax_rate !== undefined && (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100)) throw new Error('Sale tax rate must be between 0 and 100');
+    return { ...(body.hsn_code !== undefined ? { hsn_code: gst.validateHsn(body.hsn_code) } : {}), ...(body.tax_rate !== undefined ? { tax_rate: taxRate } : {}) };
+  } catch (error) { throw new AppError(error.message, 400); }
+};
 
 // The database enum uses singular machine-friendly values; older clients send
 // display labels such as "Boxes". Normalize them before writing to PostgreSQL.
@@ -34,6 +42,7 @@ exports.create = async (req, res, next) => {
     const sequence = await packagingMaterial.count({ where: { tenant_id: req.tenantId } }) + 1;
     res.status(201).json(await packagingMaterial.create({
       ...req.body,
+      ...gstFields(req.body),
       type: normalizeType(req.body.type),
       sku: req.body.sku || `PM-${String(sequence).padStart(4, '0')}`,
       tenant_id: req.tenantId
@@ -44,6 +53,7 @@ exports.create = async (req, res, next) => {
 exports.update = async (req, res, next) => {
   try {
     const values = { ...req.body };
+    Object.assign(values, gstFields(req.body));
     if (values.type !== undefined) values.type = normalizeType(values.type);
     const [updated] = await packagingMaterial.update(values, {
       where: { id: req.params.id, tenant_id: req.tenantId }
@@ -55,6 +65,20 @@ exports.update = async (req, res, next) => {
 
 exports.delete = async (req, res, next) => {
   try {
+    const [formulaCount, variantCount, kitCount, saleCount] = await Promise.all([
+      formulaPackaging.count({ where: { packaging_material_id: req.params.id } }),
+      variantPackaging.count({ where: { packaging_material_id: req.params.id } }),
+      packingKitItem.count({ where: { packaging_material_id: req.params.id } }),
+      retailSaleItem.count({ where: { packaging_material_id: req.params.id } })
+    ]);
+    if (formulaCount || variantCount || kitCount || saleCount) {
+      const uses = [];
+      if (variantCount) uses.push(`${variantCount} variant(s)`);
+      if (formulaCount) uses.push(`${formulaCount} formula(s)`);
+      if (kitCount) uses.push(`${kitCount} packing kit(s)`);
+      if (saleCount) uses.push(`${saleCount} historical sale(s)`);
+      throw new AppError(`Remove this packaging material from ${uses.join(' and ')} before deleting it.`, 409);
+    }
     const deleted = await packagingMaterial.destroy({
       where: { id: req.params.id, tenant_id: req.tenantId }
     });

@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useContext } from 'react';
 import { Menu } from 'antd';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { 
   DashboardOutlined, 
   AppstoreOutlined, 
@@ -10,19 +10,27 @@ import {
   ToolOutlined, 
   TeamOutlined, 
   DollarOutlined, 
+  CreditCardOutlined,
   BankOutlined, 
   LineChartOutlined, 
-  SettingOutlined 
+  SettingOutlined,
+  FieldTimeOutlined,
+  HistoryOutlined
 } from '@ant-design/icons';
+import { AuthContext } from '../../context/AuthContext';
+import { getViewPermissionsForPath, hasAnyViewPermission } from '../../config/permissions';
 
 export default function Sidebar({ onNavigate }) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { user } = useContext(AuthContext);
 
   const items = [
     { key: '/app/dashboard', icon: <DashboardOutlined />, label: 'Dashboard' },
     { key: 'inventory', icon: <AppstoreOutlined />, label: 'Inventory', children: [
       { key: '/app/raw-materials', label: 'Raw Materials' },
       { key: '/app/packaging', label: 'Packaging' },
+      { key: '/app/packing-kits', label: 'Packing Kits' },
       { key: '/app/finished-goods', label: 'Products & Variants' },
     ]},
     { key: '/app/suppliers', icon: <ShopOutlined />, label: 'Suppliers' },
@@ -30,11 +38,13 @@ export default function Sidebar({ onNavigate }) {
     { key: '/app/formulas', icon: <ExperimentOutlined />, label: 'Formulas' },
     { key: '/app/production', icon: <ToolOutlined />, label: 'Production' },
     { key: '/app/customers', icon: <TeamOutlined />, label: 'Customers' },
+    { key: '/app/retail-sales/new', icon: <CreditCardOutlined />, label: 'POS' },
+    { key: '/app/day-register', icon: <FieldTimeOutlined />, label: 'Day Register' },
     { key: 'sales', icon: <DollarOutlined />, label: 'Sales', children: [
       { key: '/app/retail-sales', label: 'Retail Sales' },
     ]},
     { key: 'finance', icon: <BankOutlined />, label: 'Finance', children: [
-      { key: '/app/accounts', label: 'Chart of Accounts' },
+      { key: '/app/accounts', label: 'Accounting workspace' },
       { key: '/app/journal-entries', label: 'Journal Entries' },
       { key: '/app/payments', label: 'Payments' },
       { key: '/app/expenses', label: 'Expenses' },
@@ -42,20 +52,42 @@ export default function Sidebar({ onNavigate }) {
       { key: '/app/receivables', label: 'Receivables' },
     ]},
     { key: 'reports', icon: <LineChartOutlined />, label: 'Reports', children: [
-      { key: '/app/reports/profit-loss', label: 'Owner Profit & Loss' },
+      { key: '/app/reports/profit-loss', label: 'Profit & Loss' },
+      { key: '/app/reports/sales-profit', label: 'Daily Sales & Profit' },
       { key: '/app/reports/balance-sheet', label: 'Balance Sheet' },
+      { key: '/app/reports/management', label: 'Management / MIS' },
+      { key: '/app/reports/cash-bank', label: 'Cash & Bank Movements' },
       { key: '/app/reports/trial-balance', label: 'Trial Balance' },
       { key: '/app/reports/stock', label: 'Stock Report' },
       { key: '/app/reports/production', label: 'Production Owner Report' },
+      { key: '/app/reports/audit-log', icon: <HistoryOutlined />, label: 'Audit Log' },
+      { key: '/app/reports/whatsapp-invoices', label: 'WhatsApp Invoice Report' },
     ]},
     { key: '/app/settings', icon: <SettingOutlined />, label: 'Settings' },
   ];
+
+  const permittedItems = items.map(item => {
+    if (item.children) {
+      const children = item.children.filter(child =>
+        hasAnyViewPermission(user, getViewPermissionsForPath(child.key))
+      );
+      return children.length ? { ...item, children } : null;
+    }
+    return hasAnyViewPermission(user, getViewPermissionsForPath(item.key)) ? item : null;
+  }).filter(Boolean);
+  const routes = permittedItems.flatMap(item => item.children || [item]);
+  const selectedKey = routes
+    .filter(item => location.pathname === item.key || location.pathname.startsWith(`${item.key}/`))
+    .sort((a, b) => b.key.length - a.key.length)[0]?.key;
+  const selectedGroup = permittedItems.find(item => item.children?.some(child => child.key === selectedKey))?.key;
 
   return (
     <Menu 
       mode="inline"
       theme="light"
-      items={items}
+      items={permittedItems}
+      selectedKeys={selectedKey ? [selectedKey] : []}
+      defaultOpenKeys={selectedGroup ? [selectedGroup] : []}
       onClick={({ key }) => {
         // Parent menu keys only expand/collapse their submenu; route selections
         // should also dismiss the mobile drawer after navigation.

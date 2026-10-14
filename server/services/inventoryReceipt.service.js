@@ -17,13 +17,23 @@ exports.receiveMaterial = async ({
   createdBy,
   transaction
 }) => {
-  const Model = materialType === 'raw' ? db.rawMaterial : db.packagingMaterial;
+  const Model = materialType === 'raw'
+    ? db.rawMaterial
+    : materialType === 'packaging'
+      ? db.packagingMaterial
+      : materialType === 'finished'
+        ? db.finishedGood
+        : null;
+  if (!Model) throw new AppError('Invalid purchase item type', 400);
   const material = await Model.findOne({ where: { id: materialId, tenant_id: tenantId }, transaction, lock: transaction.LOCK.UPDATE });
   if (!material) throw new AppError('Purchase material not found', 400);
+  if (materialType === 'finished' && material.source_type !== 'ready_made') {
+    throw new AppError('Only ready-made product variants can be purchased', 400);
+  }
 
   let remainingReceipt = number(quantity);
   let costVariance = 0;
-  const deficits = await db.inventoryDeficit.findAll({
+  const deficits = materialType === 'finished' ? [] : await db.inventoryDeficit.findAll({
     where: { tenant_id: tenantId, material_type: materialType, material_id: materialId, status: 'open' },
     order: [['created_at', 'ASC']],
     transaction,
@@ -40,12 +50,16 @@ exports.receiveMaterial = async ({
   }
 
   const previousQty = number(material.current_stock);
-  const previousCost = number(material.avg_cost);
+  const previousCost = number(materialType === 'finished' ? material.cost_price : material.avg_cost);
   const nextQty = previousQty + number(quantity);
   const nextCost = nextQty > 0
     ? (previousQty > 0 ? ((previousQty * previousCost) + (number(quantity) * number(unitCost))) / nextQty : number(unitCost))
     : (number(unitCost) || previousCost);
-  await material.update({ current_stock: nextQty, avg_cost: nextCost, ...(materialType === 'raw' ? { last_cost: unitCost } : {}) }, { transaction });
+  await material.update({
+    current_stock: nextQty,
+    ...(materialType === 'finished' ? { cost_price: nextCost } : { avg_cost: nextCost }),
+    ...(materialType === 'raw' ? { last_cost: unitCost } : {})
+  }, { transaction });
 
   const batch = await db.stockBatch.create({
     tenant_id: tenantId,

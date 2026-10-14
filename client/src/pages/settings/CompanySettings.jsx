@@ -1,47 +1,305 @@
 ﻿import React from 'react';
-import { Card, Form, Input, Button, Row, Col, Typography, Tabs, Select, Upload, Table, Space, Tag } from 'antd';
-import { SaveOutlined, UploadOutlined, PlusOutlined, DeleteOutlined, UserOutlined } from '@ant-design/icons';
+import { Card, Form, Input, InputNumber, Button, Row, Col, Typography, Tabs, Select, Upload, Table, Space, Tag, Modal, Switch, Checkbox, Alert, message } from 'antd';
+import { SaveOutlined, UploadOutlined, PlusOutlined, DeleteOutlined, UserOutlined, EditOutlined, CreditCardOutlined } from '@ant-design/icons';
 import client from '../../api/client';
 import useApiData from '../../hooks/useApiData';
+import { AuthContext } from '../../context/AuthContext';
+import {
+  ALL_DASHBOARD_WIDGET_KEYS,
+  ALL_VIEW_PERMISSION_KEYS,
+  DASHBOARD_WIDGETS,
+  PRIVILEGED_ROLES,
+  VIEW_PERMISSION_GROUPS,
+} from '../../config/permissions';
+import WhatsAppIntegration from './WhatsAppIntegration';
+import WhatsAppInvoiceSettings from './WhatsAppInvoiceSettings';
 
 const { Title } = Typography;
 const { Option } = Select;
 const { TextArea } = Input;
+const paymentTypes = ['CASH', 'BANK', 'UPI', 'CARD', 'WALLET', 'GATEWAY', 'OTHER'];
+const userRoles = ['admin', 'manager', 'accountant', 'production_mgr', 'warehouse', 'sales', 'viewer'];
+const acceptedLogoTypes = ['image/png', 'image/jpeg', 'image/webp'];
+const maxLogoSize = 5 * 1024 * 1024;
+const isPdfCompatibleLogo = source => {
+  const match = /^data:image\/(png|jpe?g);base64,/i.exec(String(source || ''));
+  if (!match) return false;
+  if (!/^png$/i.test(match[1])) return true;
+  try {
+    const bytes = Uint8Array.from(atob(source.slice(source.indexOf(',') + 1)), char => char.charCodeAt(0));
+    return bytes.length > 29 && bytes[0] === 137 && bytes[1] === 80 && bytes[2] === 78 && bytes[3] === 71
+      && bytes[24] === 8 && [2, 6].includes(bytes[25]) && bytes[28] === 0;
+  } catch { return false; }
+};
+const normalizeLogoForPdf = source => new Promise((resolve, reject) => {
+  const image = new Image();
+  image.onload = () => {
+    const scale = Math.min(1, 640 / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext('2d');
+    if (!context) return reject(new Error('Could not prepare the logo.'));
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    resolve(canvas.toDataURL('image/png'));
+  };
+  image.onerror = () => reject(new Error('Could not read the logo image.'));
+  image.src = source;
+});
 
 const CompanySettings = () => {
+  const { user: currentUser } = React.useContext(AuthContext);
+  const canManageUsers = PRIVILEGED_ROLES.includes(currentUser?.role);
   const [formCompany] = Form.useForm();
   const [formPrefs] = Form.useForm();
-  const { data: tenant } = useApiData('/tenant/settings', { initialData: {} });
-  const { data: userData, loading } = useApiData('/users');
+  const selectedTaxSystem = Form.useWatch('taxSystem', formPrefs);
+  const selectedGstScheme = Form.useWatch('gstScheme', formPrefs);
+  const [paymentForm] = Form.useForm();
+  const [paymentModalOpen, setPaymentModalOpen] = React.useState(false);
+  const [editingPayment, setEditingPayment] = React.useState(null);
+  const [savingPayment, setSavingPayment] = React.useState(false);
+  const [savingCompany, setSavingCompany] = React.useState(false);
+  const [logoNeedsSave, setLogoNeedsSave] = React.useState(false);
+  const [savingPrefs, setSavingPrefs] = React.useState(false);
+  const [logoUrl, setLogoUrl] = React.useState(null);
+  const [permissionModalOpen, setPermissionModalOpen] = React.useState(false);
+  const [userForm] = Form.useForm();
+  const creatingRole = Form.useWatch('role', userForm);
+  const [editingUser, setEditingUser] = React.useState(null);
+  const [selectedViews, setSelectedViews] = React.useState([]);
+  const [selectedWidgets, setSelectedWidgets] = React.useState([]);
+  const [savingPermissions, setSavingPermissions] = React.useState(false);
+  const [branchForm] = Form.useForm();
+  const [savingBranch, setSavingBranch] = React.useState(false);
+  const { data: tenant, reload: reloadTenant } = useApiData('/tenant/settings', { initialData: {} });
+  const { data: compositionSummary, loading: loadingComposition, reload: reloadComposition } = useApiData('/retail-sales/composition-levy', { enabled: canManageUsers && tenant.gst_scheme === 'COMPOSITION', initialData: {} });
+  const { data: userData, loading, reload: reloadUsers } = useApiData('/users', { enabled: canManageUsers });
+  const { data: paymentMethods, loading: loadingPaymentMethods, reload: reloadPaymentMethods } = useApiData('/accounts/payment-methods?active_only=false');
+  const { data: paymentLedgers } = useApiData('/accounts/payment-method-ledgers');
+  const { data: branches, loading: loadingBranches, reload: reloadBranches } = useApiData('/branches', { enabled: canManageUsers });
+  const { data: incentiveReport, loading: loadingIncentives, reload: reloadIncentives } = useApiData('/retail-sales/incentives', { enabled: canManageUsers, initialData: { summary: [], sales: [] } });
   const users = userData.map(item => ({
     ...item,
     role: item.role || '—',
     status: item.is_active === false ? 'Inactive' : 'Active'
   }));
 
+  const createBranch = async values => {
+    try {
+      setSavingBranch(true);
+      await client.post('/branches', values);
+      branchForm.resetFields();
+      await reloadBranches();
+      message.success('Branch added successfully.');
+    } catch (error) { message.error(error.response?.data?.message || 'Could not add branch.'); }
+    finally { setSavingBranch(false); }
+  };
+
+  const deactivateBranch = async id => {
+    try { await client.delete(`/branches/${id}`); await reloadBranches(); message.success('Branch deactivated.'); }
+    catch (error) { message.error(error.response?.data?.message || 'Could not deactivate branch.'); }
+  };
+
   React.useEffect(() => {
-    formCompany.setFieldsValue({ name: tenant.name, email: tenant.email, phone: tenant.phone, taxId: tenant.tax_id });
+    formCompany.setFieldsValue({ name: tenant.name, email: tenant.email, phone: tenant.phone, taxId: tenant.tax_id, address: tenant.address });
+    const savedLogo = tenant.logo_url || null;
+    setLogoUrl(savedLogo);
+    setLogoNeedsSave(false);
+    if (savedLogo?.startsWith('data:image/') && !isPdfCompatibleLogo(savedLogo)) {
+      normalizeLogoForPdf(savedLogo).then(compatibleLogo => {
+        setLogoUrl(compatibleLogo);
+        setLogoNeedsSave(true);
+      }).catch(() => {});
+    }
     formPrefs.setFieldsValue({
       currency: tenant.currency,
       taxSystem: tenant.tax_system,
+      gstScheme: tenant.gst_scheme || 'REGULAR',
+      gstCompositionRate: Number(tenant.gst_composition_rate || 1),
       fyStart: tenant.fy_start_month,
-      dateFormat: tenant.date_format
+      dateFormat: tenant.date_format,
+      measuredPackagingEnabled: Boolean(tenant.measured_packaging_enabled),
+      measuredPackagingRequired: tenant.measured_packaging_required !== false,
+      measuredPackagingAutoSelect: tenant.measured_packaging_auto_select !== false,
+      showFormulaInSales: Boolean(tenant.show_formula_in_sales),
+      packagingMaterialSalesEnabled: Boolean(tenant.packaging_material_sales_enabled),
+      rawMaterialMixingEnabled: Boolean(tenant.raw_material_mixing_enabled),
+      creditSalesEnabled: Boolean(tenant.credit_sales_enabled),
+      incentiveEnabled: Boolean(tenant.incentive_enabled),
+      incentiveSalespersonMode: tenant.incentive_salesperson_mode || 'LOGGED_IN',
+      incentiveRate: Number(tenant.incentive_rate || 0),
+      incentiveBasis: tenant.incentive_basis || 'NET_EX_TAX',
+      incentiveMinSaleAmount: Number(tenant.incentive_min_sale_amount || 0)
     });
   }, [tenant, formCompany, formPrefs]);
 
   const handleSaveCompany = async (values) => {
-    await client.put('/tenant/settings', {
-      name: values.name, email: values.email, phone: values.phone, tax_id: values.taxId
-    });
+    try {
+      setSavingCompany(true);
+      await client.put('/tenant/settings', {
+        name: values.name,
+        email: values.email,
+        phone: values.phone,
+        tax_id: values.taxId,
+        address: values.address,
+        logo_url: logoUrl,
+      });
+      setLogoNeedsSave(false);
+      window.dispatchEvent(new Event('tenant-settings-updated'));
+      message.success('Company information saved.');
+    } catch (error) {
+      message.error(error.response?.data?.message || 'Could not save company information.');
+    } finally {
+      setSavingCompany(false);
+    }
+  };
+
+  const handleLogoSelect = (file) => {
+    if (!acceptedLogoTypes.includes(file.type)) {
+      message.error('Choose a PNG, JPEG, or WebP image.');
+      return Upload.LIST_IGNORE;
+    }
+    if (file.size > maxLogoSize) {
+      message.error('The logo must be 5 MB or smaller.');
+      return Upload.LIST_IGNORE;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      normalizeLogoForPdf(reader.result)
+        .then(logo => { setLogoUrl(logo); setLogoNeedsSave(true); })
+        .catch(() => message.error('Could not prepare that logo. Please try another image.'));
+    };
+    reader.onerror = () => message.error('Could not read that image. Please try another file.');
+    reader.readAsDataURL(file);
+    return false;
   };
 
   const handleSavePrefs = async (values) => {
-    await client.put('/tenant/settings', {
-      currency: values.currency,
-      tax_system: values.taxSystem,
-      fy_start_month: values.fyStart,
-      date_format: values.dateFormat
-    });
+    try {
+      setSavingPrefs(true);
+      await client.put('/tenant/settings', {
+        currency: values.currency,
+        tax_system: values.taxSystem,
+        ...(canManageUsers ? { gst_scheme: values.gstScheme } : {}),
+        ...(canManageUsers ? { gst_composition_rate: values.gstCompositionRate || 1 } : {}),
+        fy_start_month: Number(values.fyStart),
+        date_format: values.dateFormat,
+        measured_packaging_enabled: Boolean(values.measuredPackagingEnabled),
+        measured_packaging_required: Boolean(values.measuredPackagingRequired),
+        measured_packaging_auto_select: Boolean(values.measuredPackagingAutoSelect),
+        show_formula_in_sales: Boolean(values.showFormulaInSales),
+        packaging_material_sales_enabled: Boolean(values.packagingMaterialSalesEnabled),
+        ...(canManageUsers ? { raw_material_mixing_enabled: Boolean(values.rawMaterialMixingEnabled) } : {}),
+        credit_sales_enabled: Boolean(values.creditSalesEnabled),
+        ...(canManageUsers ? {
+          incentive_enabled: Boolean(values.incentiveEnabled),
+          incentive_salesperson_mode: values.incentiveSalespersonMode,
+          incentive_rate: values.incentiveRate,
+          incentive_basis: values.incentiveBasis,
+          incentive_min_sale_amount: values.incentiveMinSaleAmount,
+        } : {})
+      });
+      await reloadTenant();
+      if (values.gstScheme === 'COMPOSITION') await reloadComposition();
+      message.success('Preferences saved successfully.');
+    } catch (error) {
+      message.error(error.response?.data?.message || 'Could not save preferences.');
+    } finally {
+      setSavingPrefs(false);
+    }
+  };
+
+  const openPermissions = targetUser => {
+    setEditingUser(targetUser);
+    setSelectedViews(targetUser.permissions?.views || ALL_VIEW_PERMISSION_KEYS);
+    const savedWidgets = targetUser.permissions?.dashboard_widgets;
+    setSelectedWidgets(Array.isArray(savedWidgets)
+      ? savedWidgets.filter(widget => ALL_DASHBOARD_WIDGET_KEYS.includes(widget))
+      : ALL_DASHBOARD_WIDGET_KEYS);
+    setPermissionModalOpen(true);
+  };
+
+  const openCreateUser = () => {
+    setEditingUser(null);
+    userForm.resetFields();
+    userForm.setFieldsValue({ role: 'viewer', branch_id: branches.find(item => item.is_default && item.is_active !== false)?.id || branches.find(item => item.is_active !== false)?.id });
+    setSelectedViews([]);
+    setSelectedWidgets([]);
+    setPermissionModalOpen(true);
+  };
+
+  const saveUserPermissions = async () => {
+    try {
+      const values = editingUser ? null : await userForm.validateFields();
+      if (!editingUser && !PRIVILEGED_ROLES.includes(values.role) && selectedViews.length === 0) {
+        message.error('Select at least one visible module for this user.');
+        return;
+      }
+      setSavingPermissions(true);
+      const permissions = { views: selectedViews, dashboard_widgets: selectedWidgets };
+      if (editingUser) {
+        await client.put(`/users/${editingUser.id}`, { permissions });
+      } else {
+        await client.post('/users', {
+          name: values.name.trim(),
+          email: values.email.trim().toLowerCase(),
+          password: values.password,
+          role: values.role,
+          branch_id: values.branch_id,
+          permissions,
+        });
+      }
+      await reloadUsers();
+      message.success(editingUser ? `Module visibility updated for ${editingUser.name}.` : 'User created.');
+      setPermissionModalOpen(false);
+      setEditingUser(null);
+    } catch (error) {
+      if (error?.errorFields) return;
+      message.error(error.response?.data?.message || (editingUser ? 'Could not update module visibility.' : 'Could not create user.'));
+    } finally {
+      setSavingPermissions(false);
+    }
+  };
+
+  const openPaymentMethod = (method = null) => {
+    setEditingPayment(method);
+    paymentForm.resetFields();
+    paymentForm.setFieldsValue(method ? {
+      name: method.name,
+      methodType: method.method_type,
+      accountId: method.account_id,
+      isDefault: method.is_default,
+      isActive: method.is_active,
+      sortOrder: method.sort_order,
+    } : { methodType: 'CASH', isDefault: false, isActive: true, sortOrder: paymentMethods.length * 10 + 10 });
+    setPaymentModalOpen(true);
+  };
+
+  const savePaymentMethod = async () => {
+    try {
+      const values = await paymentForm.validateFields();
+      setSavingPayment(true);
+      const payload = {
+        name: values.name.trim(),
+        method_type: values.methodType,
+        account_id: values.accountId,
+        is_default: Boolean(values.isDefault),
+        is_active: Boolean(values.isActive),
+        sort_order: Number(values.sortOrder || 0),
+      };
+      if (editingPayment) await client.patch(`/accounts/payment-methods/${editingPayment.id}`, payload);
+      else await client.post('/accounts/payment-methods', payload);
+      message.success(`Payment method ${editingPayment ? 'updated' : 'created'}.`);
+      setPaymentModalOpen(false);
+      setEditingPayment(null);
+      await reloadPaymentMethods();
+    } catch (error) {
+      if (error?.errorFields) return;
+      message.error(error.response?.data?.message || 'Could not save the payment method.');
+    } finally {
+      setSavingPayment(false);
+    }
   };
 
   const userColumns = [
@@ -49,16 +307,25 @@ const CompanySettings = () => {
     { title: 'Email', dataIndex: 'email', key: 'email' },
     { title: 'Role', dataIndex: 'role', key: 'role', render: val => <Tag color="blue">{val}</Tag> },
     { title: 'Status', dataIndex: 'status', key: 'status', render: val => <Tag color={val === 'Active' ? 'green' : 'red'}>{val}</Tag> },
+    { title: 'Visible modules', key: 'modules', render: (_, targetUser) => PRIVILEGED_ROLES.includes(targetUser.role)
+      ? 'All modules'
+      : targetUser.permissions?.views ? `${targetUser.permissions.views.length} selected` : 'All modules' },
     {
-      title: 'Action',
-      key: 'action',
-      render: () => (
-        <Space>
-          <Button type="link" size="small">Edit</Button>
-          <Button type="text" danger icon={<DeleteOutlined />} size="small" />
-        </Space>
-      )
+      title: 'Access',
+      key: 'access',
+      render: (_, targetUser) => PRIVILEGED_ROLES.includes(targetUser.role)
+        ? <Tag color="gold">Full access</Tag>
+        : <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openPermissions(targetUser)}>Edit visibility</Button>
     }
+  ];
+
+  const paymentColumns = [
+    { title: 'Method', dataIndex: 'name', render: (name, method) => <Space><CreditCardOutlined /><strong>{name}</strong>{method.is_default && <Tag color="gold">Default</Tag>}</Space> },
+    { title: 'Type', dataIndex: 'method_type', render: value => <Tag>{value}</Tag> },
+    { title: 'Posting ledger', render: (_, method) => method.account ? `${method.account.code} — ${method.account.name}` : 'Not mapped' },
+    { title: 'Status', dataIndex: 'is_active', render: active => <Tag color={active ? 'success' : 'default'}>{active ? 'Active' : 'Inactive'}</Tag> },
+    { title: 'Order', dataIndex: 'sort_order', width: 80 },
+    { title: '', width: 80, render: (_, method) => <Button size="small" icon={<EditOutlined />} onClick={() => openPaymentMethod(method)}>Edit</Button> },
   ];
 
   const items = [
@@ -76,13 +343,13 @@ const CompanySettings = () => {
                   </Form.Item>
                 </Col>
                 <Col xs={24} sm={12}>
-                  <Form.Item name="email" label={<span >Email Address</span>}>
-                    <Input />
+                  <Form.Item name="email" label={<span>Email Address</span>} extra="For company contact only. It is not shown on invoices.">
+                    <Input placeholder="Company contact email" />
                   </Form.Item>
                 </Col>
                 <Col xs={24} sm={12}>
-                  <Form.Item name="phone" label={<span >Phone Number</span>}>
-                    <Input />
+                  <Form.Item name="phone" label={<span>Invoice Phone Number</span>} extra="Shown beneath the company name on invoice headers.">
+                    <Input placeholder="Phone number for invoices" />
                   </Form.Item>
                 </Col>
                 <Col xs={24} sm={12}>
@@ -91,8 +358,8 @@ const CompanySettings = () => {
                   </Form.Item>
                 </Col>
                 <Col xs={24}>
-                  <Form.Item name="address" label={<span >Registered Address</span>}>
-                    <TextArea rows={4} />
+                  <Form.Item name="address" label={<span>Invoice Address</span>} extra="Shown beneath the company name on invoice headers.">
+                    <TextArea rows={4} placeholder="Full company address for invoices" />
                   </Form.Item>
                 </Col>
               </Row>
@@ -100,17 +367,30 @@ const CompanySettings = () => {
             <Col xs={24} md={8}>
               <div style={{ marginBottom: 16 }}>
                 <span style={{ color: '#fff', display: 'block', marginBottom: 8 }}>Company Logo</span>
-                <div style={{ width: 150, height: 150, background: 'rgba(255,255,255,0.1)', border: '1px dashed #30363d', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
-                  <UserOutlined style={{ fontSize: 48, color: '#8b949e' }} />
+                <div style={{ width: 150, height: 150, padding: 10, background: 'rgba(255,255,255,0.1)', border: '1px dashed #30363d', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
+                  {logoUrl
+                    ? <img src={logoUrl} alt="Company logo preview" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                    : <UserOutlined style={{ fontSize: 48, color: '#8b949e' }} />}
                 </div>
-                <Upload showUploadList={false}>
-                  <Button icon={<UploadOutlined />}>Upload Logo</Button>
-                </Upload>
+                <Space wrap>
+                  <Upload
+                    accept=".png,.jpg,.jpeg,.webp"
+                    beforeUpload={handleLogoSelect}
+                    maxCount={1}
+                    showUploadList={false}
+                  >
+                    <Button icon={<UploadOutlined />}>{logoUrl ? 'Change Logo' : 'Upload Logo'}</Button>
+                  </Upload>
+                  {logoUrl && <Button danger icon={<DeleteOutlined />} onClick={() => setLogoUrl(null)}>Remove</Button>}
+                </Space>
+                <Typography.Text type={logoNeedsSave ? 'warning' : 'secondary'} style={{ display: 'block', marginTop: 8, fontSize: 12 }}>
+                  {logoNeedsSave ? 'Save Company Info to apply the PDF-compatible logo.' : 'PNG, JPEG, or WebP. Maximum 5 MB. The logo will appear on invoice headers.'}
+                </Typography.Text>
               </div>
             </Col>
           </Row>
           <div style={{ marginTop: 24 }}>
-            <Button type="primary" htmlType="submit" icon={<SaveOutlined />} >
+            <Button type="primary" htmlType="submit" icon={<SaveOutlined />} loading={savingCompany}>
               Save Company Info
             </Button>
           </div>
@@ -134,19 +414,30 @@ const CompanySettings = () => {
             </Col>
             <Col xs={24} sm={12} lg={8}>
               <Form.Item name="taxSystem" label={<span >Tax System</span>}>
-                <Select>
+                <Select onChange={value => { if (value !== 'GST') formPrefs.setFieldsValue({ gstScheme: 'REGULAR' }); }}>
                   <Option value="GST">GST (India)</Option>
                   <Option value="VAT">VAT</Option>
                   <Option value="SalesTax">Sales Tax</Option>
+                  <Option value="NONE">No tax registration</Option>
                 </Select>
               </Form.Item>
             </Col>
+            {canManageUsers && selectedTaxSystem === 'GST' && <Col xs={24} sm={12} lg={8}>
+              <Form.Item name="gstScheme" label="GST registration scheme" extra="Set this to match the GST portal. Composition bills do not collect GST, and purchase GST becomes cost. CMP-08 and GSTR-4 filing remain outside this app.">
+                <Select options={[{ value: 'REGULAR', label: 'Regular GST' }, { value: 'COMPOSITION', label: 'Composition GST' }]} />
+              </Form.Item>
+            </Col>}
+            {canManageUsers && selectedTaxSystem === 'GST' && selectedGstScheme === 'COMPOSITION' && <Col xs={24} sm={12} lg={8}>
+              <Form.Item name="gstCompositionRate" label="Composition levy rate" extra="Paid by the business on turnover; never added to the bill of supply.">
+                <Select options={[{ value: 1, label: '1% · eligible goods trader or manufacturer' }, { value: 5, label: '5% · restaurant service' }, { value: 6, label: '6% · eligible service supplier' }]} />
+              </Form.Item>
+            </Col>}
             <Col xs={24} sm={12} lg={8}>
               <Form.Item name="fyStart" label={<span >Financial Year Start</span>}>
                 <Select>
-                  <Option value="January">January</Option>
-                  <Option value="April">April</Option>
-                  <Option value="July">July</Option>
+                  <Option value={1}>January</Option>
+                  <Option value={4}>April</Option>
+                  <Option value={7}>July</Option>
                 </Select>
               </Form.Item>
             </Col>
@@ -160,23 +451,97 @@ const CompanySettings = () => {
               </Form.Item>
             </Col>
           </Row>
+          {canManageUsers && tenant.gst_scheme === 'COMPOSITION' && <Card size="small" title="Estimated composition levy · current quarter" style={{ marginTop: 8 }} extra={<Button size="small" onClick={reloadComposition}>Refresh</Button>} loading={loadingComposition}>
+            <Space wrap size="large"><Typography.Text>POS turnover: <strong>₹{Number(compositionSummary.net_turnover || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></Typography.Text><Typography.Text>Estimated levy at {Number(compositionSummary.rate || tenant.gst_composition_rate || 1)}%: <strong>₹{Number(compositionSummary.estimated_levy || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></Typography.Text></Space>
+            <div style={{ marginTop: 8 }}><Typography.Text type="secondary">{compositionSummary.from || '—'} to {compositionSummary.to || '—'} · CGST ₹{Number(compositionSummary.estimated_cgst || 0).toFixed(2)} + SGST ₹{Number(compositionSummary.estimated_sgst || 0).toFixed(2)}. POS estimate only; check other turnover and exempt sales, especially the taxable-turnover base for traders, before CMP-08.</Typography.Text></div>
+          </Card>}
+          <Card size="small" title="Measured perfume packing" style={{ marginTop: 8 }}>
+            <Typography.Text type="secondary">When enabled, POS matches packing kits by the fill quantity entered for measured products.</Typography.Text>
+            <Row gutter={16} style={{ marginTop: 16 }}>
+              <Col xs={24} sm={8}><Form.Item name="measuredPackagingEnabled" label="Use packing kits" valuePropName="checked"><Switch /></Form.Item></Col>
+              <Col xs={24} sm={8}><Form.Item name="measuredPackagingRequired" label="Kit required at sale" valuePropName="checked"><Switch /></Form.Item></Col>
+              <Col xs={24} sm={8}><Form.Item name="measuredPackagingAutoSelect" label="Auto-select single match" valuePropName="checked"><Switch /></Form.Item></Col>
+            </Row>
+          </Card>
+          <Card size="small" title="Sales display" style={{ marginTop: 16 }}>
+            <Typography.Text type="secondary">Choose whether recipe information is visible while creating or reviewing a sale.</Typography.Text>
+            <Form.Item name="showFormulaInSales" label="Show formula in Sales" valuePropName="checked" style={{ marginTop: 16, marginBottom: 0 }}>
+              <Switch />
+            </Form.Item>
+          </Card>
+          <Card size="small" title="Packing-material sales" style={{ marginTop: 16 }}>
+            <Typography.Text type="secondary">Allow packing materials such as bottles, caps, and boxes to be added directly to retail sales. Stock and packaging inventory value are deducted when sold.</Typography.Text>
+            <Form.Item name="packagingMaterialSalesEnabled" label="Allow packing materials in Sales" valuePropName="checked" style={{ marginTop: 16, marginBottom: 0 }}>
+              <Switch />
+            </Form.Item>
+          </Card>
+          {canManageUsers && <Card size="small" title="Raw material mixing" style={{ marginTop: 16 }}>
+            <Typography.Text type="secondary">Allow a batch of raw materials to be mixed into another raw material. Completing a mix deducts every input and adds the output at its combined input cost.</Typography.Text>
+            <Form.Item name="rawMaterialMixingEnabled" label="Enable raw material mixing" valuePropName="checked" style={{ marginTop: 16, marginBottom: 0 }}>
+              <Switch />
+            </Form.Item>
+          </Card>}
+          <Card size="small" title="Customer credit sales" style={{ marginTop: 16 }}>
+            <Typography.Text type="secondary">Allow checkout to record a partial payment and post the remaining invoice balance to the customer’s receivable ledger.</Typography.Text>
+            <Form.Item name="creditSalesEnabled" label="Allow credit sales in POS" valuePropName="checked" style={{ marginTop: 16, marginBottom: 0 }}>
+              <Switch />
+            </Form.Item>
+          </Card>
+          {canManageUsers && <Card size="small" title="Sales incentives" style={{ marginTop: 16 }}>
+            <Typography.Text type="secondary">Calculate a salesperson's incentive when a sale is posted. Returns reduce the earned amount. No payroll payment or accounting entry is created automatically.</Typography.Text>
+            <Row gutter={16} style={{ marginTop: 16 }}>
+              <Col xs={24} sm={8}><Form.Item name="incentiveEnabled" label="Enable sales incentives" valuePropName="checked"><Switch /></Form.Item></Col>
+              <Col xs={24} sm={8}><Form.Item name="incentiveSalespersonMode" label="Salesperson assignment"><Select options={[{ value: 'LOGGED_IN', label: 'Logged-in user' }, { value: 'SELECT', label: 'Select at checkout' }]} /></Form.Item></Col>
+              <Col xs={24} sm={8}><Form.Item name="incentiveBasis" label="Calculate on"><Select options={[{ value: 'NET_EX_TAX', label: 'After discount, before tax' }, { value: 'TOTAL_INCL_TAX', label: 'Total including tax' }]} /></Form.Item></Col>
+              <Col xs={24} sm={8}><Form.Item name="incentiveRate" label="Incentive rate (%)" rules={[{ required: true, message: 'Enter a rate' }]}><InputNumber min={0} max={100} precision={2} style={{ width: '100%' }} /></Form.Item></Col>
+              <Col xs={24} sm={8}><Form.Item name="incentiveMinSaleAmount" label="Minimum sale total" extra="Sales below this total earn no incentive."><InputNumber min={0} precision={2} style={{ width: '100%' }} /></Form.Item></Col>
+            </Row>
+          </Card>}
           <div style={{ marginTop: 24 }}>
-            <Button type="primary" htmlType="submit" icon={<SaveOutlined />} >
+            <Button type="primary" htmlType="submit" icon={<SaveOutlined />} loading={savingPrefs}>
               Save Preferences
             </Button>
           </div>
         </Form>
       )
     },
-    {
+    ...(canManageUsers ? [{
+      key: 'incentives',
+      label: 'Incentives',
+      children: <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 16 }}><Typography.Text type="secondary">Earned incentives by salesperson. Returns are deducted from the original sale's incentive.</Typography.Text><Button onClick={reloadIncentives}>Refresh</Button></div>
+        <Table rowKey="salesperson_id" loading={loadingIncentives} dataSource={incentiveReport.summary || []} pagination={false} columns={[{ title: 'Salesperson', dataIndex: 'salesperson_name' }, { title: 'Sales', dataIndex: 'sales' }, { title: 'Earned incentive', dataIndex: 'incentive_amount', render: value => `${tenant.currency || 'INR'} ${Number(value || 0).toFixed(2)}` }]} />
+        <Typography.Title level={5} style={{ marginTop: 24 }}>Sale breakdown</Typography.Title>
+        <Table rowKey="id" loading={loadingIncentives} dataSource={incentiveReport.sales || []} pagination={{ pageSize: 20 }} scroll={{ x: 700 }} columns={[{ title: 'Date', dataIndex: 'sale_date' }, { title: 'Sale', dataIndex: 'sale_number' }, { title: 'Salesperson', dataIndex: 'salesperson_name' }, { title: 'Sale total', dataIndex: 'sale_amount', render: value => Number(value || 0).toFixed(2) }, { title: 'Rate', dataIndex: 'incentive_rate', render: value => `${Number(value || 0)}%` }, { title: 'Earned after returns', dataIndex: 'effective_incentive_amount', render: value => Number(value || 0).toFixed(2) }]} />
+      </div>
+    }, {
       key: '3',
+      label: 'Branches',
+      children: (
+        <div>
+          <Typography.Text type="secondary">Add branches under this company. Sales, stock, cash, and reports follow the selected branch.</Typography.Text>
+          <Form form={branchForm} layout="inline" onFinish={createBranch} style={{ margin: '16px 0' }}>
+            <Form.Item name="name" rules={[{ required: true, message: 'Enter a branch name' }]}><Input placeholder="Branch name" /></Form.Item>
+            <Form.Item name="code" rules={[{ required: true, message: 'Enter a code' }]}><Input placeholder="Code e.g. MUM" /></Form.Item>
+            <Button type="primary" htmlType="submit" icon={<PlusOutlined />} loading={savingBranch}>Add branch</Button>
+          </Form>
+          <Table loading={loadingBranches} rowKey="id" pagination={false} dataSource={branches} columns={[
+            { title: 'Branch', dataIndex: 'name' }, { title: 'Code', dataIndex: 'code' },
+            { title: 'Status', render: (_, row) => <Tag color="green">{row.is_default ? 'Default' : 'Active'}</Tag> },
+            { title: 'Action', render: (_, row) => !row.is_default && <Button danger size="small" icon={<DeleteOutlined />} onClick={() => deactivateBranch(row.id)}>Deactivate</Button> }
+          ]} />
+        </div>
+      )
+    }, {
+      key: '4',
       label: 'Users & Roles',
       children: (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-            <Button type="primary" icon={<PlusOutlined />} >
-              Invite User
-            </Button>
+          <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+            <Typography.Text type="secondary">
+              Create users and choose which modules and dashboard information they can see. Administrators always retain full access.
+            </Typography.Text>
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreateUser}>Add user</Button>
           </div>
           <Table 
             columns={userColumns} 
@@ -188,16 +553,126 @@ const CompanySettings = () => {
           />
         </div>
       )
+    }] : []),
+    {
+      key: '5',
+      label: 'Payment Methods',
+      children: (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 16 }}>
+            <Typography.Text type="secondary">Define the methods available in POS and purchases. Every method must post to an active ledger under Cash & Bank.</Typography.Text>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => openPaymentMethod()}>Add Method</Button>
+          </div>
+          <Table columns={paymentColumns} dataSource={paymentMethods} loading={loadingPaymentMethods} rowKey="id" pagination={false} scroll={{ x: 760 }} />
+        </div>
+      )
+    },
+    {
+      key: '6',
+      label: 'WhatsApp',
+      children: <><WhatsAppIntegration canManage={canManageUsers} /><WhatsAppInvoiceSettings canManage={canManageUsers} /></>
     }
   ];
 
   return (
-    <div style={{ padding: 24 }}>
-      <Title level={2} style={{ fontFamily: "'Playfair Display', serif", color: 'var(--color-gold)', marginBottom: 24 }}>Company Settings</Title>
+    <div className="standard-page">
+      <Title level={2} style={{ marginBottom: 'var(--section-gap)' }}>Company Settings</Title>
 
       <Card >
         <Tabs items={items} />
       </Card>
+
+      <Modal
+        title={editingUser ? `Module visibility — ${editingUser.name}` : 'Add user'}
+        open={permissionModalOpen}
+        onCancel={() => setPermissionModalOpen(false)}
+        onOk={saveUserPermissions}
+        okText={editingUser ? 'Save visibility' : 'Create user'}
+        confirmLoading={savingPermissions}
+        width={820}
+        forceRender
+      >
+        <Form form={userForm} layout="vertical" initialValues={{ role: 'viewer' }} style={{ display: editingUser ? 'none' : undefined }}>
+          <Row gutter={16}>
+            <Col xs={24} sm={12}><Form.Item name="name" label="Name" rules={[{ required: true, whitespace: true, message: 'Enter a name' }]}><Input autoComplete="name" /></Form.Item></Col>
+            <Col xs={24} sm={12}><Form.Item name="email" label="Email" rules={[{ required: true, type: 'email', message: 'Enter a valid email' }]}><Input autoComplete="email" /></Form.Item></Col>
+            <Col xs={24} sm={12}><Form.Item name="password" label="Initial password" rules={[{ required: true, min: 8, message: 'Use at least 8 characters' }]}><Input.Password autoComplete="new-password" /></Form.Item></Col>
+            <Col xs={24} sm={6}><Form.Item name="role" label="Role" rules={[{ required: true }]}><Select options={(currentUser?.role === 'super_admin' ? ['super_admin', ...userRoles] : userRoles).map(role => ({ value: role, label: role.replaceAll('_', ' ') }))} /></Form.Item></Col>
+            <Col xs={24} sm={6}><Form.Item name="branch_id" label="Branch" rules={[{ required: true, message: 'Select a branch' }]}><Select options={branches.filter(item => item.is_active !== false).map(item => ({ value: item.id, label: item.name }))} /></Form.Item></Col>
+          </Row>
+        </Form>
+        <Alert
+          type="info"
+          showIcon
+          message={editingUser ? 'Changes apply the next time this user loads a page. Existing users without a saved permission profile keep full access.' : 'Select the modules this user can open. Administrators always have full access.'}
+          style={{ marginBottom: 20 }}
+        />
+
+        {(editingUser || !PRIVILEGED_ROLES.includes(creatingRole)) && <>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+          <Typography.Title level={5} style={{ margin: 0 }}>Visible modules</Typography.Title>
+          <Space>
+            <Button type="link" size="small" onClick={() => setSelectedViews(ALL_VIEW_PERMISSION_KEYS)}>Select all</Button>
+            <Button type="link" size="small" onClick={() => setSelectedViews([])}>Clear</Button>
+          </Space>
+        </div>
+        <Checkbox.Group value={selectedViews} onChange={setSelectedViews} style={{ width: '100%' }}>
+          <Row gutter={[16, 16]}>
+            {VIEW_PERMISSION_GROUPS.map(group => (
+              <Col xs={24} md={12} key={group.label}>
+                <Card size="small" title={group.label} styles={{ body: { display: 'grid', gap: 8 } }}>
+                  {group.options.map(option => (
+                    <Checkbox key={option.key} value={option.key}>{option.label}</Checkbox>
+                  ))}
+                </Card>
+              </Col>
+            ))}
+          </Row>
+        </Checkbox.Group>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, margin: '24px 0 12px' }}>
+          <Typography.Title level={5} style={{ margin: 0 }}>Dashboard widgets</Typography.Title>
+          <Space>
+            <Button type="link" size="small" onClick={() => setSelectedWidgets(ALL_DASHBOARD_WIDGET_KEYS)}>Select all</Button>
+            <Button type="link" size="small" onClick={() => setSelectedWidgets([])}>Clear</Button>
+          </Space>
+        </div>
+        {!selectedViews.includes('dashboard') && (
+          <Alert type="warning" showIcon message="Dashboard view is not selected, so these widgets will remain hidden." style={{ marginBottom: 12 }} />
+        )}
+        <Checkbox.Group
+          value={selectedWidgets}
+          onChange={setSelectedWidgets}
+          options={DASHBOARD_WIDGETS.map(widget => ({ value: widget.key, label: widget.label }))}
+          style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, width: '100%' }}
+        />
+        </>}
+      </Modal>
+
+      <Modal
+        title={editingPayment ? 'Edit payment method' : 'Add payment method'}
+        open={paymentModalOpen}
+        onCancel={() => setPaymentModalOpen(false)}
+        onOk={savePaymentMethod}
+        confirmLoading={savingPayment}
+        okText={editingPayment ? 'Save changes' : 'Add method'}
+        forceRender
+      >
+        <Form form={paymentForm} layout="vertical">
+          <Row gutter={12}>
+            <Col span={14}><Form.Item name="name" label="Display name" rules={[{ required: true, whitespace: true, message: 'Enter a payment method name' }]}><Input placeholder="e.g. UPI, Visa Card, HDFC Bank" /></Form.Item></Col>
+            <Col span={10}><Form.Item name="methodType" label="Method type" rules={[{ required: true }]}><Select options={paymentTypes.map(type => ({ value: type, label: type }))} /></Form.Item></Col>
+          </Row>
+          <Form.Item name="accountId" label="Posting ledger" rules={[{ required: true, message: 'Select the ledger that receives or pays this money' }]} extra="Only active posting ledgers under Cash & Bank are available.">
+            <Select showSearch optionFilterProp="label" placeholder="Select Cash or Bank ledger" options={paymentLedgers.map(ledger => ({ value: ledger.id, label: `${ledger.code} — ${ledger.name}` }))} />
+          </Form.Item>
+          <Row gutter={12}>
+            <Col span={8}><Form.Item name="sortOrder" label="Display order"><InputNumber min={0} precision={0} style={{ width: '100%' }} /></Form.Item></Col>
+            <Col span={8}><Form.Item name="isDefault" label="Default method" valuePropName="checked"><Switch /></Form.Item></Col>
+            <Col span={8}><Form.Item name="isActive" label="Available" valuePropName="checked"><Switch /></Form.Item></Col>
+          </Row>
+        </Form>
+      </Modal>
       
       <style>{`
         .ant-tabs-tab { color: #8b949e !important; }

@@ -1,110 +1,36 @@
-﻿import React, { useState } from 'react';
-import { Card, Row, Col, Statistic, Tag, DatePicker, Button, Space, Modal, Descriptions, Table, message } from 'antd';
-import { PlusOutlined, EyeOutlined, CheckCircleOutlined, BookOutlined } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
+import React, { useCallback, useContext, useEffect, useState } from 'react';
+import { Button, Descriptions, Input, Modal, Segmented, Table, Tag, message } from 'antd';
+import { PlusOutlined } from '@ant-design/icons';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import useApiData from '../../hooks/useApiData';
-import ResponsiveDataTable from '../../components/common/ResponsiveDataTable';
-import ResponsiveListPageHeader from '../../components/common/ResponsiveListPageHeader';
 import client from '../../api/client';
+import { money, ReportShell, useReportRange } from '../reports/AccountingUI';
+import { reportData } from '../reports/reportDownloads';
+import usePrintPagination from '../reports/usePrintPagination';
+import { AuthContext } from '../../context/AuthContext';
 
-const { RangePicker } = DatePicker;
-
-const JournalEntries = () => {
-  const navigate = useNavigate();
-  const { data: entries, loading, reload } = useApiData('/journal-entries');
-  const [selected, setSelected] = useState(null);
-  const viewEntry = async id => {
-    try { setSelected((await client.get(`/journal-entries/${id}`)).data); }
-    catch (error) { message.error(error.response?.data?.message || 'Could not load journal'); }
-  };
-  const postEntry = async id => {
-    try { await client.post(`/journal-entries/${id}/post`); message.success('Journal posted'); await reload(); }
-    catch (error) { message.error(error.response?.data?.message || 'Could not post journal'); }
-  };
-  const journalRows = entries.map(item => ({
-    ...item,
-    date: item.entry_date,
-    reference: item.reference_type || '—',
-    debit: Number(item.total_debit || 0),
-    credit: Number(item.total_credit || 0),
-    status: item.status ? item.status[0].toUpperCase() + item.status.slice(1) : 'Draft'
-  }));
-
-  const columns = [
-    { title: 'Entry#', dataIndex: 'id', key: 'id' },
-    { title: 'Date', dataIndex: 'date', key: 'date' },
-    { title: 'Reference', dataIndex: 'reference', key: 'reference', responsive: ['md'] },
-    { title: 'Narration', dataIndex: 'narration', key: 'narration', responsive: ['lg'], ellipsis: true },
-    { 
-      title: 'Total Debit', 
-      dataIndex: 'debit', 
-      key: 'debit',
-      align: 'right',
-      render: (val) => `₹${val.toLocaleString('en-IN')}`
-    },
-    { 
-      title: 'Total Credit', 
-      dataIndex: 'credit', 
-      key: 'credit',
-      align: 'right',
-      render: (val) => `₹${val.toLocaleString('en-IN')}`
-    },
-    { 
-      title: 'Status', 
-      dataIndex: 'status', 
-      key: 'status',
-      render: (status) => (
-        <Tag color={status === 'Posted' ? 'green' : 'amber'}>{status}</Tag>
-      )
-    },
-    {
-      title: 'Action',
-      key: 'action',
-      render: (_, record) => (
-        <Space size="middle">
-          <Button type="text" icon={<EyeOutlined />} style={{ color: 'var(--color-gold)' }} onClick={() => viewEntry(record.id)} />
-          {record.status === 'Draft' && <Button type="link" size="small" onClick={() => postEntry(record.id)}>Post</Button>}
-        </Space>
-      ),
-    }
-  ];
-  const summary = <Row gutter={[12, 12]}><Col span={12}><Card size="small"><Statistic title="Total Entries" value={journalRows.length} /></Card></Col><Col span={12}><Card size="small"><Statistic title="Draft" value={journalRows.filter(item => item.status === 'Draft').length} /></Card></Col><Col span={24}><Card size="small"><Statistic title="Posted" value={journalRows.filter(item => item.status === 'Posted').length} /></Card></Col></Row>;
-  const filters = <RangePicker style={{ width: '100%' }} />;
-
-  return (
-    <div style={{ padding: 24 }}>
-      <ResponsiveListPageHeader title="Journal Entries" summary={summary} filters={filters} primaryAction={<Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/app/journal-entries/new')}>New Entry</Button>} />
-
-      <Row className="page-summary-inline" gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col xs={24} sm={8}>
-          <Card >
-            <Statistic title={<span style={{ color: 'var(--color-text-secondary)' }}>Total Entries</span>} value={journalRows.length} prefix={<BookOutlined />} styles={{ content: { color: 'var(--color-text-primary)' } }} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={8}>
-          <Card >
-            <Statistic title={<span style={{ color: 'var(--color-text-secondary)' }}>Draft</span>} value={journalRows.filter(item => item.status === 'Draft').length} styles={{ content: { color: '#faad14' } }} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={8}>
-          <Card >
-            <Statistic title={<span style={{ color: 'var(--color-text-secondary)' }}>Posted</span>} value={journalRows.filter(item => item.status === 'Posted').length} prefix={<CheckCircleOutlined />} styles={{ content: { color: '#52c41a' } }} />
-          </Card>
-        </Col>
-      </Row>
-
-      <Card >
-        <div style={{ marginBottom: 16 }}>
-          <RangePicker  />
-        </div>
-        
-        <ResponsiveDataTable columns={columns} dataSource={journalRows} loading={loading} emptyText="No journal entries found" mobileRenderItem={(entry) => <><div className="mobile-data-list__title-row"><strong>{entry.id}</strong><Tag color={entry.status === 'Posted' ? 'success' : 'warning'}>{entry.status}</Tag></div><span className="mobile-data-list__code">{entry.reference}</span><div className="mobile-data-list__metrics"><span>Debit <strong>₹{entry.debit.toLocaleString('en-IN')}</strong></span><span>Credit <strong>₹{entry.credit.toLocaleString('en-IN')}</strong></span></div></>} />
-      </Card>
-      <Modal title={selected?.entry_number || 'Journal entry'} open={Boolean(selected)} onCancel={() => setSelected(null)} footer={null} width={760}>
-        {selected && <><Descriptions size="small" column={2} items={[{ key: 'date', label: 'Date', children: selected.entry_date }, { key: 'status', label: 'Status', children: <Tag color={selected.status === 'posted' ? 'success' : 'warning'}>{selected.status}</Tag> }, { key: 'narration', label: 'Narration', children: selected.narration, span: 2 }]} /><Table style={{ marginTop: 16 }} size="small" pagination={false} rowKey="id" dataSource={selected.journalEntryLines || []} columns={[{ title: 'Description', dataIndex: 'description' }, { title: 'Debit', align: 'right', render: (_, row) => `₹${Number(row.debit || 0).toLocaleString('en-IN')}` }, { title: 'Credit', align: 'right', render: (_, row) => `₹${Number(row.credit || 0).toLocaleString('en-IN')}` }]} /></>}
-      </Modal>
-    </div>
-  );
-};
-
-export default JournalEntries;
+export default function JournalEntries() {
+  const navigate=useNavigate();
+  const [params]=useSearchParams();
+  const { user }=useContext(AuthContext);
+  const canManage=['admin','super_admin','accountant'].includes(user?.role);
+  const period=useReportRange();
+  const pagination=usePrintPagination();
+  const query=useApiData('/journal-entries');
+  const [search,setSearch]=useState('');
+  const [status,setStatus]=useState('All');
+  const [selected,setSelected]=useState(null);
+  const [posting,setPosting]=useState(null);
+  const rows=query.data.filter(row=>row.entry_date>=period.from && row.entry_date<=period.to);
+  const filtered=rows.filter(row=>(status==='All' || row.status===status.toLowerCase()) && (row.entry_number+' '+row.narration+' '+row.reference_type).toLowerCase().includes(search.toLowerCase()));
+  const view=useCallback(async row=>{try {setSelected((await client.get('/journal-entries/'+row.id)).data);}catch(error){message.error(error.response?.data?.message || 'Could not load journal');}},[]);
+  useEffect(()=>{ const id=params.get('entry'); if(id) view({id}); },[params,view]);
+  const post=async row=>{setPosting(row.id);try{await client.post('/journal-entries/'+row.id+'/post');message.success('Journal posted');setSelected(null);await query.reload();}catch(error){message.error(error.response?.data?.message || 'Could not post journal');}finally{setPosting(null);}};
+  const columns=[{title:'Entry',dataIndex:'entry_number',width:170,render:(_,row)=><button className="ar-ledger-link" onClick={()=>view(row)}>{row.entry_number}</button>},{title:'Date',dataIndex:'entry_date',width:110},{title:'Source',dataIndex:'reference_type',render:value=>value?.replaceAll('_',' ')},{title:'Narration',dataIndex:'narration'},{title:'Debit',dataIndex:'total_debit',align:'right',render:money},{title:'Credit',dataIndex:'total_credit',align:'right',render:money},{title:'Status',dataIndex:'status',render:value=><Tag color={value==='posted'?'success':'warning'}>{value==='posted'?'Posted':'Draft'}</Tag>}];
+  return <><ReportShell title="Journal entries" subtitle="Inspect every debit and credit, follow its source, and review drafts before posting." query={query} periodLabel={period.from+' to '+period.to} basis="Draft & posted journals · INR" controls={<>{period.controls}{canManage && <Button type="primary" icon={<PlusOutlined/>} onClick={()=>navigate('/app/journal-entries/new')}>New journal entry</Button>}</>} onExport={()=>reportData('journals-'+period.from+'-'+period.to+'.csv',[['Journal entries',period.from,period.to],['Entry','Date','Source','Narration','Debit','Credit','Status'],...filtered.map(row=>[row.entry_number,row.entry_date,row.reference_type,row.narration,Number(row.total_debit),Number(row.total_credit),row.status])])}>
+    <div className="ar-metrics">{[['Total entries',rows.length],['Posted',rows.filter(row=>row.status==='posted').length],['Drafts',rows.filter(row=>row.status==='draft').length],['Source types',new Set(rows.map(row=>row.reference_type)).size]].map(([label,count])=><div key={label} className="ar-metric"><span>{label}</span><strong>{count}</strong><small>In the selected period</small></div>)}</div>
+    <div className="ar-table-card"><div className="ar-table-tools"><Input.Search aria-label="Search journals" value={search} onChange={event=>setSearch(event.target.value)} allowClear placeholder="Search entry, source or narration"/><Segmented value={status} options={['All','Posted','Draft']} onChange={setStatus}/></div><Table rowKey="id" columns={columns} dataSource={filtered} pagination={pagination} scroll={{x:1100}}/></div>
+  </ReportShell><Modal title={selected?.entry_number || 'Journal entry'} open={!!selected} onCancel={()=>setSelected(null)} width={800} footer={canManage && selected?.status==='draft' ? <Button type="primary" loading={posting===selected.id} onClick={()=>post(selected)}>Post journal</Button> : null}>
+    {selected && <><Descriptions column={2} items={[{key:'date',label:'Date',children:selected.entry_date},{key:'status',label:'Status',children:selected.status},{key:'narration',label:'Narration',span:2,children:selected.narration}]}/><Table style={{marginTop:20}} rowKey="id" dataSource={selected.journalEntryLines || []} pagination={false} scroll={{x:600}} columns={[{title:'Account',render:(_,row)=>row.account ? row.account.code+' · '+row.account.name : 'Account unavailable'},{title:'Description',dataIndex:'description'},{title:'Debit',dataIndex:'debit',align:'right',render:money},{title:'Credit',dataIndex:'credit',align:'right',render:money}]}/></>}
+  </Modal></>;
+}

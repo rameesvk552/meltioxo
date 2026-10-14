@@ -25,3 +25,93 @@
   width: 100%;
   border-bottom: 1px solid #f0ece8;
 }
+
+.accounts-page .accounts-nav {
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.accounts-page .accounts-nav::-webkit-scrollbar { display: none; }
+.accounts-page .accounts-nav button { flex: 0 0 auto; }
+.accounts-subtitle { margin: 10px 0 0; color: #81766a; font-size: 13px; }
+.accounts-page .accounts-heading h1 { font-size: 34px; line-height: 1.2; letter-spacing: -.035em; }
+.accounts-page .quick-actions .ant-btn { height: 38px; border: 1px solid #e4dacd; color: #655749; box-shadow: none; }
+.accounts-page .quick-actions .ant-btn-primary { color: white; }
+.accounts-page .account-tree-title { flex-wrap: wrap; }
+.accounts-page .accounts-nav { border-radius: 12px; width: 100%; padding: 5px; gap: 4px; }
+.accounts-page .accounts-nav button { border-radius: 8px; padding: 10px 17px; font-size: 12px; }
+.accounts-page .accounts-nav button.active { border-radius: 8px; background: #40392f; }
+.accounts-page .account-tree-balance { color: #655548; }
+.account-counts { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 12px; margin-bottom: 18px; }
+.account-count { border: 1px solid #e8dfd5; padding: 15px 18px; border-radius: 12px; display: flex; align-items: center; gap: 12px; background: #fff; color: #63574b; cursor: pointer; text-align: left; }
+.account-count strong { font-size: 24px; font-variant-numeric: tabular-nums; }
+.account-count span { font-size: 12px; }
+.account-count.asset { background: #f0f6fa; color: #386c89; }
+.account-count.liability { background: #fdf5eb; color: #946424; }
+.account-count.equity { background: #f4f0fa; color: #77569b; }
+.account-count.revenue { background: #edf7f1; color: #357455; }
+.account-count.expense { background: #fcf0ed; color: #a45746; }
+.account-count.selected { outline: 2px solid currentColor; outline-offset: -2px; }
+.accounts-page .quick-actions { flex-wrap: wrap; justify-content: flex-end; }
+.accounts-page .accounts-heading { gap: 18px; }
+.accounts-page .account-tree-title .ant-btn { color: #9c8974; }
+.accounting-overview-grid { display: grid; grid-template-columns: minmax(0,1.3fr) minmax(0,1fr); gap: 20px; align-items: start; }
+.accounting-overview-grid .ar-report-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.accounting-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.accounting-card-heading h2 { margin: 0; }
+.recent-journal { display: flex; align-items: center; gap: 12px; padding: 15px 0; width: 100%; background: none; border: 0; border-bottom: 1px solid #efe8dd; text-align: left; cursor: pointer; }
+.recent-journal:last-child { border-bottom: 0; }
+.journal-icon { border-radius: 9px; background: #f7f0e6; color: #a65e42; padding: 9px; }
+.journal-info { flex:1; min-width:0; }
+.journal-info strong { font-size: 12px; color: #413629; display:block; }
+.journal-info small { display: block; color: #998673; font-size: 11px; margin-top: 4px; line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.overview-stat { display: flex; justify-content: space-between; align-items:center; gap:12px; padding:10px 0; font-size:12px; color:#8b7965; }
+.overview-stat strong { color:#4e3d2c; font-variant-numeric:tabular-nums; }
+@media(max-width:1199px) { .accounting-overview-grid { grid-template-columns:1fr; } }
+@media(max-width:900px) { .account-counts { grid-template-columns: repeat(3,minmax(0,1fr)); } .account-count { padding: 12px; gap:8px; } .accounts-page .accounts-heading { align-items: flex-start; } }
+@media (max-width: 700px) { .accounts-page .quick-actions { display: flex; flex-wrap: wrap; } .accounts-page .accounts-heading { align-items: flex-start; flex-direction: column; gap: 16px; } .accounts-page .accounts-nav button { padding: 9px 12px; } }
+@media (max-width: 700px) { .account-chart-card .ant-card-head-wrapper { flex-wrap: wrap; padding: 14px 0; gap: 10px; } .account-chart-card .ant-card-head-title { flex-basis: 100%; white-space: normal; } .account-chart-card .ant-card-extra { margin-inline-start: 0; } }
+
+/* Accounting type and spacing scale: 12/13/14/18/32 px, 4/8/12/16/24/32 px. */
+.accounts-page {
+  padding: var(--page-gutter);
+  --account-text-caption: 12px;
+  --account-text-secondary: 13px;
+  --account-text-body: 14px;
+  --account-text-section: var(--font-size-xl);
+  --account-text-page: var(--font-size-3xl);
+  --account-space-1: 4px;
+  --account-space-2: 8px;
+  --account-space-3: 12px;
+  --account-space-4: 16px;
+  --account-space-6: 24px;
+  --account-space-8: 32px;
+  font-family: var(--font-family);
+  font-size: var(--account-text-body);
+  line-height: 1.5;
+}
+.accounts-page .accounts-heading h1 { font-family: var(--font-family); font-size: var(--account-text-page); font-weight: 750; line-height: 1.15; }
+.accounts-page .accounts-subtitle { font-size: var(--account-text-body); line-height: 1.5; margin-top: var(--account-space-2); }
+.accounts-page .eyebrow { font-size: var(--account-text-caption); letter-spacing: .1em; }
+.accounts-page .accounts-nav { margin-bottom: var(--account-space-6); }
+.accounts-page .accounts-nav button,
+.accounts-page .ledger-tabs button { font-size: var(--account-text-secondary); min-height: 40px; }
+.accounts-page .quick-actions .ant-btn { font-size: var(--account-text-secondary); min-height: 40px; }
+.accounts-page .account-counts { gap: var(--account-space-3); margin-bottom: var(--account-space-6); }
+.accounts-page .account-count { min-height: 68px; padding: var(--account-space-3) var(--account-space-4); }
+.accounts-page .account-count span { font-size: var(--account-text-caption); font-weight: 650; }
+.accounts-page .account-tree-title { min-height: 44px; gap: var(--account-space-2); font-size: var(--account-text-secondary); }
+.accounts-page .account-tree-title strong { font-size: var(--account-text-secondary); }
+.accounts-page .account-tree-balance,
+.accounts-page .ant-table-cell[align="right"] { font-variant-numeric: tabular-nums; }
+.accounts-page .ant-card-head-title { font-size: var(--account-text-section); line-height: 1.3; }
+.accounts-page .ant-table { font-size: var(--account-text-secondary); }
+.accounts-page .ant-table-thead > tr > th { font-size: var(--account-text-caption); letter-spacing: .02em; }
+.accounts-page .ar-table-tools { gap: var(--account-space-4); }
+@media (max-width: 700px) {
+  .accounts-page { padding: var(--account-space-4) var(--account-space-3) 80px; }
+  .accounts-page .accounts-heading h1 { font-size: 29px; }
+  .accounts-page .accounts-nav { margin-bottom: var(--account-space-4); }
+  .accounts-page .quick-actions { gap: var(--account-space-2); }
+}

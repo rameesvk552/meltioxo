@@ -1,16 +1,56 @@
 const db = require('../models');
 const { Op } = require('sequelize');
+const { ACCOUNT_CODES } = require('../config/constants');
+const statements = require('./financialStatements');
+const { getAuditContext } = require('../middleware/auditContext');
+const { businessDate } = require('./businessDay.service');
+const journalScope = tenantId => ({ tenant_id: tenantId, status: 'posted', ...(getAuditContext()?.branchId ? { branch_id: getAuditContext().branchId } : {}) });
 
-exports.trialBalance = async (tenantId, asOfDate) => {
-  const lines = await db.journalEntryLine.findAll({ include: [{ model: db.journalEntry, where: { tenant_id: tenantId, status: 'posted', ...(asOfDate ? { entry_date: { [Op.lte]: asOfDate } } : {}) } }, db.account] });
-  const balances = new Map();
-  lines.forEach(line => {
-    const account = line.account;
-    const sign = ['asset', 'expense'].includes(account.type) ? 1 : -1;
-    const net = sign * (Number(line.debit) - Number(line.credit));
-    balances.set(account.id, { code: account.code, name: account.name, type: account.type, balance: (balances.get(account.id)?.balance || 0) + net });
-  });
-  return [...balances.values()].filter(account => Math.abs(account.balance) > 0.0001);
+exports.trialBalance = async (tenantId, asOfDate, { companyWide = false } = {}) => {
+  const scope = companyWide ? { tenant_id: tenantId, status: 'posted', branch_id: { [Op.or]: [{ [Op.ne]: null }, null] } } : journalScope(tenantId);
+  const lines = await db.journalEntryLine.findAll({ include: [{ model: db.journalEntry, required: true, where: { ...scope, ...(asOfDate ? { entry_date: { [Op.lte]: asOfDate } } : {}) } }, { model: db.account, required: true, where: { tenant_id: tenantId } }] });
+  return statements.trialBalance(lines);
+};
+
+exports.whatsappInvoices = async (tenantId, branchId, { from, to, status, page = 1, pageSize = 50 }) => {
+  const where = { tenant_id: tenantId };
+  if (branchId) where.branch_id = branchId;
+  if (status) where.status = status;
+  if (from || to) {
+    where.created_at = {};
+    if (from) where.created_at[Op.gte] = new Date(`${from}T00:00:00.000Z`);
+    if (to) {
+      const end = new Date(`${to}T00:00:00.000Z`);
+      end.setUTCDate(end.getUTCDate() + 1);
+      where.created_at[Op.lt] = end;
+    }
+  }
+
+  const offset = (page - 1) * pageSize;
+  const [result, grouped] = await Promise.all([
+    db.whatsappInvoiceLog.findAndCountAll({
+      where,
+      order: [['created_at', 'DESC']],
+      limit: pageSize,
+      offset,
+      raw: true
+    }),
+    db.whatsappInvoiceLog.findAll({
+      where,
+      attributes: ['status', [db.Sequelize.fn('COUNT', db.Sequelize.col('id')), 'count']],
+      group: ['status'],
+      raw: true
+    })
+  ]);
+  const counts = grouped.reduce((summary, row) => {
+    summary[row.status] = Number(row.count || 0);
+    return summary;
+  }, { sent: 0, failed: 0, skipped: 0, disabled: 0 });
+  return {
+    summary: { total: result.count, ...counts },
+    rows: result.rows,
+    pagination: { page, page_size: pageSize, total: result.count }
+  };
 };
 
 const number = value => Number(value || 0);
@@ -18,7 +58,13 @@ const round = value => Math.round((number(value) + Number.EPSILON) * 100) / 100;
 const percent = (value, base) => base ? round((value / base) * 100) : 0;
 const isoDate = date => date.toISOString().slice(0, 10);
 
-const isCogsAccount = account => account.code === '5000' || /cost of goods sold|\bcogs\b/i.test(account.name || '');
+const isCogsAccount = account => {
+  const numericCode = Number(account.code);
+  return (Number.isInteger(numericCode) && numericCode >= 5100 && numericCode < 5200)
+    || account.code === ACCOUNT_CODES.COGS
+    || /cost of goods sold|\bcogs\b|direct cost/i.test(account.name || '');
+};
+const isDiscountAllowedAccount = account => account.code === ACCOUNT_CODES.DISCOUNT_ALLOWED;
 
 const bucketKey = (date, groupBy) => {
   const value = String(date).slice(0, 10);
@@ -86,7 +132,11 @@ const summarizeFinancialLines = (lines, fromDate, toDate, groupBy) => {
       addAccount(revenueAccounts, account, amount);
     } else {
       const amount = number(line.debit) - number(line.credit);
-      if (isCogsAccount(account)) {
+      if (isDiscountAllowedAccount(account)) {
+        revenue -= amount;
+        point.revenue -= amount;
+        addAccount(revenueAccounts, account, -amount);
+      } else if (isCogsAccount(account)) {
         cogs += amount;
         point.cogs += amount;
         addAccount(cogsAccounts, account, amount);
@@ -139,51 +189,65 @@ const getFinancialLines = (tenantId, fromDate, toDate) => db.journalEntryLine.fi
     {
       model: db.journalEntry,
       attributes: ['entry_date'],
-      where: { tenant_id: tenantId, status: 'posted', entry_date: { [Op.between]: [fromDate, toDate] } },
+      where: { ...journalScope(tenantId), entry_date: { [Op.between]: [fromDate, toDate] } },
       required: true
     },
     {
       model: db.account,
       attributes: ['id', 'code', 'name', 'type'],
-      where: { type: { [Op.in]: ['revenue', 'expense'] } },
+      where: { tenant_id: tenantId, type: { [Op.in]: ['revenue', 'expense'] } },
       required: true
     }
   ]
 });
 
-const productProfitability = (items, operatingExpenses) => {
+exports.profitAndLossStatement = async (tenantId, fromDate, toDate) => {
+  const lines = await getFinancialLines(tenantId, fromDate, toDate);
+  const statement = summarizeFinancialLines(lines, fromDate, toDate, 'month');
+  return {
+    period: { from: fromDate, to: toDate },
+    summary: statement.summary,
+    accounts: statement.accounts
+  };
+};
+
+const productProfitability = (items, returnItems, operatingExpenses) => {
   const products = new Map();
   const variants = new Map();
 
-  const accumulate = (map, key, base, item, revenue, cost) => {
+  const accumulate = (map, key, base, orderId, soldQuantity, revenue, cost) => {
     const row = map.get(key) || { ...base, quantity: 0, revenue: 0, cogs: 0, orders: new Set() };
-    row.quantity += number(item.quantity);
+    row.quantity += soldQuantity;
     row.revenue += revenue;
     row.cogs += cost;
-    row.orders.add(item.retailSale.id);
+    row.orders.add(orderId);
     map.set(key, row);
   };
 
-  items.forEach(item => {
+  const addTransaction = (item, direction, orderId) => {
     const variant = item.finishedGood;
     const product = variant.product;
-    const revenue = number(item.total) - number(item.tax_amount);
-    const cost = number(item.cost_amount);
+    const soldQuantity = direction * number(item.quantity);
+    const revenue = direction * (number(item.total) - number(item.tax_amount));
+    const cost = direction * number(item.cost_amount);
     const productKey = product?.id || `unassigned:${variant.id}`;
     accumulate(products, productKey, {
       id: productKey,
       product_id: product?.id || null,
       product_name: product?.name || variant.name || 'Unassigned product',
       code: product?.code || variant.sku || '—'
-    }, item, revenue, cost);
+    }, orderId, soldQuantity, revenue, cost);
     accumulate(variants, variant.id, {
       id: variant.id,
       product_id: product?.id || null,
       product_name: product?.name || variant.name || 'Unassigned product',
       variant_name: [variant.size_label, variant.name !== product?.name ? variant.name : null].filter(Boolean).join(' · ') || 'Standard',
       sku: variant.sku || '—'
-    }, item, revenue, cost);
-  });
+    }, orderId, soldQuantity, revenue, cost);
+  };
+
+  items.forEach(item => addTransaction(item, 1, item.retailSale.id));
+  returnItems.forEach(item => addTransaction(item, -1, item.salesReturn.retail_sale_id));
 
   const totalProductRevenue = [...products.values()].reduce((sum, row) => sum + row.revenue, 0);
   const finalize = row => {
@@ -216,6 +280,77 @@ const productProfitability = (items, operatingExpenses) => {
 
 const changePct = (current, previous) => previous ? round(((current - previous) / Math.abs(previous)) * 100) : null;
 
+exports.productSalesCatalog = async tenantId => db.product.findAll({
+  where: { tenant_id: tenantId },
+  attributes: ['id', 'name', 'code'],
+  order: [['name', 'ASC']]
+});
+
+exports.productSalesHistory = async (tenantId, productId, fromDate, toDate) => {
+  const product = await db.product.findOne({ where: { id: productId, tenant_id: tenantId }, attributes: ['id', 'name', 'code'] });
+  if (!product) return null;
+
+  const variantInclude = () => ({
+    model: db.finishedGood,
+    attributes: ['id', 'name', 'sku', 'size_label'],
+    where: { tenant_id: tenantId, product_id: productId },
+    required: true
+  });
+  const saleDate = fromDate ? { sale_date: { [Op.between]: [fromDate, toDate] } } : {};
+  const returnDate = fromDate ? { return_date: { [Op.between]: [fromDate, toDate] } } : {};
+  const [soldItems, returnedItems] = await Promise.all([
+    db.retailSaleItem.findAll({
+      attributes: ['id', 'quantity', 'total', 'tax_amount', 'cost_amount'],
+      include: [
+        { model: db.retailSale, attributes: ['id', 'sale_number', 'sale_date'], where: { tenant_id: tenantId, ...saleDate }, required: true, include: [{ model: db.customer, attributes: ['name'] }] },
+        variantInclude()
+      ]
+    }),
+    db.salesReturnItem.findAll({
+      attributes: ['id', 'quantity', 'total', 'tax_amount', 'cost_amount'],
+      include: [
+        { model: db.salesReturn, attributes: ['id', 'return_number', 'return_date', 'retail_sale_id'], where: { tenant_id: tenantId, ...returnDate }, required: true,
+          include: [{ model: db.retailSale, attributes: ['id', 'sale_number'], include: [{ model: db.customer, attributes: ['name'] }] }] },
+        variantInclude()
+      ]
+    })
+  ]);
+
+  const rows = [
+    ...soldItems.map(item => ({
+      id: `sale:${item.id}`, type: 'sale', date: item.retailSale.sale_date,
+      invoice_id: item.retailSale.id, invoice: item.retailSale.sale_number,
+      reference: item.retailSale.sale_number, customer: item.retailSale.customer?.name || 'Walk-in customer',
+      variant: item.finishedGood.size_label || item.finishedGood.name || item.finishedGood.sku || 'Standard',
+      quantity: number(item.quantity), sales: round(number(item.total) - number(item.tax_amount)), cost: round(number(item.cost_amount))
+    })),
+    ...returnedItems.map(item => ({
+      id: `return:${item.id}`, type: 'return', date: item.salesReturn.return_date,
+      invoice_id: item.salesReturn.retail_sale_id, invoice: item.salesReturn.retailSale?.sale_number || '—',
+      reference: item.salesReturn.return_number, customer: item.salesReturn.retailSale?.customer?.name || 'Walk-in customer',
+      variant: item.finishedGood.size_label || item.finishedGood.name || item.finishedGood.sku || 'Standard',
+      quantity: -number(item.quantity), sales: -round(number(item.total) - number(item.tax_amount)), cost: -round(number(item.cost_amount))
+    }))
+  ].map(row => ({ ...row, gross_profit: round(row.sales - row.cost) }))
+    .sort((a, b) => b.date.localeCompare(a.date) || b.reference.localeCompare(a.reference));
+
+  const totals = rows.reduce((sum, row) => {
+    sum.quantity += row.quantity;
+    sum.sales += row.sales;
+    sum.cost += row.cost;
+    sum.gross_profit += row.gross_profit;
+    if (row.type === 'return') sum.returns += 1;
+    return sum;
+  }, { quantity: 0, sales: 0, cost: 0, gross_profit: 0, returns: 0 });
+  const invoices = new Set(rows.filter(row => row.type === 'sale').map(row => row.invoice_id)).size;
+  return {
+    product: { id: product.id, name: product.name, code: product.code },
+    period: fromDate ? { from: fromDate, to: toDate } : null,
+    summary: { ...totals, quantity: round(totals.quantity), sales: round(totals.sales), cost: round(totals.cost), gross_profit: round(totals.gross_profit), invoices, gross_margin_pct: percent(totals.gross_profit, totals.sales) },
+    rows
+  };
+};
+
 exports.profitAndLoss = async (tenantId, fromDate, toDate, groupBy = 'month') => {
   const start = new Date(`${fromDate}T00:00:00Z`);
   const end = new Date(`${toDate}T00:00:00Z`);
@@ -227,6 +362,13 @@ exports.profitAndLoss = async (tenantId, fromDate, toDate, groupBy = 'month') =>
   const previousFrom = isoDate(previousStart);
   const previousTo = isoDate(previousEnd);
 
+  const variantInclude = () => ({
+    model: db.finishedGood,
+    attributes: ['id', 'sku', 'name', 'size_label'],
+    where: { tenant_id: tenantId },
+    required: true,
+    include: [{ model: db.product, attributes: ['id', 'code', 'name'], required: false }]
+  });
   const itemInclude = [
     {
       model: db.retailSale,
@@ -234,16 +376,10 @@ exports.profitAndLoss = async (tenantId, fromDate, toDate, groupBy = 'month') =>
       where: { tenant_id: tenantId, sale_date: { [Op.between]: [fromDate, toDate] } },
       required: true
     },
-    {
-      model: db.finishedGood,
-      attributes: ['id', 'sku', 'name', 'size_label'],
-      where: { tenant_id: tenantId },
-      required: true,
-      include: [{ model: db.product, attributes: ['id', 'code', 'name'], required: false }]
-    }
+    variantInclude()
   ];
 
-  const [currentLines, previousLines, sales, previousSales, saleItems] = await Promise.all([
+  const [currentLines, previousLines, sales, previousSales, saleItems, returnedItems] = await Promise.all([
     getFinancialLines(tenantId, fromDate, toDate),
     getFinancialLines(tenantId, previousFrom, previousTo),
     db.retailSale.findAll({
@@ -254,12 +390,27 @@ exports.profitAndLoss = async (tenantId, fromDate, toDate, groupBy = 'month') =>
       where: { tenant_id: tenantId, sale_date: { [Op.between]: [previousFrom, previousTo] } },
       attributes: ['id', 'subtotal', 'discount_amount', 'total_amount']
     }),
-    db.retailSaleItem.findAll({ attributes: ['quantity', 'total', 'tax_amount', 'cost_amount'], include: itemInclude })
+    db.retailSaleItem.findAll({
+      attributes: ['quantity', 'total', 'tax_amount', 'cost_amount'],
+      include: itemInclude
+    }),
+    db.salesReturnItem.findAll({
+      attributes: ['quantity', 'total', 'tax_amount', 'cost_amount'],
+      include: [
+        {
+          model: db.salesReturn,
+          attributes: ['retail_sale_id'],
+          where: { tenant_id: tenantId, return_date: { [Op.between]: [fromDate, toDate] } },
+          required: true
+        },
+        variantInclude()
+      ]
+    })
   ]);
 
   const current = summarizeFinancialLines(currentLines, fromDate, toDate, groupBy);
   const previous = summarizeFinancialLines(previousLines, previousFrom, previousTo, groupBy).summary;
-  const productReport = productProfitability(saleItems, current.summary.operating_expenses);
+  const productReport = productProfitability(saleItems, returnedItems, current.summary.operating_expenses);
   const salesRevenue = rows => rows.reduce((sum, sale) => sum + number(sale.subtotal) - number(sale.discount_amount), 0);
   const currentSalesRevenue = salesRevenue(sales);
   const previousSalesRevenue = salesRevenue(previousSales);
@@ -309,16 +460,49 @@ exports.profitAndLoss = async (tenantId, fromDate, toDate, groupBy = 'month') =>
 };
 
 exports.balanceSheet = async (tenantId, asOfDate) => {
-  const accounts = (await this.trialBalance(tenantId, asOfDate)).filter(account => ['asset', 'liability', 'equity'].includes(account.type));
-  const report = { assets: 0, liabilities: 0, equity: 0, accounts: [] };
-  accounts.forEach(a => {
-    const bal = parseFloat(a.balance);
-    if (a.type === 'asset') report.assets += bal;
-    else if (a.type === 'liability') report.liabilities += bal;
-    else if (a.type === 'equity') report.equity += bal;
-    report.accounts.push({ code: a.code, name: a.name, type: a.type, balance: bal });
-  });
-  return report;
+  return { as_of: asOfDate || isoDate(new Date()), ...statements.balanceSheet(await exports.trialBalance(tenantId, asOfDate)) };
+};
+
+exports.ledgerStatement = async (tenantId, accountId, from, to) => {
+  const account = await db.account.findOne({ where: { id: accountId, tenant_id: tenantId } });
+  if (!account || account.is_group) {
+    const { AppError } = require('../middleware/errorHandler');
+    throw new AppError('Choose a posting ledger', 404);
+  }
+  const lines = await db.journalEntryLine.findAll({ where: { account_id: accountId }, include: [{
+    model: db.journalEntry, required: true, where: { ...journalScope(tenantId), entry_date: { [Op.lte]: to } }
+  }] });
+  return { account: { id: account.id, code: account.code, name: account.name, type: account.type }, period: { from, to }, ...statements.ledgerStatement(lines, account.type, from, to) };
+};
+
+exports.managementReport = async (tenantId, from, to) => {
+  const lines = await getFinancialLines(tenantId, from, to);
+  return { period: { from, to }, ...summarizeFinancialLines(lines, from, to, 'month') };
+};
+
+exports.accountingHealth = async (tenantId, branchId) => {
+  const [journals, accounts, balances] = await Promise.all([
+    db.journalEntry.findAll({ where: { ...journalScope(tenantId), ...(branchId ? { branch_id: branchId } : {}) }, include: [db.journalEntryLine] }),
+    db.account.findAll({ where: { tenant_id: tenantId }, attributes: ['id', 'code', 'name', 'type', 'balance', 'is_group'] }),
+    exports.trialBalance(tenantId)
+  ]);
+  const companyBalances = branchId ? await exports.trialBalance(tenantId, undefined, { companyWide: true }) : balances;
+  const actual = new Map(companyBalances.map(row => [row.id, row.balance]));
+  const mismatches = accounts.filter(row => statements.cents(row.balance) !== statements.cents(actual.get(row.id) || 0))
+    .map(row => ({ id: row.id, code: row.code, name: row.name, stored: Number(row.balance), posted: actual.get(row.id) || 0 }));
+  const unbalanced = [], headerMismatches = [];
+  for (const journal of journals) {
+    const debit = (journal.journalEntryLines || []).reduce((sum, line) => sum + statements.cents(line.debit), 0);
+    const credit = (journal.journalEntryLines || []).reduce((sum, line) => sum + statements.cents(line.credit), 0);
+    const row = { id: journal.id, reference: journal.entry_number, date: journal.entry_date, debit: debit / 100, credit: credit / 100 };
+    if (debit !== credit) unbalanced.push(row);
+    if (debit !== statements.cents(journal.total_debit) || credit !== statements.cents(journal.total_credit)) headerMismatches.push(row);
+  }
+  const debit = balances.reduce((sum, row) => sum + statements.cents(row.debit), 0) / 100;
+  const credit = balances.reduce((sum, row) => sum + statements.cents(row.credit), 0) / 100;
+  return { posted_journals: journals.length, total_debit: debit, total_credit: credit, difference: round(debit-credit),
+    balanced: statements.cents(debit) === statements.cents(credit) && unbalanced.length === 0 && headerMismatches.length === 0, stored_balance_check: 'checked_company',
+    stored_balance_mismatches: mismatches, unbalanced_journals: unbalanced, header_mismatches: headerMismatches };
 };
 
 exports.agingReport = async (tenantId, type) => {
@@ -329,19 +513,19 @@ exports.agingReport = async (tenantId, type) => {
     where: { tenant_id: tenantId, status: { [Op.in]: ['unpaid', 'partial', 'overdue'] } },
     include: [Party], order: [['due_date', 'ASC']]
   });
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
+  const now = new Date(`${businessDate()}T00:00:00Z`);
   const report = { current: 0, '1-30': 0, '31-60': 0, '60+': 0, invoices: [] };
   for (const invoice of invoices) {
-    const balance = Math.max(0, Number(invoice.total_amount || 0) - Number(invoice.paid_amount || 0));
+    const balance = Math.max(0, round(Number(invoice.total_amount || 0) - Number(invoice.paid_amount || 0)));
     if (!balance) continue;
-    const due = new Date(`${invoice.due_date}T00:00:00`);
+    const due = new Date(`${invoice.due_date || businessDate()}T00:00:00Z`);
     const daysOverdue = Math.max(0, Math.floor((now - due) / 86400000));
     const bucket = daysOverdue === 0 ? 'current' : daysOverdue <= 30 ? '1-30' : daysOverdue <= 60 ? '31-60' : '60+';
-    report[bucket] += balance;
+    report[bucket] = round(report[bucket] + balance);
     const party = invoice[isPayable ? 'supplier' : 'customer'];
     report.invoices.push({
       id: invoice.invoice_number, invoice_id: invoice.id,
+      party_id: invoice[isPayable ? 'supplier_id' : 'customer_id'],
       [isPayable ? 'supplier' : 'customer']: party?.name || 'Unknown',
       due: invoice.due_date, amount: Number(invoice.total_amount || 0), balance,
       daysOverdue, status: bucket === 'current' ? 'Current' : `${bucket} Days`
@@ -352,23 +536,10 @@ exports.agingReport = async (tenantId, type) => {
 
 exports.cashFlow = async (tenantId, fromDate, toDate) => {
   const accounting = require('./accounting.service');
-  const ledgers = await accounting.getCashBankLedgers(tenantId);
-  if (!ledgers.length) return { data: [], summary: { inflow: 0, outflow: 0, net: 0 } };
-  const entryWhere = { tenant_id: tenantId, status: 'posted' };
-  if (fromDate || toDate) entryWhere.entry_date = {
-    ...(fromDate ? { [Op.gte]: fromDate } : {}), ...(toDate ? { [Op.lte]: toDate } : {})
-  };
-  const lines = await db.journalEntryLine.findAll({
-    where: { account_id: { [Op.in]: ledgers.map(item => item.id) } },
-    include: [{ model: db.journalEntry, where: entryWhere }, db.account],
-    order: [[db.journalEntry, 'entry_date', 'DESC'], ['created_at', 'DESC']]
-  });
-  const data = lines.map(line => ({
-    id: line.id, date: line.journalEntry.entry_date, reference: line.journalEntry.entry_number,
-    type: line.journalEntry.reference_type, description: line.description || line.journalEntry.narration,
-    account: line.account?.name, inflow: Number(line.debit || 0), outflow: Number(line.credit || 0)
-  }));
-  const summary = data.reduce((result, row) => ({ inflow: result.inflow + row.inflow, outflow: result.outflow + row.outflow }), { inflow: 0, outflow: 0 });
-  summary.net = summary.inflow - summary.outflow;
-  return { data, summary };
+  const ledgers = await accounting.getCashBankLedgers(tenantId, undefined, { includeInactive: true });
+  const lines = ledgers.length ? await db.journalEntryLine.findAll({
+    where: { account_id: { [Op.in]: ledgers.map(row => row.id) } },
+    include: [{ model: db.journalEntry, required: true, where: { ...journalScope(tenantId), entry_date: { [Op.lte]: toDate } } }, { model: db.account, required: true, where: { tenant_id: tenantId } }]
+  }) : [];
+  return { period: { from: fromDate, to: toDate }, ...statements.cashMovements(lines, fromDate, toDate) };
 };

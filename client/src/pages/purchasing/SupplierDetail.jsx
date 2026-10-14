@@ -8,6 +8,7 @@ export default function SupplierDetail() {
   const navigate = useNavigate();
   const { id } = useParams();
   const { data: supplierData } = useApiData(`/suppliers/${id}`, { initialData: {} });
+  const { data: ledgerData } = useApiData(`/suppliers/${id}/ledger`, { initialData: { entries: [] } });
   const supplier = {
     ...supplierData,
     contact: supplierData.contact_person || '—',
@@ -66,11 +67,23 @@ export default function SupplierDetail() {
       key: '3',
       label: 'Materials Supplied',
       children: <Table dataSource={supplier.materials} columns={materialColumns} pagination={false} />
+    },
+    {
+      key: '4',
+      label: 'Vendor Ledger',
+      children: <Table rowKey="id" dataSource={ledgerData.entries || []} pagination={{ pageSize: 10 }} columns={[
+        { title: 'Date', dataIndex: 'date' },
+        { title: 'Reference', dataIndex: 'entry_number' },
+        { title: 'Description', dataIndex: 'description' },
+        { title: 'Debit', align: 'right', render: (_, row) => `₹${Number(row.debit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` },
+        { title: 'Credit', align: 'right', render: (_, row) => `₹${Number(row.credit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` },
+        { title: 'Balance', align: 'right', render: (_, row) => <strong>₹{Number(row.balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong> }
+      ]} />
     }
   ];
 
   return (
-    <div style={{ padding: 24 }}>
+    <div className="standard-page">
       <Breadcrumb style={{ marginBottom: 16 }}>
         <Breadcrumb.Item><Link to="/app/dashboard" style={{ color: 'var(--color-text-secondary)' }}>Dashboard</Link></Breadcrumb.Item>
         <Breadcrumb.Item><Link to="/app/suppliers" style={{ color: 'var(--color-text-secondary)' }}>Suppliers</Link></Breadcrumb.Item>
@@ -80,7 +93,7 @@ export default function SupplierDetail() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <Space size="middle">
           <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/app/suppliers')} />
-          <h1 style={{ fontFamily: "'Playfair Display', serif", color: 'var(--color-gold)', margin: 0 }}>{supplier.name}</h1>
+          <h1 style={{ margin: 0 }}>{supplier.name}</h1>
         </Space>
         <Space>
           <Button icon={<PrinterOutlined />} onClick={() => window.print()}>Print Profile</Button>

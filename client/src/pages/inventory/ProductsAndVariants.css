@@ -1,0 +1,44 @@
+.variant-formula-guide {
+  margin: 0 0 16px;
+  border-radius: 11px;
+}
+
+.variant-formula-guide .ant-alert-message {
+  color: #26384b;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.variant-formula-guide__body {
+  color: #536477;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.variant-formula-guide__body p {
+  margin: 5px 0;
+}
+
+.variant-formula-guide__ingredients {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.variant-formula-guide__ingredients span {
+  padding: 5px 8px;
+  border: 1px solid rgba(52, 119, 204, .16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .68);
+}
+
+@media (max-width: 767px) {
+  .variant-formula-guide {
+    padding: 10px 11px;
+  }
+
+  .variant-formula-guide__ingredients {
+    display: grid;
+  }
+}

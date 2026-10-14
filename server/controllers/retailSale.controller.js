@@ -1,6 +1,9 @@
 const db = require('../models');
 const { AppError } = require('../middleware/errorHandler');
 const accounting = require('../services/accounting.service');
+const { ACCOUNT_CODES } = require('../config/constants');
+const saleNumbers = require('../services/saleNumber.service');
+const businessDays = require('../services/businessDay.service');
 
 const number = value => Number(value || 0);
 
@@ -16,6 +19,11 @@ exports.create = async (req, res, next) => {
   try {
     const { items = [], customer_id = null, sale_date = new Date(), notes } = req.body;
     if (!items.length) throw new AppError('A retail sale needs at least one item', 400);
+    const tenantSettings = await db.tenant.findByPk(req.tenantId, { transaction });
+    const composition = tenantSettings?.tax_system === 'GST' && tenantSettings?.gst_scheme === 'COMPOSITION';
+    const businessDay = await businessDays.requireOpen(req.tenantId, transaction);
+    const saleDate = typeof sale_date === 'string' ? sale_date.slice(0, 10) : businessDays.businessDate(new Date(sale_date));
+    if (saleDate !== businessDay.business_date) throw new AppError('Retail sale date must match the open business day', 409);
     if (String(sale_date).slice(0, 10) > new Date().toISOString().slice(0, 10)) throw new AppError('Future-dated sales are not allowed', 400);
     if (customer_id) {
       const customer = await db.customer.findOne({ where: { id: customer_id, tenant_id: req.tenantId, is_active: true }, transaction });
@@ -24,19 +32,20 @@ exports.create = async (req, res, next) => {
     const method = await accounting.resolvePaymentMethod(req.tenantId, req.body, transaction);
     const paymentAccount = method.account;
 
-    const sequence = await db.retailSale.count({ where: { tenant_id: req.tenantId }, transaction }) + 1;
+    const saleNumber = await saleNumbers.nextRetailSaleNumber({ tenantId: req.tenantId, saleDate: sale_date, transaction });
     let subtotal = 0, discountAmount = 0, taxAmount = 0;
     const calculated = items.map(row => {
       const qty = number(row.quantity), price = number(row.unit_price), discountPct = number(row.discount_pct), taxRate = number(row.tax_rate);
       if (!row.finished_good_id || qty <= 0 || price < 0) throw new AppError('Each sale line requires a product, positive quantity, and price', 400);
       if (discountPct < 0 || discountPct > 100 || taxRate < 0 || taxRate > 100) throw new AppError('Discount and tax rates must be between 0 and 100', 400);
+      if (composition && taxRate !== 0) throw new AppError('Composition sales cannot charge GST. Set every sale tax rate to 0%.', 400);
       const base = accounting.money(qty * price), discount = accounting.money(base * discountPct / 100), taxable = accounting.money(base - discount), tax = accounting.money(taxable * taxRate / 100);
       subtotal += base; discountAmount += discount; taxAmount += tax;
       return { ...row, quantity: qty, unit_price: price, discount_pct: discountPct, tax_rate: taxRate, tax_amount: tax, total: accounting.money(taxable + tax) };
     });
     subtotal = accounting.money(subtotal); discountAmount = accounting.money(discountAmount); taxAmount = accounting.money(taxAmount);
-    const sale = await db.retailSale.create({ tenant_id: req.tenantId, sale_number: `RS-${new Date(sale_date).getFullYear()}-${String(sequence).padStart(4, '0')}`,
-      sale_date, customer_id, payment_account_id: paymentAccount.id, payment_method_id: method.id, notes, subtotal, discount_amount: discountAmount, tax_amount: taxAmount, total_amount: accounting.money(subtotal - discountAmount + taxAmount), created_by: req.user.id }, { transaction });
+    const sale = await db.retailSale.create({ tenant_id: req.tenantId, sale_number: saleNumber,
+      business_day_id: businessDay.id, sale_date: saleDate, customer_id, payment_account_id: paymentAccount.id, payment_method_id: method.id, notes, subtotal, discount_amount: discountAmount, tax_amount: taxAmount, gst_scheme: composition ? 'COMPOSITION' : 'REGULAR', total_amount: accounting.money(subtotal - discountAmount + taxAmount), created_by: req.user.id }, { transaction });
 
     let cogs = 0;
     for (const line of calculated) {
@@ -61,26 +70,27 @@ exports.create = async (req, res, next) => {
     }
     cogs = accounting.money(cogs);
 
-    const accounts = await accounting.getAccountsByCode(req.tenantId, ['4000', '5000', '1300', '2100'], transaction);
-    const revenueJournal = await accounting.createAndPost(req.tenantId, { entry_date: sale_date, reference_type: 'retail_sale_revenue', reference_id: sale.id,
+    const accounts = await accounting.getAccountsByCode(req.tenantId, [ACCOUNT_CODES.SALES_REVENUE, ACCOUNT_CODES.COGS, ACCOUNT_CODES.FG_INVENTORY, ACCOUNT_CODES.TAX_PAYABLE], transaction);
+    const revenueJournal = await accounting.createAndPost(req.tenantId, { entry_date: saleDate, business_day_id: businessDay.id, reference_type: 'retail_sale_revenue', reference_id: sale.id,
       narration: 'Retail sale revenue', lines: [
         { account_id: paymentAccount.id, debit_amount: number(sale.total_amount), description: `Retail sale ${sale.sale_number}` },
-        { account_id: accounts['4000'].id, credit_amount: subtotal - discountAmount, description: `Retail sale ${sale.sale_number}` },
-        ...(taxAmount ? [{ account_id: accounts['2100'].id, credit_amount: taxAmount, description: `Tax on ${sale.sale_number}` }] : [])
+        { account_id: accounts[ACCOUNT_CODES.SALES_REVENUE].id, credit_amount: subtotal - discountAmount, description: `Retail sale ${sale.sale_number}` },
+        ...(taxAmount ? [{ account_id: accounts[ACCOUNT_CODES.TAX_PAYABLE].id, credit_amount: taxAmount, description: `Tax on ${sale.sale_number}` }] : [])
       ] }, req.user.id, transaction);
-    const cogsJournal = cogs ? await accounting.createAndPost(req.tenantId, { entry_date: sale_date, reference_type: 'retail_sale_cogs', reference_id: sale.id,
+    const cogsJournal = cogs ? await accounting.createAndPost(req.tenantId, { entry_date: saleDate, reference_type: 'retail_sale_cogs', reference_id: sale.id,
       narration: 'Retail sale cost of goods sold', lines: [
-        { account_id: accounts['5000'].id, debit_amount: cogs, description: `COGS for ${sale.sale_number}` },
-        { account_id: accounts['1300'].id, credit_amount: cogs, description: `COGS for ${sale.sale_number}` }
+        { account_id: accounts[ACCOUNT_CODES.COGS].id, debit_amount: cogs, description: `COGS for ${sale.sale_number}` },
+        { account_id: accounts[ACCOUNT_CODES.FG_INVENTORY].id, credit_amount: cogs, description: `COGS for ${sale.sale_number}` }
       ] }, req.user.id, transaction) : null;
     if (db.sequelize.getDialect() === 'postgres') await db.sequelize.query('SELECT pg_advisory_xact_lock(hashtext(:key))', { replacements: { key: `${req.tenantId}:payment:incoming` }, transaction });
     const paymentSequence = await db.payment.count({ where: { tenant_id: req.tenantId, payment_type: 'incoming' }, transaction }) + 1;
     const paymentRecord = await db.payment.create({
       tenant_id: req.tenantId,
+      business_day_id: businessDay.id,
       payment_number: `PAY-IN-${new Date(sale_date).getFullYear()}-${String(paymentSequence).padStart(4, '0')}`,
       payment_type: 'incoming', party_type: 'customer', party_id: customer_id,
       payment_method_id: method.id, payment_mode: accounting.paymentModeForType(method.method_type),
-      bank_account_id: paymentAccount.id, amount: sale.total_amount, payment_date: sale_date,
+      bank_account_id: paymentAccount.id, amount: sale.total_amount, payment_date: saleDate,
       notes: `Retail sale ${sale.sale_number}`, journal_entry_id: revenueJournal.id, created_by: req.user.id
     }, { transaction });
     await sale.update({ cogs_amount: cogs, journal_entry_id: revenueJournal.id, cogs_journal_id: cogsJournal?.id || null }, { transaction });

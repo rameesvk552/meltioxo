@@ -1,6 +1,7 @@
 const db = require('../models');
 const accounting = require('./accounting.service');
 const { AppError } = require('../middleware/errorHandler');
+const { ACCOUNT_CODES } = require('../config/constants');
 
 const calculateFormulaOutput = (formula, variant, plannedUnits) => {
   const outputUnit = String(formula.output_unit || '').trim().toLowerCase();
@@ -26,7 +27,7 @@ exports.calculateFormulaOutput = calculateFormulaOutput;
 
 exports.resolveVariantFormulaId = (variant) => variant.formula_id || variant.product?.formula_id;
 
-exports.calculateMaterialRequirements = async (tenantId, formulaId, plannedUnits, finishedGoodId, transaction) => {
+exports.calculateMaterialRequirements = async (tenantId, formulaId, plannedUnits, finishedGoodId, transaction, options = {}) => {
   const formula = await db.formula.findOne({
     where: { id: formulaId, tenant_id: tenantId },
     include: [db.formulaIngredient, db.formulaPackaging],
@@ -59,7 +60,9 @@ exports.calculateMaterialRequirements = async (tenantId, formulaId, plannedUnits
     });
   });
 
-  if (variant.variantPackagings.length) {
+  if (options.excludePackaging) {
+    // Measured sales consume the selected capacity-based kit at checkout.
+  } else if (variant.variantPackagings.length) {
     variant.variantPackagings.forEach(pkg => {
       requirements.push({
         material_type: 'packaging',
@@ -156,9 +159,9 @@ exports.consumeMaterials = async (tenantId, productionOrderId, transaction, opti
     }
     await mat.update({ consumed_qty: parseFloat(mat.required_qty), consumed_cost: consumedCost }, { transaction });
     if (consumedCost > 0) {
-      const accounts = await accounting.getAccountsByCode(tenantId, ['1200', '1210', '1220'], transaction);
-      journalLines.push({ account_id: accounts['1220'].id, debit_amount: consumedCost, description: `Material issued to ${productionOrderId}` });
-      journalLines.push({ account_id: accounts[mat.material_type === 'raw' ? '1200' : '1210'].id, credit_amount: consumedCost, description: `Material issued to ${productionOrderId}` });
+      const accounts = await accounting.getAccountsByCode(tenantId, [ACCOUNT_CODES.RAW_INVENTORY, ACCOUNT_CODES.PKG_INVENTORY, ACCOUNT_CODES.WIP], transaction);
+      journalLines.push({ account_id: accounts[ACCOUNT_CODES.WIP].id, debit_amount: consumedCost, description: `Material issued to ${productionOrderId}` });
+      journalLines.push({ account_id: accounts[mat.material_type === 'raw' ? ACCOUNT_CODES.RAW_INVENTORY : ACCOUNT_CODES.PKG_INVENTORY].id, credit_amount: consumedCost, description: `Material issued to ${productionOrderId}` });
     }
   }
   if (journalLines.length) await accounting.createAndPost(tenantId, { entry_date: options.entryDate || new Date(), reference_type: 'production_issue', reference_id: productionOrderId,
@@ -210,8 +213,8 @@ exports.completeProduction = async (tenantId, productionOrderId, actualQty, tran
       await output.update({ actual_qty: actual }, { transaction });
     }
     if (totalCost > 0) {
-      const accounts = await accounting.getAccountsByCode(tenantId, ['1220', '1300'], transaction);
-      const journal = await accounting.createAndPost(tenantId, { entry_date: options.entryDate || new Date(), reference_type: 'production_completion', reference_id: order.id, narration: 'Production completion', lines: [{ account_id: accounts['1300'].id, debit_amount: totalCost, description: `Finished goods completed: ${order.order_number}` }, { account_id: accounts['1220'].id, credit_amount: totalCost, description: `Production completed: ${order.order_number}` }] }, options.createdBy || null, transaction);
+      const accounts = await accounting.getAccountsByCode(tenantId, [ACCOUNT_CODES.WIP, ACCOUNT_CODES.FG_INVENTORY], transaction);
+      const journal = await accounting.createAndPost(tenantId, { entry_date: options.entryDate || new Date(), reference_type: 'production_completion', reference_id: order.id, narration: 'Production completion', lines: [{ account_id: accounts[ACCOUNT_CODES.FG_INVENTORY].id, debit_amount: totalCost, description: `Finished goods completed: ${order.order_number}` }, { account_id: accounts[ACCOUNT_CODES.WIP].id, credit_amount: totalCost, description: `Production completed: ${order.order_number}` }] }, options.createdBy || null, transaction);
       await order.update({ journal_entry_id: journal.id }, { transaction });
     }
     await order.update({ status: 'completed', actual_qty: totalActual, completion_date: options.entryDate || new Date() }, { transaction });
@@ -262,10 +265,10 @@ exports.completeProduction = async (tenantId, productionOrderId, actualQty, tran
   }, { transaction });
 
   if (totalCost > 0) {
-    const accounts = await accounting.getAccountsByCode(tenantId, ['1200', '1210', '1220', '1300'], transaction);
+    const accounts = await accounting.getAccountsByCode(tenantId, [ACCOUNT_CODES.WIP, ACCOUNT_CODES.FG_INVENTORY], transaction);
     const lines = [
-      { account_id: accounts['1300'].id, debit_amount: totalCost, description: `Finished goods completed: ${order.order_number}` },
-      { account_id: accounts['1220'].id, credit_amount: totalCost, description: `Production completed: ${order.order_number}` }
+      { account_id: accounts[ACCOUNT_CODES.FG_INVENTORY].id, debit_amount: totalCost, description: `Finished goods completed: ${order.order_number}` },
+      { account_id: accounts[ACCOUNT_CODES.WIP].id, credit_amount: totalCost, description: `Production completed: ${order.order_number}` }
     ];
     const journal = await accounting.createAndPost(tenantId, { entry_date: options.entryDate || new Date(), reference_type: 'production_completion', reference_id: order.id,
       narration: 'Production completion', lines }, options.createdBy || null, transaction);
@@ -276,7 +279,8 @@ exports.completeProduction = async (tenantId, productionOrderId, actualQty, tran
   return order;
 };
 
-exports.createInstantProduction = async ({ tenantId, retailSaleId, variant, quantity, saleDate, lineNumber, createdBy, transaction }) => {
+exports.createInstantProduction = async ({ tenantId, retailSaleId, variant, quantity, saleDate, lineNumber, createdBy, transaction, excludePackaging = false }) => {
+  if (variant.source_type === 'ready_made') throw new AppError(`${variant.name} is ready-made and cannot be produced`, 400);
   const formulaId = exports.resolveVariantFormulaId(variant);
   if (!formulaId) throw new AppError(`${variant.name} does not have a formula`, 400);
   const formula = await db.formula.findOne({ where: { id: formulaId, tenant_id: tenantId, is_active: true }, transaction });
@@ -300,7 +304,7 @@ exports.createInstantProduction = async ({ tenantId, retailSaleId, variant, quan
     created_by: createdBy
   }, { transaction });
   await db.productionOutput.create({ production_order_id: order.id, finished_good_id: variant.id, planned_qty: quantity }, { transaction });
-  const requirements = exports.combineMaterialRequirements(await exports.calculateMaterialRequirements(tenantId, formulaId, quantity, variant.id, transaction));
+  const requirements = exports.combineMaterialRequirements(await exports.calculateMaterialRequirements(tenantId, formulaId, quantity, variant.id, transaction, { excludePackaging }));
   const availability = await exports.checkAvailability(tenantId, requirements, transaction);
   if (availability.length) await db.productionMaterial.bulkCreate(availability.map(row => ({
     production_order_id: order.id,

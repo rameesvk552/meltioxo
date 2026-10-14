@@ -4,6 +4,7 @@ import { PlusOutlined, DeleteOutlined, SaveOutlined, CheckCircleOutlined } from 
 import { useNavigate } from 'react-router-dom';
 import client from '../../api/client';
 import useApiData from '../../hooks/useApiData';
+import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -11,6 +12,7 @@ const { Option } = Select;
 const JournalEntryForm = () => {
   const [form] = Form.useForm();
   const navigate = useNavigate();
+  const [saving, setSaving] = useState(false);
   const { data: accountData } = useApiData('/accounts');
   const accounts = accountData.filter(item => !item.is_group && item.is_active !== false).map(item => ({ ...item, name: `${item.code} - ${item.name}` }));
   const [lines, setLines] = useState([
@@ -42,12 +44,14 @@ const JournalEntryForm = () => {
     }
   };
 
-  const totalDebit = lines.reduce((sum, line) => sum + (line.debit || 0), 0);
-  const totalCredit = lines.reduce((sum, line) => sum + (line.credit || 0), 0);
-  const difference = totalDebit - totalCredit;
-  const isBalanced = totalDebit > 0 && Math.round(totalDebit * 100) === Math.round(totalCredit * 100);
+  const totalDebit = lines.reduce((sum, line) => sum + Math.round(Number(line.debit || 0)*100), 0)/100;
+  const totalCredit = lines.reduce((sum, line) => sum + Math.round(Number(line.credit || 0)*100), 0)/100;
+  const difference = (Math.round(totalDebit*100)-Math.round(totalCredit*100))/100;
+  const isBalanced = totalDebit > 0 && difference === 0 && lines.every(line=>line.account && (line.debit > 0 || line.credit > 0));
 
   const saveEntry = async (values, shouldPost) => {
+    if (saving) return;
+    setSaving(true);
     try {
       const { data: entry } = await client.post('/journal-entries', {
         entry_date: values.date.format('YYYY-MM-DD'),
@@ -58,10 +62,18 @@ const JournalEntryForm = () => {
           debit_amount: Number(line.debit || 0), credit_amount: Number(line.credit || 0)
         }))
       });
-      if (shouldPost) await client.post(`/journal-entries/${entry.id}/post`);
+      if (shouldPost) {
+        try { await client.post(`/journal-entries/${entry.id}/post`); }
+        catch (error) {
+          message.error(`Draft ${entry.entry_number} was saved, but posting failed: ${error.response?.data?.message || 'Try posting from the journal register.'}`);
+          navigate(`/app/journal-entries?entry=${entry.id}`);
+          return;
+        }
+      }
       message.success(shouldPost ? 'Journal posted' : 'Draft saved');
       navigate('/app/journal-entries');
     } catch (error) { message.error(error.response?.data?.message || 'Could not save the journal'); }
+    finally { setSaving(false); }
   };
 
   const onFinish = values => saveEntry(values, true);
@@ -100,7 +112,7 @@ const JournalEntryForm = () => {
       key: 'debit',
       width: '15%',
       render: (val, record) => (
-        <InputNumber min={0} value={val} onChange={(v) => handleLineChange(v, 'debit', record.key)} style={{ width: '100%' }} />
+        <InputNumber min={0} precision={2} step={0.01} value={val} onChange={(v) => handleLineChange(v, 'debit', record.key)} style={{ width: '100%' }} />
       )
     },
     {
@@ -109,7 +121,7 @@ const JournalEntryForm = () => {
       key: 'credit',
       width: '15%',
       render: (val, record) => (
-        <InputNumber min={0} value={val} onChange={(v) => handleLineChange(v, 'credit', record.key)} style={{ width: '100%' }} />
+        <InputNumber min={0} precision={2} step={0.01} value={val} onChange={(v) => handleLineChange(v, 'credit', record.key)} style={{ width: '100%' }} />
       )
     },
     {
@@ -123,17 +135,17 @@ const JournalEntryForm = () => {
   ];
 
   return (
-    <div style={{ padding: 24 }}>
+    <div className="standard-page">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <Title level={2} style={{ fontFamily: "'Playfair Display', serif", color: 'var(--color-gold)', margin: 0 }}>Create Journal Entry</Title>
+        <Title level={2} style={{ margin: 0 }}>Create Journal Entry</Title>
       </div>
 
-      <Form form={form} layout="vertical" onFinish={onFinish}>
+      <Form form={form} layout="vertical" onFinish={onFinish} initialValues={{ date: dayjs() }}>
         <Card style={{ marginBottom: 24 }}>
           <Row gutter={24}>
             <Col xs={24} sm={8}>
               <Form.Item name="date" label={<span >Entry Date</span>} rules={[{ required: true }]}>
-                <DatePicker style={{ width: '100%' }} />
+                <DatePicker style={{ width: '100%' }} disabledDate={date=>date && date.isAfter(dayjs(),'day')} />
               </Form.Item>
             </Col>
             <Col xs={24} sm={16}>
@@ -189,11 +201,11 @@ const JournalEntryForm = () => {
                   <Row gutter={10}>
                     <Col span={12}>
                       <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 4 }}>Debit (₹)</div>
-                      <InputNumber min={0} value={line.debit} onChange={(v) => handleLineChange(v, 'debit', line.key)} style={{ width: '100%' }} />
+                      <InputNumber min={0} precision={2} step={0.01} value={line.debit} onChange={(v) => handleLineChange(v, 'debit', line.key)} style={{ width: '100%' }} />
                     </Col>
                     <Col span={12}>
                       <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 4 }}>Credit (₹)</div>
-                      <InputNumber min={0} value={line.credit} onChange={(v) => handleLineChange(v, 'credit', line.key)} style={{ width: '100%' }} />
+                      <InputNumber min={0} precision={2} step={0.01} value={line.credit} onChange={(v) => handleLineChange(v, 'credit', line.key)} style={{ width: '100%' }} />
                     </Col>
                   </Row>
                 </div>
@@ -206,7 +218,7 @@ const JournalEntryForm = () => {
 
           <Row justify="end">
             <Col xs={24} sm={12} lg={10}>
-              <div style={{ padding: 16, background: 'rgba(0,0,0,0.2)', borderRadius: 8, border: '1px solid #30363d' }}>
+              <div style={{ padding: 16, background: '#fcf7f0', borderRadius: 12, border: '1px solid #e8dfd5' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                   <Text style={{ color: 'var(--color-text-secondary)' }}>Total Debit:</Text>
                   <Text style={{ fontWeight: 'bold' }}>₹{totalDebit.toLocaleString('en-IN')}</Text>
@@ -215,7 +227,7 @@ const JournalEntryForm = () => {
                   <Text style={{ color: 'var(--color-text-secondary)' }}>Total Credit:</Text>
                   <Text style={{ fontWeight: 'bold' }}>₹{totalCredit.toLocaleString('en-IN')}</Text>
                 </div>
-                <Divider style={{ margin: '12px 0', borderColor: '#30363d' }} />
+                <Divider style={{ margin: '12px 0', borderColor: '#e8dfd5' }} />
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <Title level={5} style={{ color: difference === 0 ? '#52c41a' : '#ff4d4f', margin: 0 }}>Difference:</Title>
                   <Title level={5} style={{ color: difference === 0 ? '#52c41a' : '#ff4d4f', margin: 0 }}>₹{Math.abs(difference).toLocaleString('en-IN')}</Title>
@@ -226,10 +238,11 @@ const JournalEntryForm = () => {
         </Card>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 16 }}>
-          <Button icon={<SaveOutlined />} onClick={saveDraft} disabled={!isBalanced}>
+          <Button onClick={() => navigate('/app/journal-entries')} disabled={saving}>Cancel</Button>
+          <Button icon={<SaveOutlined />} onClick={saveDraft} disabled={!isBalanced || saving}>
             Save Draft
           </Button>
-          <Button type="primary" htmlType="submit" disabled={!isBalanced} icon={<CheckCircleOutlined />} style={{ background: isBalanced ? 'var(--color-gold)' : '#30363d', borderColor: isBalanced ? 'var(--color-gold)' : '#30363d', color: isBalanced ? '#0f1729' : '#8b949e' }}>
+          <Button type="primary" htmlType="submit" loading={saving} disabled={!isBalanced} icon={<CheckCircleOutlined />}>
             Post Entry
           </Button>
         </div>

@@ -35,7 +35,7 @@ export default function RawMaterialDetail() {
   const cardStyle = { background: '#ffffff', border: '1px solid var(--color-border)', borderRadius: 12, marginBottom: 24 };
 
   return (
-    <div style={{ padding: '24px' }}>
+    <div className="standard-page">
       <Breadcrumb style={{ marginBottom: 16 }}>
         <Breadcrumb.Item><Link to="/app/raw-materials" style={{ color: 'var(--color-text-secondary)' }}>Inventory</Link></Breadcrumb.Item>
         <Breadcrumb.Item><Link to="/app/raw-materials" style={{ color: 'var(--color-text-secondary)' }}>Raw Materials</Link></Breadcrumb.Item>
@@ -47,7 +47,7 @@ export default function RawMaterialDetail() {
           <Link to="/app/raw-materials">
             <Button type="text" icon={<ArrowLeftOutlined />} style={{ color: 'inherit' }} />
           </Link>
-          <Title level={2} style={{ color: 'var(--color-gold)', fontFamily: 'Playfair Display', margin: 0 }}>{material.name || 'Material'} ({material.sku || '—'})</Title>
+          <Title level={2} style={{ margin: 0 }}>{material.name || 'Material'} ({material.sku || '—'})</Title>
           <Tag color={stock <= reorder ? 'warning' : 'success'}>{stock <= 0 ? 'Out of Stock' : stock <= reorder ? 'Low Stock' : 'In Stock'}</Tag>
         </Space>
         <Space>
@@ -79,8 +79,8 @@ export default function RawMaterialDetail() {
           columns={[
             { title: 'Batch #', dataIndex: 'batch', render: t => <Text style={{ color: '#4299e1' }}>{t}</Text> },
             { title: 'Supplier', dataIndex: 'supplier', render: t => <Text style={{ color: 'inherit' }}>{t}</Text> },
-            { title: 'Original Qty', dataIndex: 'qty', render: t => <Text style={{ color: 'inherit' }}>{t} kg</Text> },
-            { title: 'Remaining', dataIndex: 'remaining', render: t => <Text style={{ color: '#48bb78', fontWeight: 600 }}>{t} kg</Text> },
+            { title: 'Original Qty', dataIndex: 'qty', render: t => <Text style={{ color: 'inherit' }}>{t} {material.unit}</Text> },
+            { title: 'Remaining', dataIndex: 'remaining', render: t => <Text style={{ color: '#48bb78', fontWeight: 600 }}>{t} {material.unit}</Text> },
             { title: 'Cost/Unit', dataIndex: 'cost', render: v => <Text style={{ color: 'inherit' }}>₹{v.toLocaleString()}</Text> },
             { title: 'Received', dataIndex: 'date', render: t => <Text style={{ color: 'var(--color-text-secondary)' }}>{t}</Text> },
             { title: 'Expiry', dataIndex: 'expiry', render: t => <Text style={{ color: 'var(--color-text-secondary)' }}>{t}</Text> },
@@ -97,9 +97,9 @@ export default function RawMaterialDetail() {
           columns={[
             { title: 'Date', dataIndex: 'date', render: t => <Text style={{ color: 'var(--color-text-secondary)' }}>{t}</Text> },
             { title: 'Type', dataIndex: 'type', render: t => <Text style={{ color: 'inherit' }}>{t}</Text> },
-            { title: 'Direction', dataIndex: 'dir', render: d => <Tag color={d === 'In' ? 'success' : 'error'}>{d}</Tag> },
-            { title: 'Qty', dataIndex: 'qty', render: t => <Text style={{ color: 'inherit' }}>{t} kg</Text> },
-            { title: 'Balance', dataIndex: 'bal', render: t => <Text style={{ color: 'var(--color-gold)', fontWeight: 600 }}>{t} kg</Text> },
+            { title: 'Direction', dataIndex: 'dir', render: d => <Tag color={d === 'in' ? 'success' : 'error'}>{d}</Tag> },
+            { title: 'Qty', dataIndex: 'qty', render: t => <Text style={{ color: 'inherit' }}>{t} {material.unit}</Text> },
+            { title: 'Balance', dataIndex: 'bal', render: t => <Text style={{ color: 'var(--color-gold)', fontWeight: 600 }}>{t === '—' ? t : `${t} ${material.unit}`}</Text> },
             { title: 'Reference', dataIndex: 'ref', render: t => <Text style={{ color: '#4299e1' }}>{t}</Text> },
             { title: 'Notes', dataIndex: 'notes', render: t => <Text style={{ color: 'var(--color-text-secondary)' }}>{t}</Text> },
           ]}

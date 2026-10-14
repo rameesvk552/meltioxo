@@ -4,6 +4,7 @@ import { ArrowLeftOutlined, PlayCircleOutlined, CheckCircleOutlined } from '@ant
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import client from '../../api/client';
 import useApiData from '../../hooks/useApiData';
+import './ProductionOrders.css';
 
 export default function ProductionOrderDetail() {
   const navigate = useNavigate();
@@ -69,7 +70,7 @@ export default function ProductionOrderDetail() {
   ];
 
   return (
-    <div style={{ padding: 24 }}>
+    <div className="production-page production-detail-page">
       <Breadcrumb style={{ marginBottom: 16 }}>
         <Breadcrumb.Item><Link to="/app/dashboard" style={{ color: 'var(--color-text-secondary)' }}>Dashboard</Link></Breadcrumb.Item>
         <Breadcrumb.Item><Link to="/app/production" style={{ color: 'var(--color-text-secondary)' }}>Production</Link></Breadcrumb.Item>
@@ -79,7 +80,7 @@ export default function ProductionOrderDetail() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <Space size="middle">
           <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/app/production')} />
-          <h1 style={{ fontFamily: "'Playfair Display', serif", color: 'var(--color-gold)', margin: 0 }}>Production Order Detail</h1>
+          <h1 style={{ margin: 0 }}>Production Order Detail</h1>
         </Space>
         <Space>
           {order.status === 'Planned' && (

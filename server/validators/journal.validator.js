@@ -20,3 +20,11 @@ exports.createJournalSchema = z.object({
 }, {
   message: "Total debit must equal total credit"
 });
+
+exports.liabilityPaymentSchema = z.object({
+  payment_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  liability_account_id: z.string().uuid(),
+  payment_method_id: z.string().uuid(),
+  amount: z.number().positive(),
+  narration: z.string().trim().min(1).max(2000)
+});

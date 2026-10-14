@@ -1,17 +1,18 @@
-import React, { useMemo, useState } from 'react';
-import { Alert, Card, Col, Empty, Progress, Row, Select, Spin, Statistic, Table, Tag, Typography } from 'antd';
-import { ExperimentOutlined, FallOutlined, InboxOutlined, RiseOutlined, WarningOutlined } from '@ant-design/icons';
+import React, { useState } from 'react';
+import { Alert, Button, Card, Col, Empty, Row, Select, Space, Spin, Statistic, Table, Tag, Typography } from 'antd';
+import { DownloadOutlined, ExperimentOutlined, InboxOutlined, RiseOutlined } from '@ant-design/icons';
 import useApiData from '../../hooks/useApiData';
+import { downloadReport, reportData } from './reportDownloads';
 
 const { Title, Text } = Typography;
 const money = value => `₹${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 const litres = ml => `${(Number(ml || 0) / 1000).toLocaleString('en-IN', { maximumFractionDigits: 3 })} L`;
 
 export default function ProductionOwnerReport() {
-  const { data: report, loading } = useApiData('/reports/production', { initialData: { batches: [] } });
+  const { data: report, loading, error } = useApiData('/reports/production', { initialData: { batches: [] } });
   const batches = report.batches || [];
   const [batchId, setBatchId] = useState();
-  const batch = useMemo(() => batches.find(item => item.id === batchId) || batches[0], [batches, batchId]);
+  const batch = batches.find(item => item.id === batchId) || batches[0];
 
   if (loading) return <div style={{ display: 'grid', placeItems: 'center', minHeight: 320 }}><Spin size="large" /></div>;
   if (!batch) return <div style={{ padding: 24 }}><Empty description="No production batches yet" /></div>;
@@ -20,6 +21,13 @@ export default function ProductionOwnerReport() {
   const costPerMl = batch.planned_ml ? actualCost / batch.planned_ml : 0;
   const statusColor = batch.status === 'completed' ? 'success' : batch.status === 'in_progress' ? 'processing' : 'warning';
   const outputRows = batch.outputs.map(output => ({ ...output, cost: output.planned_ml * costPerMl, cost_per_bottle: output.fill_ml ? output.fill_ml * costPerMl : 0 }));
+  const exportBatch = () => reportData(`production-costs-${batch.order_number}`, [
+    ['Production costs', batch.order_number, batch.formula, batch.batch_number],
+    ['Section', 'Item', 'SKU / type', 'Unit', 'Planned / required', 'Actual / stock', 'Volume (ml)', 'Estimated cost', 'Unit cost', 'Status'],
+    ...outputRows.map(row => ['Output', row.variant, row.sku, 'bottles', row.planned_qty, row.actual_qty ?? '', row.planned_ml, row.cost, row.cost_per_bottle, row.actual_qty == null ? 'Pending' : 'Recorded']),
+    ...batch.materials.map(row => ['Material', row.name, row.type, row.unit, row.required_qty, row.available_qty, '', row.estimated_cost, '', row.is_available ? 'Available' : 'Shortage']),
+    ['Batch total', batch.formula, batch.batch_number, 'ml', batch.planned_ml, batch.actual_ml ?? '', batch.waste_ml ?? '', batch.estimated_cost, costPerMl, batch.status]
+  ]);
   const alerts = [
     ...(batch.shortages ? [{ type: 'warning', text: `${batch.shortages} material${batch.shortages > 1 ? 's are' : ' is'} below the required quantity.` }] : []),
     ...(batch.waste_ml != null && batch.waste_ml > 0 ? [{ type: 'warning', text: `Recorded yield is ${litres(batch.waste_ml)} below plan.` }] : []),
@@ -30,10 +38,10 @@ export default function ProductionOwnerReport() {
     <div style={{ display: 'flex', gap: 16, justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', marginBottom: 20 }}>
       <div>
         <Text type="secondary" style={{ letterSpacing: 1, fontSize: 11 }}>OWNER VIEW · PRODUCTION</Text>
-        <Title level={2} style={{ margin: '4px 0', fontFamily: "'Playfair Display', serif", color: 'var(--color-gold)' }}>Batch Profit & Yield</Title>
+        <Title level={2} style={{ margin: '4px 0' }}>Batch Profit & Yield</Title>
         <Text type="secondary">A clear view of output, cost, yield and material risk.</Text>
       </div>
-      <Select value={batch.id} onChange={setBatchId} style={{ width: 280, maxWidth: '100%' }} options={batches.map(item => ({ value: item.id, label: `${item.order_number} · ${item.formula}` }))} />
+      <Space wrap><Select value={batch.id} onChange={setBatchId} style={{ width: 280, maxWidth: '100%' }} options={batches.map(item => ({ value: item.id, label: `${item.order_number} · ${item.formula}` }))} /><Button icon={<DownloadOutlined />} disabled={!!error} onClick={() => downloadReport(exportBatch(), 'xlsx')}>Excel</Button><Button icon={<DownloadOutlined />} disabled={!!error} onClick={() => downloadReport(exportBatch(), 'pdf')}>PDF</Button></Space>
     </div>
 
     <Card style={{ marginBottom: 16, background: 'linear-gradient(135deg, #162238, #263b59)', color: '#fff', border: 0 }} bodyStyle={{ padding: 20 }}>

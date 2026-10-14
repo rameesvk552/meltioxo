@@ -44,9 +44,7 @@ pm2 delete perfume-erp-api >/dev/null 2>&1 || true
 pm2 start server.js --name perfume-erp-api --cwd "$APP/server"
 pm2 save
 
-if [ ! -f /etc/nginx/conf.d/perfume.wayon.in.conf ]; then
-  sudo install -m 644 "$INCOMING/perfume.wayon.in.conf" /etc/nginx/conf.d/perfume.wayon.in.conf
-fi
+sudo install -m 644 "$INCOMING/perfume.wayon.in.conf" /etc/nginx/conf.d/perfume.wayon.in.conf
 sudo nginx -t
 sudo systemctl reload nginx
 

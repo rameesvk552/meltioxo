@@ -1,26 +1,31 @@
 import React from 'react';
-import { Row, Col, Card, Statistic, Table, Tag, Button, Typography, List, Avatar } from 'antd';
-import { ExperimentOutlined, AlertOutlined, FallOutlined } from '@ant-design/icons';
+import { Row, Col, Card, Statistic, Table, Tag, Button, Typography, List, Avatar, Empty, Progress } from 'antd';
+import { BankOutlined, CreditCardOutlined, AlertOutlined, FallOutlined, PlusOutlined, ShoppingCartOutlined, WalletOutlined, WarningOutlined, DollarOutlined } from '@ant-design/icons';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import useApiData from '../../hooks/useApiData';
+import { AuthContext } from '../../context/AuthContext';
+import { ALL_DASHBOARD_WIDGET_KEYS } from '../../config/permissions';
+import { Link } from 'react-router-dom';
+import './Dashboard.css';
 
 const { Title, Text } = Typography;
 
 const COLORS = ['var(--color-gold)', '#8b6b32', '#f3d38c', '#a68241', '#e8c471'];
 
-export default function Dashboard() {
-  const { data: sales } = useApiData('/retail-sales');
-  const { data: productionOrders } = useApiData('/production-orders');
-  const { data: rawMaterials } = useApiData('/raw-materials');
-  const { data: packagingMaterials } = useApiData('/packaging-materials');
-  const { data: finishedGoods } = useApiData('/finished-goods');
-  const revenue = sales.reduce((sum, item) => sum + Number(item.total_amount || 0), 0);
+function LegacyDashboard() {
+  const { canViewWidget } = React.useContext(AuthContext);
+  const show = widget => canViewWidget(widget);
+  const needsInventory = show('inventory_value') || show('low_stock_count') || show('low_stock_list');
+  const { data: businessDayState } = useApiData('/business-days/current', { initialData: {}, enabled: show('today_sales') });
+  const { data: rawMaterials } = useApiData('/raw-materials', { enabled: needsInventory });
+  const { data: packagingMaterials } = useApiData('/packaging-materials', { enabled: needsInventory });
+  const { data: finishedGoods } = useApiData('/finished-goods', { enabled: needsInventory });
+  const todaysSales = Number(businessDayState.today_record?.total_sales || 0);
   const inventoryValue = [
     ...rawMaterials.map(item => Number(item.current_stock || 0) * Number(item.avg_cost || 0)),
     ...packagingMaterials.map(item => Number(item.current_stock || 0) * Number(item.avg_cost || 0)),
     ...finishedGoods.map(item => Number(item.current_stock || 0) * Number(item.cost_price || 0))
   ].reduce((sum, value) => sum + value, 0);
-  const pendingProduction = productionOrders.filter(item => ['planned', 'in_progress'].includes(item.status)).length;
   const lowStock = [...rawMaterials, ...packagingMaterials, ...finishedGoods]
     .filter(item => Number(item.current_stock || 0) <= Number(item.reorder_level || 0));
   const revenueData = [];
@@ -28,70 +33,61 @@ export default function Dashboard() {
   const activities = [];
   const overdueData = [];
   const cardStyle = { background: '#ffffff', border: '1px solid var(--color-border)', borderRadius: 12 };
+
+  if (!ALL_DASHBOARD_WIDGET_KEYS.some(show)) {
+    return (
+      <div style={{ padding: 24 }}>
+        <Title level={2} style={{ marginBottom: 'var(--section-gap)' }}>Dashboard</Title>
+        <Card style={cardStyle}><Empty description="No dashboard widgets are assigned to your account" /></Card>
+      </div>
+    );
+  }
   
   return (
     <div style={{ padding: '24px' }}>
-      <Title level={2} style={{ color: 'var(--color-gold)', fontFamily: 'Playfair Display', marginBottom: 24 }}>Dashboard</Title>
+      <Title level={2} style={{ marginBottom: 'var(--section-gap)' }}>Dashboard</Title>
       
       {/* Row 1: Financial KPIs */}
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col xs={24} sm={12} lg={6}>
+        {show('today_sales') && <Col xs={24} sm={12} lg={12}>
           <Card style={cardStyle} bodyStyle={{ padding: 20 }}>
-            <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Total Revenue</Text>} value={revenue} prefix="₹"
+            <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Today's Sales</Text>} value={todaysSales} precision={2} prefix="₹"
                        styles={{ content: { color: '#48bb78', fontWeight: 600 } }} />
           </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
+        </Col>}
+        {show('inventory_value') && <Col xs={24} sm={12} lg={12}>
           <Card style={cardStyle} bodyStyle={{ padding: 20 }}>
-            <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Net Profit</Text>} value={0} prefix="₹"
-                       styles={{ content: { color: '#48bb78', fontWeight: 600 } }} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <Card style={cardStyle} bodyStyle={{ padding: 20 }}>
-            <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Cash & Bank</Text>} value={0} prefix="₹"
-                       styles={{ content: { color: '#4299e1', fontWeight: 600 } }} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <Card style={cardStyle} bodyStyle={{ padding: 20 }}>
-            <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Inventory Value</Text>} value={inventoryValue} prefix="₹"
+            <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Inventory Value</Text>} value={inventoryValue} precision={2} prefix="₹"
                        styles={{ content: { color: 'var(--color-gold)', fontWeight: 600 } }} />
           </Card>
-        </Col>
+        </Col>}
       </Row>
 
       {/* Row 2: Operational KPIs */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col xs={24} sm={12} lg={6}>
-          <Card style={cardStyle} bodyStyle={{ padding: 20 }}>
-            <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Pending Production</Text>} value={pendingProduction} prefix={<ExperimentOutlined />}
-                       styles={{ content: { color: '#ed8936', fontWeight: 600 } }} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
+        {show('low_stock_count') && <Col xs={24} sm={12} lg={6}>
           <Card style={cardStyle} bodyStyle={{ padding: 20 }}>
             <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Low Stock Alerts</Text>} value={lowStock.length} prefix={<AlertOutlined />}
                        styles={{ content: { color: '#f56565', fontWeight: 600 } }}
                        suffix={<span style={{ fontSize: 14 }}><FallOutlined /> -1</span>} />
           </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
+        </Col>}
+        {show('overdue_payables') && <Col xs={24} sm={12} lg={6}>
           <Card style={cardStyle} bodyStyle={{ padding: 20 }}>
             <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Overdue Payables</Text>} value={0} prefix="₹"
                        styles={{ content: { color: '#f56565', fontWeight: 600 } }} />
           </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
+        </Col>}
+        {show('overdue_receivables') && <Col xs={24} sm={12} lg={6}>
           <Card style={cardStyle} bodyStyle={{ padding: 20 }}>
             <Statistic title={<Text style={{ color: 'var(--color-text-secondary)' }}>Overdue Receivables</Text>} value={0} prefix="₹"
                        styles={{ content: { color: '#ed8936', fontWeight: 600 } }} />
           </Card>
-        </Col>
+        </Col>}
       </Row>
 
       <Row gutter={[16, 16]}>
-        <Col xs={24} lg={16}>
+        {show('revenue_trend') && <Col xs={24} lg={16}>
           <Card style={cardStyle} title={<Text style={{ color: 'var(--color-gold)' }}>Revenue Trend</Text>}>
             <div style={{ height: 300 }}>
               <ResponsiveContainer width="100%" height="100%">
@@ -111,8 +107,8 @@ export default function Dashboard() {
               </ResponsiveContainer>
             </div>
           </Card>
-        </Col>
-        <Col xs={24} lg={8}>
+        </Col>}
+        {show('revenue_by_product') && <Col xs={24} lg={8}>
           <Card style={cardStyle} title={<Text style={{ color: 'var(--color-gold)' }}>Revenue by Product</Text>}>
             <div style={{ height: 300 }}>
               <ResponsiveContainer width="100%" height="100%">
@@ -135,11 +131,11 @@ export default function Dashboard() {
               </div>
             </div>
           </Card>
-        </Col>
+        </Col>}
       </Row>
 
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        <Col xs={24} lg={8}>
+        {show('low_stock_list') && <Col xs={24} lg={8}>
           <Card style={cardStyle} title={<Text style={{ color: 'var(--color-gold)' }}>Low Stock Alerts</Text>}>
             <List
               itemLayout="horizontal"
@@ -159,8 +155,8 @@ export default function Dashboard() {
               )}
             />
           </Card>
-        </Col>
-        <Col xs={24} lg={8}>
+        </Col>}
+        {show('recent_activities') && <Col xs={24} lg={8}>
           <Card style={cardStyle} title={<Text style={{ color: 'var(--color-gold)' }}>Recent Activities</Text>}>
             <List
               itemLayout="horizontal"
@@ -175,8 +171,8 @@ export default function Dashboard() {
               )}
             />
           </Card>
-        </Col>
-        <Col xs={24} lg={8}>
+        </Col>}
+        {show('overdue_payments') && <Col xs={24} lg={8}>
           <Card style={cardStyle} title={<Text style={{ color: 'var(--color-gold)' }}>Overdue Payments</Text>}>
             <Table 
               dataSource={overdueData} 
@@ -190,8 +186,129 @@ export default function Dashboard() {
               ]} 
             />
           </Card>
-        </Col>
+        </Col>}
       </Row>
     </div>
   );
+}
+
+const dashboardCurrency = value => `₹${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const dashboardStatCards = [
+  { key: 'today_sales', label: "Today's sales", hint: 'Current business day', icon: <CreditCardOutlined />, tone: 'mint' },
+  { key: 'overdue_receivables', label: 'Overdue receivables', hint: 'Customer invoices past due', icon: <WalletOutlined />, tone: 'amber' },
+  { key: 'inventory_value', label: 'Inventory value', hint: 'Estimated stock value', icon: <ShoppingCartOutlined />, tone: 'green' },
+  { key: 'overdue_payables', label: 'Overdue payables', hint: 'Supplier invoices past due', icon: <BankOutlined />, tone: 'orange' },
+];
+
+const stockAlertTabs = [
+  { key: 'raw', label: 'Raw Material' },
+  { key: 'finished', label: 'Finished Goods' },
+  { key: 'packaging', label: 'Packing Material' },
+];
+
+const revenueFlowItems = [
+  { key: 'cash_collected', label: 'Total cash collected', icon: <WalletOutlined />, tone: 'teal' },
+  { key: 'bank_collected', label: 'Total collection in bank', icon: <BankOutlined />, tone: 'green' },
+  { key: 'cash_paid', label: 'Total cash payment', icon: <WalletOutlined />, tone: 'red' },
+  { key: 'bank_paid', label: 'Total payment from bank', icon: <BankOutlined />, tone: 'coral' },
+  { key: 'cash_balance', label: 'Total cash balance (as on)', icon: <WalletOutlined />, tone: 'purple' },
+  { key: 'bank_balance', label: 'Total bank balance (as on)', icon: <BankOutlined />, tone: 'gold' },
+];
+
+export default function Dashboard() {
+  const { canView, canViewWidget } = React.useContext(AuthContext);
+  const show = widget => canViewWidget(widget);
+  const canOpenPos = canView('pos');
+  const hasRevenueFlowAccess = revenueFlowItems.some(item => show(item.key));
+  const needsInventory = show('inventory_value') || show('low_stock_count') || show('low_stock_list');
+  const businessDayQuery = useApiData('/business-days/current', { initialData: {}, enabled: show('today_sales') });
+  const businessDayState = businessDayQuery.data;
+  const rawMaterialsQuery = useApiData('/raw-materials', { enabled: needsInventory });
+  const packagingMaterialsQuery = useApiData('/packaging-materials', { enabled: needsInventory });
+  const finishedGoodsQuery = useApiData('/finished-goods', { enabled: needsInventory });
+  const rawMaterials = rawMaterialsQuery.data;
+  const packagingMaterials = packagingMaterialsQuery.data;
+  const finishedGoods = finishedGoodsQuery.data;
+  const { data: revenueFlow } = useApiData('/dashboard/revenue-flow', { initialData: {}, enabled: hasRevenueFlowAccess });
+  const receivablesQuery = useApiData('/reports/aging-receivables', { initialData: {}, enabled: show('overdue_receivables') && canView('finance.receivables') });
+  const payablesQuery = useApiData('/reports/aging-payables', { initialData: {}, enabled: show('overdue_payables') && canView('finance.payables') });
+  const { data: expenses } = useApiData('/expenses', { initialData: [], enabled: canView('finance.expenses') });
+  const [stockTab, setStockTab] = React.useState('raw');
+  const todaysSales = Number(businessDayState.today_record?.total_sales || 0);
+  const inventoryValue = [...rawMaterials, ...packagingMaterials, ...finishedGoods].reduce((sum, item) => sum + Number(item.current_stock || 0) * Number(item.avg_cost ?? item.cost_price ?? 0), 0);
+  const lowStock = [...rawMaterials, ...packagingMaterials, ...finishedGoods].filter(item => Number(item.current_stock || 0) <= Number(item.reorder_level || 0));
+  const stockLists = { raw: rawMaterials, finished: finishedGoods, packaging: packagingMaterials };
+  const selectedStock = (stockLists[stockTab] || []).filter(item => Number(item.current_stock || 0) <= Number(item.reorder_level || 0));
+  const recentExpenses = expenses.slice(0, 4);
+  const quickActions = [
+    canOpenPos && { to: '/app/retail-sales/new', icon: <CreditCardOutlined />, label: 'POS' },
+    canView('purchases') && { to: '/app/purchases', icon: <ShoppingCartOutlined />, label: 'Purchase' },
+    canView('finance.expenses') && { to: '/app/expenses/new', icon: <WalletOutlined />, label: 'Expense' },
+    canView('finance.payments') && { to: '/app/payments', icon: <DollarOutlined />, label: 'Payment' },
+  ].filter(Boolean);
+  if (!ALL_DASHBOARD_WIDGET_KEYS.some(show)) return <div className="dashboard-page"><Card className="dashboard-empty"><Empty description="No dashboard widgets are assigned to your account" /></Card></div>;
+  const overdueTotal = report => ['1-30', '31-60', '60+'].reduce((sum, bucket) => sum + Number(report?.[bucket] || 0), 0);
+  const statValue = key => {
+    if (key === 'today_sales') return businessDayQuery.loading || businessDayQuery.error ? '—' : todaysSales;
+    if (key === 'inventory_value') return [rawMaterialsQuery, packagingMaterialsQuery, finishedGoodsQuery].some(query => query.loading || query.error) ? '—' : inventoryValue;
+    const query = key === 'overdue_receivables' ? receivablesQuery : payablesQuery;
+    const allowed = key === 'overdue_receivables' ? canView('finance.receivables') : canView('finance.payables');
+    return !allowed || query.loading || query.error ? '—' : overdueTotal(query.data);
+  };
+  return <div className="dashboard-page">
+    <section className="dashboard-top-row" aria-label="Business overview">
+      <div className="dashboard-stat-stack">
+        <div className="dashboard-stat-grid dashboard-primary-stats">
+        {dashboardStatCards.slice(0, 2).map(stat => show(stat.key) && <Card className={`dashboard-stat ${stat.tone}`} bordered={false} key={stat.key}>
+          <div className="stat-topline"><span>{stat.label}</span><span className="stat-icon">{stat.icon}</span></div>
+          <Statistic value={statValue(stat.key)} precision={2} prefix={typeof statValue(stat.key) === 'number' ? '₹' : undefined} />
+          <Text className="stat-hint">{stat.hint}</Text>
+        </Card>)}
+        </div>
+        <div className="dashboard-secondary-stats" aria-label="Purchase overview">
+          {dashboardStatCards.slice(2).map(stat => show(stat.key) && <Card className={`dashboard-stat ${stat.tone}`} bordered={false} key={stat.key}>
+            <div className="stat-topline"><span>{stat.label}</span><span className="stat-icon">{stat.icon}</span></div>
+            <Statistic value={statValue(stat.key)} precision={2} prefix={typeof statValue(stat.key) === 'number' ? '₹' : undefined} />
+            <Text className="stat-hint">{stat.hint}</Text>
+          </Card>)}
+        </div>
+      </div>
+      {quickActions.length > 0 && <Card className="dashboard-panel quick-actions-panel" title="Quick Actions">
+        <div className="quick-actions">{quickActions.map(action => <Link key={action.to} to={action.to}>{action.icon}<span>{action.label}</span></Link>)}</div>
+      </Card>}
+    </section>
+
+    <section className="dashboard-middle-grid finance-sections">
+      {hasRevenueFlowAccess && <>
+        {(show('cash_collected') || show('bank_collected')) && <Card className="dashboard-panel finance-panel" bordered={false}>
+          <div className="finance-panel-heading">
+            <div><span className="finance-panel-icon collection"><WalletOutlined /></span><div><strong>Collections</strong><Text>Billed vs collected</Text></div></div>
+            <Link to="/app/receivables">View all ↗</Link>
+          </div>
+          <div className="finance-total"><Text>Total collected</Text><strong>{dashboardCurrency((show('cash_collected') ? Number(revenueFlow.cash_collected || 0) : 0) + (show('bank_collected') ? Number(revenueFlow.bank_collected || 0) : 0))}</strong></div>
+          {show('cash_collected') && <div className="finance-row"><span>Cash collected</span><strong>{dashboardCurrency(revenueFlow.cash_collected)}</strong></div>}
+          {show('bank_collected') && <div className="finance-row"><span>Bank collections</span><strong>{dashboardCurrency(revenueFlow.bank_collected)}</strong></div>}
+        </Card>}
+        {(show('cash_paid') || show('bank_paid')) && <Card className="dashboard-panel finance-panel" bordered={false}>
+          <div className="finance-panel-heading">
+            <div><span className="finance-panel-icon payable"><BankOutlined /></span><div><strong>Payables</strong><Text>Payments made</Text></div></div>
+            <Link to="/app/payables">View all ↗</Link>
+          </div>
+          <div className="finance-total"><Text>Total paid</Text><strong>{dashboardCurrency((show('cash_paid') ? Number(revenueFlow.cash_paid || 0) : 0) + (show('bank_paid') ? Number(revenueFlow.bank_paid || 0) : 0))}</strong></div>
+          {show('cash_paid') && <div className="finance-row"><span>Cash payments</span><strong>{dashboardCurrency(revenueFlow.cash_paid)}</strong></div>}
+          {show('bank_paid') && <div className="finance-row"><span>Bank payments</span><strong>{dashboardCurrency(revenueFlow.bank_paid)}</strong></div>}
+        </Card>}
+      </>}
+    </section>
+
+    <section className="dashboard-bottom-row">
+      <Card className="dashboard-panel compact-panel stock-alert-panel" title="Stock Alert" extra={canView('reports.stock') ? <Link to="/app/reports/stock">Show all ↗</Link> : null}>
+        <div className="stock-alert-tabs">{stockAlertTabs.map(tab => <button className={stockTab === tab.key ? 'active' : ''} key={tab.key} onClick={() => setStockTab(tab.key)}>{tab.label}</button>)}</div>
+        <div className="stock-alert-list">{selectedStock.length ? selectedStock.slice(0, 4).map(item => <div className="stock-alert-item" key={item.id || item.name}><span>{item.name}</span><Tag color="orange">{item.current_stock || 0} left</Tag></div>) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No stock alerts" />}</div>
+      </Card>
+      <Card className="dashboard-panel compact-panel expense-panel" title="Expenses" extra={expenses.length > 0 ? <Link to="/app/expenses">View all ↗</Link> : null}>
+        {recentExpenses.length ? <div className="expense-list">{recentExpenses.map(item => <div className="expense-item" key={item.id}><div><strong>{item.category || item.description || 'Expense'}</strong><Text>{item.expense_date || '—'}{item.description && item.category ? ` · ${item.description}` : ''}</Text></div><strong>{dashboardCurrency(item.amount)}</strong></div>)}</div> : <div className="empty-centered">No Expense Data Found</div>}
+      </Card>
+    </section>
+  </div>;
 }

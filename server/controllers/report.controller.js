@@ -1,7 +1,40 @@
 const reportService = require('../services/report.service');
+const { AppError } = require('../middleware/errorHandler');
+const { businessDate } = require('../services/businessDay.service');
+const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+  && Number.isFinite(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+const reportDate = value => {
+  const date = value || businessDate();
+  if (!validDate(date)) throw new AppError('Choose a valid date.', 400);
+  return date;
+};
+const reportRange = query => {
+  const to = reportDate(query.to);
+  const year = Number(to.slice(0,4));
+  const from = query.from || `${Number(to.slice(5,7)) >= 4 ? year : year-1}-04-01`;
+  if (!validDate(from) || from > to || (Date.parse(to) - Date.parse(from)) / 86400000 > 3660) throw new AppError('Choose a valid date range of up to ten years.', 400);
+  return { from, to };
+};
 
 exports.trialBalance = async (req, res, next) => {
-  try { res.json(await reportService.trialBalance(req.tenantId, req.query.as_of)); } catch (error) { next(error); }
+  try { res.json(await reportService.trialBalance(req.tenantId, reportDate(req.query.as_of))); } catch (error) { next(error); }
+};
+exports.whatsappInvoices = async (req, res, next) => {
+  try {
+    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+    const today = new Date().toISOString().slice(0, 10);
+    const defaultFrom = new Date();
+    defaultFrom.setUTCDate(defaultFrom.getUTCDate() - 29);
+    const from = req.query.from || defaultFrom.toISOString().slice(0, 10);
+    const to = req.query.to || today;
+    if (!datePattern.test(from) || !datePattern.test(to) || from > to) return res.status(400).json({ message: 'Choose a valid date range.' });
+    const allowedStatuses = ['sent', 'failed', 'skipped', 'disabled'];
+    const status = req.query.status || undefined;
+    if (status && !allowedStatuses.includes(status)) return res.status(400).json({ message: 'Invalid WhatsApp delivery status.' });
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const pageSize = Math.min(200, Math.max(1, Number.parseInt(req.query.page_size, 10) || 50));
+    res.json(await reportService.whatsappInvoices(req.tenantId, req.branchId, { from, to, status, page, pageSize }));
+  } catch (error) { next(error); }
 };
 exports.profitLoss = async (req, res, next) => {
   try {
@@ -9,7 +42,7 @@ exports.profitLoss = async (req, res, next) => {
     const from = req.query.from || `${new Date().getUTCFullYear()}-01-01`;
     const groupBy = req.query.group_by || 'month';
     const datePattern = /^\d{4}-\d{2}-\d{2}$/;
-    if (!datePattern.test(from) || !datePattern.test(to) || from > to) {
+    if (!datePattern.test(from) || !datePattern.test(to) || !validDate(from) || !validDate(to) || from > to || (Date.parse(to)-Date.parse(from))/86400000 > 3660) {
       return res.status(400).json({ message: 'Choose a valid date range.' });
     }
     if (!['day', 'month', 'year'].includes(groupBy)) {
@@ -18,11 +51,76 @@ exports.profitLoss = async (req, res, next) => {
     res.json(await reportService.profitAndLoss(req.tenantId, from, to, groupBy));
   } catch (error) { next(error); }
 };
+exports.productSalesHistory = async (req, res, next) => {
+  try {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.productId)) throw new AppError('Product not found.', 404);
+    const { from, to } = req.query;
+    if ((from || to) && (!validDate(from) || !validDate(to) || from > to || (Date.parse(to) - Date.parse(from)) / 86400000 > 3660)) {
+      throw new AppError('Choose a valid date range of up to ten years.', 400);
+    }
+    const result = await reportService.productSalesHistory(req.tenantId, req.params.productId, from, to);
+    if (!result) throw new AppError('Product not found.', 404);
+    res.json(result);
+  } catch (error) { next(error); }
+};
+exports.productSalesCatalog = async (req, res, next) => {
+  try { res.json(await reportService.productSalesCatalog(req.tenantId)); } catch (error) { next(error); }
+};
+exports.profitLossStatement = async (req, res, next) => {
+  try {
+    const { from, to } = reportRange(req.query);
+    res.json(await reportService.profitAndLossStatement(req.tenantId, from, to));
+  } catch (error) { next(error); }
+};
+exports.purchaseReport = async (req, res, next) => {
+  try {
+    const db = require('../models');
+    const { Op } = require('sequelize');
+    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+    const to = req.query.to || new Date().toISOString().slice(0, 10);
+    const from = req.query.from || to;
+    if (!datePattern.test(from) || !datePattern.test(to) || from > to) return res.status(400).json({ message: 'Choose a valid date range.' });
+    const invoices = await db.purchaseInvoice.findAll({
+      where: { tenant_id: req.tenantId, invoice_date: { [Op.between]: [from, to] } },
+      include: [db.supplier, { model: db.purchaseReceipt, include: [db.purchaseReceiptItem] }],
+      order: [['invoice_date', 'DESC'], ['created_at', 'DESC']]
+    });
+    const ids = { raw: new Set(), packaging: new Set(), finished: new Set() };
+    invoices.forEach(invoice => (invoice.purchaseReceipt?.purchaseReceiptItems || []).forEach(item => ids[item.material_type]?.add(item.material_id)));
+    const [raw, packaging, finished] = await Promise.all([
+      ids.raw.size ? db.rawMaterial.findAll({ where: { tenant_id: req.tenantId, id: [...ids.raw] }, attributes: ['id', 'name', 'unit'] }) : [],
+      ids.packaging.size ? db.packagingMaterial.findAll({ where: { tenant_id: req.tenantId, id: [...ids.packaging] }, attributes: ['id', 'name'] }) : [],
+      ids.finished.size ? db.finishedGood.findAll({ where: { tenant_id: req.tenantId, id: [...ids.finished] }, include: [db.product], attributes: ['id', 'name', 'sku', 'size_label'] }) : []
+    ]);
+    const names = new Map([
+      ...raw.map(item => [item.id, { name: item.name, unit: item.unit || 'units' }]),
+      ...packaging.map(item => [item.id, { name: item.name, unit: 'pcs' }]),
+      ...finished.map(item => [item.id, { name: `${item.product?.name || item.name}${item.size_label ? ` · ${item.size_label}` : ''}`, unit: 'units', sku: item.sku }])
+    ]);
+    const rows = [];
+    invoices.forEach(invoice => (invoice.purchaseReceipt?.purchaseReceiptItems || []).forEach(item => {
+      const detail = names.get(item.material_id) || { name: 'Item not found', unit: 'units' };
+      const unitPrice = Number(item.unit_price || 0), taxRate = Number(item.tax_rate || 0);
+      const subtotal = Number(item.quantity || 0) * unitPrice;
+      rows.push({ id: item.id, invoice_id: invoice.id, invoice_number: invoice.invoice_number, invoice_date: invoice.invoice_date, supplier: invoice.supplier?.name || '—', receipt_number: invoice.purchaseReceipt?.receipt_number || '—', material_type: item.material_type, item_name: detail.name, sku: detail.sku || null, unit: detail.unit, quantity: Number(item.quantity || 0), unit_price: unitPrice, tax_rate: taxRate, tax_amount: subtotal * taxRate / 100, line_total: subtotal * (1 + taxRate / 100), status: invoice.status, total_amount: Number(invoice.total_amount || 0), paid_amount: Number(invoice.paid_amount || 0) });
+    }));
+    res.json({ summary: { invoices: invoices.length, total: invoices.reduce((sum, item) => sum + Number(item.total_amount || 0), 0), paid: invoices.reduce((sum, item) => sum + Number(item.paid_amount || 0), 0), due: invoices.reduce((sum, item) => sum + Number(item.total_amount || 0) - Number(item.paid_amount || 0), 0) }, rows });
+  } catch (error) { next(error); }
+};
 exports.balanceSheet = async (req, res, next) => {
-  try { res.json(await reportService.balanceSheet(req.tenantId, req.query.as_of)); } catch (error) { next(error); }
+  try { res.json(await reportService.balanceSheet(req.tenantId, reportDate(req.query.as_of))); } catch (error) { next(error); }
+};
+exports.ledgerStatement = async (req, res, next) => {
+  try { const { from, to } = reportRange(req.query); res.json(await reportService.ledgerStatement(req.tenantId, req.params.accountId, from, to)); } catch (error) { next(error); }
+};
+exports.managementReport = async (req, res, next) => {
+  try { const { from, to } = reportRange(req.query); res.json(await reportService.managementReport(req.tenantId, from, to)); } catch (error) { next(error); }
+};
+exports.accountingHealth = async (req, res, next) => {
+  try { res.json(await reportService.accountingHealth(req.tenantId, req.branchId)); } catch (error) { next(error); }
 };
 exports.cashFlow = async (req, res, next) => {
-  try { res.status(200).json(await reportService.cashFlow(req.tenantId, req.query.from, req.query.to)); } catch (error) { next(error); }
+  try { const { from, to } = reportRange(req.query); res.status(200).json(await reportService.cashFlow(req.tenantId, from, to)); } catch (error) { next(error); }
 };
 exports.agingPayables = async (req, res, next) => {
   try { res.json(await reportService.agingReport(req.tenantId, 'payable')); } catch (error) { next(error); }

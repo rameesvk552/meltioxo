@@ -2,6 +2,7 @@ module.exports = (sequelize, DataTypes) => {
   const Expense = sequelize.define('expense', {
     id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
     tenant_id: { type: DataTypes.UUID },
+    branch_id: { type: DataTypes.UUID, allowNull: true },
     expense_number: { type: DataTypes.STRING },
     account_id: { type: DataTypes.UUID },
     amount: { type: DataTypes.DECIMAL(15,2) },

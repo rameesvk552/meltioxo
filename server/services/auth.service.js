@@ -4,6 +4,7 @@ const db = require('../models');
 const { AppError } = require('../middleware/errorHandler');
 const config = require('../config/jwt');
 const { seedChartOfAccounts } = require('../seeders/seed-chart-of-accounts');
+const { setAuditActor } = require('../middleware/auditContext');
 
 exports.register = async (data) => {
   const t = await db.sequelize.transaction();
@@ -17,16 +18,23 @@ exports.register = async (data) => {
       tax_system: data.tax_system || 'GST',
       fy_start_month: data.fy_start_month || 4,
     }, { transaction: t });
+
+    const defaultBranch = await db.branch.create({
+      tenant_id: newTenant.id, name: 'Main Branch', code: 'MAIN', is_default: true
+    }, { transaction: t });
     
     // Create admin user
     const hashedPassword = await bcrypt.hash(data.password, 12);
     const newUser = await db.user.create({
       tenant_id: newTenant.id,
+      branch_id: defaultBranch.id,
       name: data.name,
       email: data.email,
       password_hash: hashedPassword,
       role: 'admin'
     }, { transaction: t });
+
+    setAuditActor(newUser);
 
     // Seed Chart of Accounts
     await seedChartOfAccounts(newTenant.id, t);
@@ -51,6 +59,7 @@ exports.login = async (email, password) => {
   if (!foundUser.is_active) {
     throw new AppError('Account is deactivated', 401);
   }
+  setAuditActor(foundUser);
   // Update last login
   await foundUser.update({ last_login: new Date() });
   const tokens = this.generateTokens(foundUser);
@@ -78,7 +87,7 @@ exports.refreshAccessToken = async (refreshTokenStr) => {
     if (!user) throw new AppError('User not found', 401);
     if (!user.is_active) throw new AppError('Account is deactivated', 401);
     const tokens = this.generateTokens(user);
-    return tokens;
+    return { tokens, user };
   } catch (error) {
     throw new AppError('Invalid refresh token', 401);
   }

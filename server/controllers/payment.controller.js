@@ -3,6 +3,7 @@ const db = require('../models');
 const { payment, paymentAllocation } = db;
 const { AppError } = require('../middleware/errorHandler');
 const accounting = require('../services/accounting.service');
+const { ACCOUNT_CODES } = require('../config/constants');
 
 // Fetch unpaid / partially-paid invoices for a given party (supplier or customer)
 exports.getUnpaidInvoices = async (req, res, next) => {
@@ -22,7 +23,7 @@ exports.getUnpaidInvoices = async (req, res, next) => {
         order: [['invoice_date', 'ASC']]
       });
     } else {
-      invoices = await db.salesInvoice.findAll({
+      const salesInvoices = await db.salesInvoice.findAll({
         where: {
           tenant_id: req.tenantId,
           customer_id: party_id,
@@ -30,6 +31,21 @@ exports.getUnpaidInvoices = async (req, res, next) => {
         },
         order: [['invoice_date', 'ASC']]
       });
+      const retailSales = await db.retailSale.findAll({ where: { tenant_id: req.tenantId, customer_id: party_id }, order: [['sale_date', 'ASC']] });
+      const allocations = await db.paymentAllocation.findAll({ where: { invoice_type: 'retail_sale', invoice_id: retailSales.map(row => row.id) } });
+      const paidBySale = new Map();
+      allocations.forEach(row => paidBySale.set(row.invoice_id, (paidBySale.get(row.invoice_id) || 0) + Number(row.allocated_amount || 0)));
+      const unallocatedSales = retailSales.filter(row => !paidBySale.has(row.id));
+      const originalPayments = unallocatedSales.length ? await db.payment.findAll({ where: { tenant_id: req.tenantId, journal_entry_id: unallocatedSales.map(row => row.journal_entry_id).filter(Boolean) } }) : [];
+      const originalPaidByJournal = new Map();
+      originalPayments.forEach(row => originalPaidByJournal.set(row.journal_entry_id, (originalPaidByJournal.get(row.journal_entry_id) || 0) + Number(row.amount || 0)));
+      const returns = retailSales.length ? await db.salesReturn.findAll({ where: { tenant_id: req.tenantId, retail_sale_id: retailSales.map(row => row.id) } }) : [];
+      const returnedBySale = new Map();
+      returns.forEach(row => returnedBySale.set(row.retail_sale_id, (returnedBySale.get(row.retail_sale_id) || 0) + Number(row.total_amount || 0)));
+      invoices = [...salesInvoices, ...retailSales.filter(row => Number(row.total_amount) - (returnedBySale.get(row.id) || 0) - (paidBySale.has(row.id) ? paidBySale.get(row.id) : originalPaidByJournal.get(row.journal_entry_id) || 0) - Number(row.store_credit_used || 0) > 0.005).map(row => ({
+        id: row.id, invoice_number: row.sale_number, invoice_date: row.sale_date, total_amount: Number(row.total_amount) - (returnedBySale.get(row.id) || 0),
+        paid_amount: (paidBySale.has(row.id) ? paidBySale.get(row.id) : originalPaidByJournal.get(row.journal_entry_id) || 0) + Number(row.store_credit_used || 0), status: 'partial', invoice_type: 'retail_sale'
+      }))];
     }
 
     // Normalise shape for the frontend
@@ -39,8 +55,8 @@ exports.getUnpaidInvoices = async (req, res, next) => {
       date: inv.invoice_date,
       amount: Number(inv.total_amount),
       due: Number(inv.total_amount) - Number(inv.paid_amount || 0),
-      invoice_type: party_type === 'supplier' ? 'purchase' : 'sale'
-    }));
+      invoice_type: inv.invoice_type || (party_type === 'supplier' ? 'purchase' : 'sale')
+    })).filter(row => row.due > 0.005);
 
     res.status(200).json(result);
   } catch (error) { next(error); }
@@ -88,8 +104,9 @@ const createPayment = async (req, res, next, paymentType) => {
     const item = await payment.create({ ...req.body, party_type: partyType, payment_type: paymentType, tenant_id: req.tenantId, amount: paymentAmount, payment_date,
       payment_method_id: method.id, bank_account_id: bankLedger.id, payment_mode: accounting.paymentModeForType(method.method_type),
       payment_number: req.body.payment_number || `PAY-${paymentType === 'incoming' ? 'IN' : 'OUT'}-${new Date(payment_date).getFullYear()}-${String(sequence).padStart(4, '0')}`, created_by: req.user.id }, { transaction });
-    const accounts = await accounting.getAccountsByCode(req.tenantId, [paymentType === 'incoming' ? '1100' : '2000'], transaction);
-    const controlAccount = accounts[paymentType === 'incoming' ? '1100' : '2000'];
+    const controlCode = paymentType === 'incoming' ? ACCOUNT_CODES.AR : ACCOUNT_CODES.AP;
+    const accounts = await accounting.getAccountsByCode(req.tenantId, [controlCode], transaction);
+    const controlAccount = partyType === 'supplier' ? await accounting.getSupplierLedger(req.tenantId, party.id, transaction) : await accounting.getCustomerLedger(req.tenantId, party.id, transaction);
     const journal = await accounting.createAndPost(req.tenantId, { entry_date: payment_date, reference_type: 'payment', reference_id: item.id,
       narration: `${paymentType === 'incoming' ? 'Customer receipt' : 'Supplier payment'} ${item.payment_number}`,
       lines: paymentType === 'incoming'
@@ -99,20 +116,36 @@ const createPayment = async (req, res, next, paymentType) => {
     for (const allocation of allocations) {
       const amountAllocated = accounting.money(allocation.allocated_amount, 'Allocated amount');
       if (amountAllocated <= 0) continue;
-      const expectedInvoiceType = paymentType === 'incoming' ? 'sale' : 'purchase';
-      if (allocation.invoice_type !== expectedInvoiceType) throw new AppError(`This payment can only be allocated to ${expectedInvoiceType} invoices`, 400);
-      const Model = expectedInvoiceType === 'purchase' ? db.purchaseInvoice : db.salesInvoice;
+      const expectedInvoiceTypes = paymentType === 'incoming' ? ['sale', 'retail_sale'] : ['purchase'];
+      const invoiceType = allocation.invoice_type || expectedInvoiceTypes[0];
+      if (!expectedInvoiceTypes.includes(invoiceType)) throw new AppError(`This payment can only be allocated to ${expectedInvoiceTypes.join(' or ')} invoices`, 400);
+      const Model = invoiceType === 'purchase' ? db.purchaseInvoice : invoiceType === 'retail_sale' ? db.retailSale : db.salesInvoice;
       const invoice = await Model.findOne({ where: { id: allocation.invoice_id, tenant_id: req.tenantId }, transaction, lock: transaction.LOCK.UPDATE });
       if (!invoice) throw new AppError('Allocated invoice not found', 400);
-      const invoicePartyId = expectedInvoiceType === 'purchase' ? invoice.supplier_id : invoice.customer_id;
+      const invoicePartyId = invoiceType === 'purchase' ? invoice.supplier_id : invoice.customer_id;
       if (invoicePartyId !== party.id) throw new AppError('Allocated invoice belongs to a different party', 400);
-      const due = Number(invoice.total_amount) - Number(invoice.paid_amount || 0);
+      let alreadyPaid = Number(invoice.paid_amount || 0);
+      if (invoiceType === 'retail_sale') {
+        const priorAllocations = await db.paymentAllocation.findAll({ where: { invoice_type: 'retail_sale', invoice_id: invoice.id }, transaction });
+        alreadyPaid = priorAllocations.reduce((sum, row) => sum + Number(row.allocated_amount || 0), 0);
+        if (!priorAllocations.length && invoice.journal_entry_id) {
+          const originalReceipts = await db.payment.findAll({ where: { tenant_id: req.tenantId, journal_entry_id: invoice.journal_entry_id }, transaction });
+          alreadyPaid = originalReceipts.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+        }
+        alreadyPaid += Number(invoice.store_credit_used || 0);
+      }
+      const returned = invoiceType === 'retail_sale'
+        ? (await db.salesReturn.findAll({ where: { tenant_id: req.tenantId, retail_sale_id: invoice.id }, transaction })).reduce((sum, row) => sum + Number(row.total_amount || 0), 0)
+        : 0;
+      const due = Number(invoice.total_amount) - returned - alreadyPaid;
       if (amountAllocated > due + 0.001) throw new AppError('Allocation exceeds invoice balance', 400);
-      await paymentAllocation.create({ payment_id: item.id, invoice_type: expectedInvoiceType, invoice_id: invoice.id, allocated_amount: amountAllocated }, { transaction });
-      const paid = Number(invoice.paid_amount || 0) + amountAllocated;
-      await invoice.update({ paid_amount: paid, status: paid >= Number(invoice.total_amount) - 0.001 ? 'paid' : 'partial' }, { transaction });
+      await paymentAllocation.create({ payment_id: item.id, invoice_type: invoiceType, invoice_id: invoice.id, allocated_amount: amountAllocated }, { transaction });
+      if (invoiceType !== 'retail_sale') {
+        const paid = Number(invoice.paid_amount || 0) + amountAllocated;
+        await invoice.update({ paid_amount: paid, status: paid >= Number(invoice.total_amount) - 0.001 ? 'paid' : 'partial' }, { transaction });
+      }
     }
-    await item.update({ journal_entry_id: journal.id }, { transaction });
+    await item.update({ journal_entry_id: journal.id, business_day_id: journal.business_day_id || null }, { transaction });
     await transaction.commit();
     res.status(201).json(await payment.findOne({ where: { id: item.id }, include: [paymentAllocation, db.paymentMethod] }));
   } catch (error) { await transaction.rollback(); next(error); }

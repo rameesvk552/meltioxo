@@ -2,6 +2,7 @@ module.exports = (sequelize, DataTypes) => {
   const PurchaseInvoice = sequelize.define('purchaseInvoice', {
     id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
     tenant_id: { type: DataTypes.UUID },
+    branch_id: { type: DataTypes.UUID, allowNull: true },
     invoice_number: { type: DataTypes.STRING },
     purchase_order_id: { type: DataTypes.UUID },
     receipt_id: { type: DataTypes.UUID, allowNull: true },
@@ -9,8 +10,11 @@ module.exports = (sequelize, DataTypes) => {
     invoice_date: { type: DataTypes.DATEONLY },
     due_date: { type: DataTypes.DATEONLY },
     total_amount: { type: DataTypes.DECIMAL(15,2) },
+    discount_amount: { type: DataTypes.DECIMAL(15,2), allowNull: false, defaultValue: 0 },
     paid_amount: { type: DataTypes.DECIMAL(15,2), defaultValue: 0 },
-    status: { type: DataTypes.ENUM('unpaid','partial','paid','overdue'), defaultValue: 'unpaid' },
+    status: { type: DataTypes.ENUM('draft','unpaid','partial','paid','overdue'), defaultValue: 'draft' },
+    paid_immediately: { type: DataTypes.BOOLEAN, defaultValue: false },
+    payment_splits: { type: DataTypes.JSONB, allowNull: true },
     journal_entry_id: { type: DataTypes.UUID, allowNull: true }
   }, {
     tableName: 'purchase_invoices',

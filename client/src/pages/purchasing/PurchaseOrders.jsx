@@ -92,7 +92,7 @@ export default function PurchaseOrders() {
   ];
 
   return (
-    <div style={{ padding: 24 }}>
+    <div className="standard-page">
       <ResponsiveListPageHeader title="Purchase Orders" summary={summary} activeFilterCount={activeTab === 'All' ? 0 : 1} onReset={() => setActiveTab('All')}
         filters={<Radio.Group value={activeTab} onChange={event => setActiveTab(event.target.value)} optionType="button" buttonStyle="solid" style={{ display: 'grid', gap: 8 }} options={statusOptions.map(value => ({ label: value === 'All' ? 'All orders' : value, value }))} />}
         primaryAction={<Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/app/purchase-orders/new')}>New PO</Button>} />

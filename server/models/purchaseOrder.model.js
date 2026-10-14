@@ -2,6 +2,7 @@ module.exports = (sequelize, DataTypes) => {
   const PurchaseOrder = sequelize.define('purchaseOrder', {
     id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
     tenant_id: { type: DataTypes.UUID },
+    branch_id: { type: DataTypes.UUID, allowNull: true },
     po_number: { type: DataTypes.STRING },
     supplier_id: { type: DataTypes.UUID },
     status: { type: DataTypes.ENUM('draft','approved','sent','partial','completed','cancelled'), defaultValue: 'draft' },

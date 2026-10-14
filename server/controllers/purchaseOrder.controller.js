@@ -93,6 +93,8 @@ exports.receive = async (req, res, next) => {
       transaction
     });
     if (!po) throw new AppError('Not found', 404);
+    const tenantSettings = await db.tenant.findByPk(req.tenantId, { transaction });
+    const composition = tenantSettings?.tax_system === 'GST' && tenantSettings?.gst_scheme === 'COMPOSITION';
     if (!['approved', 'sent', 'partial'].includes(po.status)) {
       throw new AppError('Only an approved purchase order can be received', 400);
     }
@@ -110,7 +112,7 @@ exports.receive = async (req, res, next) => {
       const quantity = Number(row.quantity) - Number(row.received_qty || 0);
       if (quantity <= 0) continue;
       const unitCost = Number(row.unit_price || 0);
-      const received = await inventoryReceipt.receiveMaterial({ tenantId: req.tenantId, materialType: row.material_type, materialId: row.material_id, quantity, unitCost, batchNumber: `${po.po_number}-${index + 1}`, supplierId: po.supplier_id, purchaseId: po.id, receivedDate: new Date(), referenceId: receipt.id, createdBy: req.user.id, transaction });
+      const received = await inventoryReceipt.receiveMaterial({ tenantId: req.tenantId, materialType: row.material_type, materialId: row.material_id, quantity, unitCost: composition ? unitCost * (1 + Number(row.tax_rate || 0) / 100) : unitCost, batchNumber: `${po.po_number}-${index + 1}`, supplierId: po.supplier_id, purchaseId: po.id, receivedDate: new Date(), referenceId: receipt.id, createdBy: req.user.id, transaction });
       const batch = received.batch;
       await purchaseReceiptItem.create({
         receipt_id: receipt.id,
@@ -118,6 +120,8 @@ exports.receive = async (req, res, next) => {
         material_type: row.material_type,
         material_id: row.material_id,
         quantity,
+        unit_price: unitCost,
+        tax_rate: row.tax_rate,
         batch_number: batch.batch_number
       }, { transaction });
       await row.update({ received_qty: Number(row.quantity) }, { transaction });
