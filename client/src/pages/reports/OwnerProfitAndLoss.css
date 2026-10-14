@@ -154,6 +154,20 @@
   font-variant-numeric: tabular-nums;
 }
 
+.sales-report-page .sales-item-table .ant-table-thead > tr > th {
+  background: #3f70b9;
+  color: #fff;
+}
+
+.sales-item-table .ant-table-tbody > tr:nth-child(even) > td {
+  background: #f6f9fd;
+}
+
+.sales-item-table .sales-item-table__total > td {
+  background: #dceafa;
+  font-weight: 700;
+}
+
 .sales-report-product-link.ant-btn {
   height: auto;
   padding: 0;

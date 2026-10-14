@@ -20,7 +20,7 @@ const col = index => {
 };
 const bytes = new TextEncoder();
 const amountColumns = (rows, headerRowIndex = 1) => new Set((rows[headerRowIndex] || []).flatMap((heading, index) =>
-  /\b(amount|balance|total|price|cost|profit|sales|income|revenue|expense|expenses|discount|returns|tax|paid|due|inflow|outflow|transfer|debit|credit|outstanding)\b/i.test(String(heading))
+  /\b(amount|balance|total|price|cost|profit|sales|income|revenue|expense|expenses|discount|returns|tax|taxable|igst|cgst|sgst|paid|due|inflow|outflow|transfer|debit|credit|outstanding)\b/i.test(String(heading))
   && !/(%|percent|rate|margin|date)/i.test(String(heading)) ? [index] : []));
 const displayRows = (rows, amounts, headerRowIndex = 1) => rows.map((row, index) => index === headerRowIndex
   ? row.map((value, column) => amounts.has(column) ? `${value} (INR)` : value) : row);
@@ -95,7 +95,7 @@ const pdfText = value => String(value ?? '').normalize('NFKD').replace(/[^\x20-\
 });
 const pdfEscape = value => pdfText(value).replace(/[\\()]/g, '\\$&');
 const pdfLine = (x, y, value, size = 8, bold = false) => `BT /F${bold ? 2 : 1} ${size} Tf ${x.toFixed(1)} ${y.toFixed(1)} Td (${pdfEscape(value)}) Tj ET\n`;
-export function makePdf({ rows, headerRowIndex = 1 }) {
+export function makePdf({ rows, headerRowIndex = 1, columnWeights }) {
   const amounts = amountColumns(rows, headerRowIndex);
   rows = displayRows(rows, amounts, headerRowIndex);
   const width = 1190, height = 842, margin = 34, usable = width - margin * 2;
@@ -105,10 +105,14 @@ export function makePdf({ rows, headerRowIndex = 1 }) {
   const metadata = headers ? rows.slice(1, headerRowIndex) : [];
   const detail = headers ? rows.slice(headerRowIndex + 1) : rows.slice(1);
   const count = Math.max(1, ...rows.map(row => row.length));
-  const columnWidth = usable / count;
+  const weights = Array.isArray(columnWeights) && columnWeights.length === count && columnWeights.every(value => Number(value) > 0)
+    ? columnWeights.map(Number) : Array(count).fill(1);
+  const weightTotal = weights.reduce((sum, value) => sum + value, 0);
+  const columnWidths = weights.map(value => usable * value / weightTotal);
+  const columnStarts = columnWidths.map((_, index) => margin + columnWidths.slice(0, index).reduce((sum, value) => sum + value, 0));
   const fontSize = count > 10 ? 6.5 : count > 6 ? 7.5 : 9;
-  const maxChars = Math.max(4, Math.floor(columnWidth / (fontSize * 0.53)));
   const linesFor = row => row.map((value, index) => {
+    const maxChars = Math.max(4, Math.floor((columnWidths[index] - 6) / (fontSize * 0.53)));
     const valueText = pdfText(typeof value === 'number' && amounts.has(index) ? formatAmount(value) : value);
     const words = valueText.split(/\s+/), lines = [];
     let line = '';
@@ -139,7 +143,7 @@ export function makePdf({ rows, headerRowIndex = 1 }) {
       if (heading) commands += `0.89 0.93 0.91 rg ${margin} ${y - rowHeight} ${usable} ${rowHeight} re f\n0 0 0 rg\n`;
       else if (stripe % 2 === 1) commands += `0.97 0.97 0.96 rg ${margin} ${y - rowHeight} ${usable} ${rowHeight} re f\n0 0 0 rg\n`;
       cells.forEach((cell, index) => cell.slice(cursor, cursor + lineCount).forEach((line, lineIndex) => {
-        commands += pdfLine(margin + index * columnWidth + 3, y - 11 - lineIndex * (fontSize + 2), line, fontSize, heading);
+        commands += pdfLine(columnStarts[index] + 3, y - 11 - lineIndex * (fontSize + 2), line, fontSize, heading);
       }));
       y -= rowHeight;
       cursor += lineCount;

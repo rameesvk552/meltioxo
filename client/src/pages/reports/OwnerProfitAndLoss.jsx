@@ -11,6 +11,7 @@ import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 import useApiData from '../../hooks/useApiData';
 import { downloadReport, reportData } from './reportDownloads';
+import { salesItemReport } from './salesItemReport';
 import './OwnerProfitAndLoss.css';
 
 const { Title, Text } = Typography;
@@ -247,7 +248,7 @@ function ProductHistoryDrawer({ product, range, onClose, onOpenInvoice }) {
 export default function OwnerProfitAndLoss() {
   const [preset, setPreset] = useState('today');
   const [range, setRange] = useState(() => presetRange('today'));
-  const [salesView, setSalesView] = useState('invoices');
+  const [salesView, setSalesView] = useState('items');
   const [reportTab, setReportTab] = useState('sales');
   const [selectedInvoiceId, setSelectedInvoiceId] = useState(null);
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -264,6 +265,7 @@ export default function OwnerProfitAndLoss() {
     initialData: { summary: {}, trend: [], product_profitability: {} }
   });
   const salesQuery = useApiData('/retail-sales');
+  const { data: company } = useApiData('/tenant/settings', { initialData: {} });
   const purchaseEndpoint = useMemo(() => `/reports/purchases?from=${range[0].format('YYYY-MM-DD')}&to=${range[1].format('YYYY-MM-DD')}`, [range]);
   const purchaseQuery = useApiData(purchaseEndpoint, { initialData: { summary: {}, rows: [] } });
   const productCatalogQuery = useApiData('/reports/product-sales-catalog', { enabled: reportTab === 'sales' && salesView === 'products', initialData: [] });
@@ -273,6 +275,8 @@ export default function OwnerProfitAndLoss() {
     const to = range[1].format('YYYY-MM-DD');
     return salesQuery.data.filter(sale => sale.sale_date >= from && sale.sale_date <= to);
   }, [range, salesQuery.data]);
+  const rangeLabel = `${range[0].format('YYYY-MM-DD')}-${range[1].format('YYYY-MM-DD')}`;
+  const itemReport = useMemo(() => salesItemReport(invoices, company, rangeLabel), [invoices, company, rangeLabel]);
 
   const invoiceSummary = useMemo(() => invoices.reduce((totals, sale) => {
     totals.discount += Number(sale.discount_amount || 0);
@@ -345,6 +349,8 @@ export default function OwnerProfitAndLoss() {
     ]);
     return reportData(`product-sales-${range[0].format('YYYY-MM-DD')}-${range[1].format('YYYY-MM-DD')}`, [['Product sales', range[0].format('YYYY-MM-DD'), range[1].format('YYYY-MM-DD')], headers, ...rows]);
   };
+  const activeSalesExport = () => salesView === 'items' ? itemReport : salesView === 'invoices' ? exportInvoices() : exportProducts();
+  const salesExportEmpty = salesView === 'items' ? !itemReport.itemRows.length : salesView === 'invoices' ? !invoices.length : !products.length;
 
   const exportPurchases = () => {
     const headers = ['Date', 'Invoice', 'Supplier', 'Receipt', 'Item', 'Type', 'Quantity', 'Unit', 'Unit cost', 'Tax %', 'Tax', 'Line total', 'Status'];
@@ -381,6 +387,27 @@ export default function OwnerProfitAndLoss() {
     { title: 'Returned', dataIndex: 'returned_amount', width: 115, align: 'right', render: value => Number(value || 0) ? <Tag color="orange">{money(value)}</Tag> : '—' },
     { title: 'Net total', width: 130, align: 'right', render: (_, sale) => <Text strong>{money(Number(sale.total_amount || 0) - Number(sale.returned_amount || 0))}</Text> },
     { title: '', width: 52, render: (_, sale) => <Button type="text" aria-label={`View ${sale.sale_number}`} icon={<EyeOutlined />} onClick={event => { event.stopPropagation(); setSelectedInvoiceId(sale.id); }} /> }
+  ];
+
+  const itemColumns = [
+    { title: 'Invoice No.', dataIndex: 'invoice', width: 125, render: (value, row) => <Button type="link" style={{ padding: 0, fontWeight: 650 }} onClick={() => setSelectedInvoiceId(row.invoiceId)}>{value}</Button> },
+    { title: 'Date', dataIndex: 'date', width: 100 },
+    ...(itemReport.gst ? [{ title: 'Customer GSTIN', dataIndex: 'customerGstin', width: 155, render: value => value || '—' }] : []),
+    { title: 'Customer', dataIndex: 'customer', width: 150 },
+    ...(itemReport.gst ? [{ title: 'Place of Supply', dataIndex: 'placeOfSupply', width: 130, render: value => value || '—' }] : []),
+    { title: 'Item Code', dataIndex: 'itemCode', width: 115, render: value => value || '—' },
+    ...(itemReport.gst ? [{ title: 'HSN/SAC', dataIndex: 'hsn', width: 100, render: value => value || '—' }] : []),
+    { title: 'Item Description', dataIndex: 'description', width: 210 },
+    { title: 'Qty', dataIndex: 'qty', width: 80, align: 'right', render: quantity },
+    { title: 'Unit Price', dataIndex: 'unitPrice', width: 110, align: 'right', render: money },
+    ...(itemReport.gst ? [
+      { title: 'Taxable Value', dataIndex: 'taxableValue', width: 125, align: 'right', render: money },
+      { title: 'Rate', dataIndex: 'rate', width: 75, align: 'right', render: value => value === null ? '—' : percentage(value) },
+      { title: 'IGST', dataIndex: 'igst', width: 100, align: 'right', render: money },
+      { title: 'CGST', dataIndex: 'cgst', width: 100, align: 'right', render: money },
+      { title: 'SGST', dataIndex: 'sgst', width: 100, align: 'right', render: money }
+    ] : []),
+    { title: 'Line Total', dataIndex: 'lineTotal', width: 125, align: 'right', render: value => <Text strong>{money(value)}</Text> }
   ];
 
   const productColumns = [
@@ -421,8 +448,8 @@ export default function OwnerProfitAndLoss() {
       <Space wrap className="sales-report-actions">
         <Button icon={<PrinterOutlined />} onClick={() => window.print()}>Print</Button>
         {reportTab === 'sales' && <>
-          <Button type="primary" icon={<DownloadOutlined />} onClick={() => downloadReport((salesView === 'invoices' ? exportInvoices : exportProducts)(), 'xlsx')} disabled={reportQuery.loading || salesQuery.loading || !!reportQuery.error || !!salesQuery.error || (salesView === 'invoices' ? !invoices.length : !products.length)}>Sales Excel</Button>
-          <Button icon={<DownloadOutlined />} onClick={() => downloadReport((salesView === 'invoices' ? exportInvoices : exportProducts)(), 'pdf')} disabled={reportQuery.loading || salesQuery.loading || !!reportQuery.error || !!salesQuery.error || (salesView === 'invoices' ? !invoices.length : !products.length)}>Sales PDF</Button>
+          <Button type="primary" icon={<DownloadOutlined />} onClick={() => downloadReport(activeSalesExport(), 'xlsx')} disabled={reportQuery.loading || salesQuery.loading || !!reportQuery.error || !!salesQuery.error || salesExportEmpty}>Sales Excel</Button>
+          <Button icon={<DownloadOutlined />} onClick={() => downloadReport(activeSalesExport(), 'pdf')} disabled={reportQuery.loading || salesQuery.loading || !!reportQuery.error || !!salesQuery.error || salesExportEmpty}>Sales PDF</Button>
         </>}
       </Space>
     </div>
@@ -499,10 +526,11 @@ export default function OwnerProfitAndLoss() {
     </Card>}
 
     {reportTab === 'sales' && <Card
-      title={salesView === 'invoices' ? 'Invoice-wise sales' : 'Product-wise sales'}
+      title={salesView === 'items' ? 'Item-level sales report' : salesView === 'invoices' ? 'Invoice-wise sales' : 'Product-wise sales'}
       style={{ marginBottom: 16, borderRadius: 12 }}
       extra={<Space wrap>
-        <Segmented value={salesView} onChange={setSalesView} options={[{ label: 'Invoice-wise', value: 'invoices' }, { label: 'Product-wise', value: 'products' }]} />
+        <Segmented value={salesView} onChange={setSalesView} options={[{ label: 'Item-level', value: 'items' }, { label: 'Invoice-wise', value: 'invoices' }, { label: 'Product-wise', value: 'products' }]} />
+        {salesView === 'items' && <Text type="secondary">One row per invoice item · totals include each item once</Text>}
         {salesView === 'invoices' && <Text type="secondary">Click an invoice to see every item and discount</Text>}
         {salesView === 'products' && <Select
           className="sales-report-product-search"
@@ -516,7 +544,23 @@ export default function OwnerProfitAndLoss() {
         />}
       </Space>}
     >
-      {salesView === 'invoices' ? <Table
+      {salesView === 'items' ? <Table
+          className="sales-item-table"
+          rowKey="key" columns={itemColumns} dataSource={itemReport.itemRows} loading={salesQuery.loading}
+          scroll={{ x: itemReport.gst ? 1900 : 1030 }} pagination={{ pageSize: 20, showSizeChanger: true, showTotal: total => `${total} items` }}
+          locale={{ emptyText: <Empty description="No sale items in this period" /> }}
+          summary={() => itemReport.itemRows.length ? <Table.Summary.Row className="sales-item-table__total">
+            <Table.Summary.Cell index={0} colSpan={itemReport.gst ? 10 : 7}><Text strong>TOTAL</Text></Table.Summary.Cell>
+            {itemReport.gst && <>
+              <Table.Summary.Cell index={10} align="right"><Text strong>{money(itemReport.totals.taxableValue)}</Text></Table.Summary.Cell>
+              <Table.Summary.Cell index={11} />
+              <Table.Summary.Cell index={12} align="right"><Text strong>{money(itemReport.totals.igst)}</Text></Table.Summary.Cell>
+              <Table.Summary.Cell index={13} align="right"><Text strong>{money(itemReport.totals.cgst)}</Text></Table.Summary.Cell>
+              <Table.Summary.Cell index={14} align="right"><Text strong>{money(itemReport.totals.sgst)}</Text></Table.Summary.Cell>
+            </>}
+            <Table.Summary.Cell index={itemReport.gst ? 15 : 7} align="right"><Text strong>{money(itemReport.totals.lineTotal)}</Text></Table.Summary.Cell>
+          </Table.Summary.Row> : null}
+        /> : salesView === 'invoices' ? <Table
           rowKey="id" columns={invoiceColumns} dataSource={invoices} loading={salesQuery.loading}
           onRow={sale => ({ onClick: () => setSelectedInvoiceId(sale.id), style: { cursor: 'pointer' } })}
           scroll={{ x: 1430 }} pagination={{ pageSize: 15, showSizeChanger: true, showTotal: total => `${total} invoices` }}
